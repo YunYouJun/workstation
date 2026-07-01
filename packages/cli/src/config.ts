@@ -9,7 +9,11 @@ export interface DotfileEntry {
   target: string
   /** 描述 */
   description?: string
+  /** pull 到本地时是否追加同步元信息 */
+  appendSyncMeta?: boolean
 }
+
+export const vscodeSettingsRelativePath = path.join('Library', 'Application Support', 'Code', 'User', 'settings.json')
 
 /**
  * dotfiles 映射表
@@ -18,18 +22,22 @@ export interface DotfileEntry {
  */
 export const dotfiles: DotfileEntry[] = [
   {
-    source: '.zshrc',
-    target: '.zshrc',
-    description: 'Oh-My-Zsh Config',
+    source: 'home/dot_codex/AGENTS.md',
+    target: path.join('.codex', 'AGENTS.md'),
+    description: 'Codex Global Instructions',
+    appendSyncMeta: false,
   },
   {
-    source: '.vscode/settings.json',
-    target: process.platform === 'darwin'
-      ? path.join('Library', 'Application Support', 'Code', 'User', 'settings.json')
-      : process.platform === 'win32'
-        ? path.join('AppData', 'Roaming', 'Code', 'User', 'settings.json')
-        : path.join('.config', 'Code', 'User', 'settings.json'),
-    description: 'VSCode Global Settings',
+    source: 'home/dot_zshrc',
+    target: '.zshrc',
+    description: 'Oh-My-Zsh Config',
+    appendSyncMeta: false,
+  },
+  {
+    source: path.join('home', vscodeSettingsRelativePath),
+    target: vscodeSettingsRelativePath,
+    description: 'VSCode Global Settings (macOS)',
+    appendSyncMeta: false,
   },
 ]
 

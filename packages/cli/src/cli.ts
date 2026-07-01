@@ -1,6 +1,9 @@
 import type { SyncDirection, SyncMode } from './sync'
+import process from 'node:process'
 import cac from 'cac'
 import { version } from '../package.json'
+import { runChezmoi } from './chezmoi'
+import { doctor } from './doctor'
 import { diff, status, sync, syncInteractive } from './sync'
 
 const cli = cac('dotfiles')
@@ -63,6 +66,23 @@ cli
   .command('status', 'Show sync status of dotfiles')
   .action(() => {
     status()
+  })
+
+cli
+  .command('doctor', 'Check dotfiles repo, chezmoi, and local secret readiness')
+  .action(() => {
+    const result = doctor()
+    if (result.errors > 0)
+      process.exitCode = 1
+  })
+
+cli
+  .command('chezmoi [...args]', 'Run chezmoi with this repo as source')
+  .allowUnknownOptions()
+  .action(() => {
+    const commandIndex = process.argv.indexOf('chezmoi')
+    const args = commandIndex === -1 ? [] : process.argv.slice(commandIndex + 1)
+    runChezmoi(args)
   })
 
 cli

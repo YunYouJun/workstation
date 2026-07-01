@@ -1,6 +1,24 @@
+minimumReleaseAgeExclude:
+  - '@clack/core@1.4.1'
+  - '@clack/prompts@1.5.1'
+  - '@vitest/expect@4.1.9'
+  - '@vitest/mocker@4.1.9'
+  - '@vitest/pretty-format@4.1.9'
+  - '@vitest/runner@4.1.9'
+  - '@vitest/snapshot@4.1.9'
+  - '@vitest/spy@4.1.9'
+  - '@vitest/utils@4.1.9'
+  - vitest@4.1.9
+
 shellEmulator: true
 
 trustPolicy: no-downgrade
 
 packages:
   - packages/*
+
+overrides:
+  tsup>chokidar: 4.0.1
+
+allowBuilds:
+  esbuild: true

@@ -4,8 +4,10 @@
 
 My custom dotfiles.
 
-- [.zshrc](./.zshrc): Oh-My-Zsh Config
-- [.vscode](./.vscode): VSCode Global Config
+- [home/dot_codex/AGENTS.md](./home/dot_codex/AGENTS.md): Codex global instructions (`~/.codex/AGENTS.md`)
+- [home/dot_zshrc](./home/dot_zshrc): Oh-My-Zsh config (`~/.zshrc`)
+- [home/Library/Application Support/Code/User/settings.json](<./home/Library/Application Support/Code/User/settings.json>): VSCode user settings for macOS
+- [docs/vscode/extensions.md](./docs/vscode/extensions.md): VSCode extensions reference
 
 ## Usage
 
@@ -56,9 +58,29 @@ dotfiles sync -i           # 交互式选择
 ### Diff & Status
 
 ```bash
-dotfiles diff              # 查看仓库与本地的差异
-dotfiles status            # 查看同步状态
+dotfiles diff              # 查看仓库与本地的差异（会遮罩本地 secrets）
+dotfiles status            # 查看 chezmoi + legacy 同步状态
+dotfiles doctor            # 检查 chezmoi source tree 与本地 secrets 准备情况
 ```
+
+### Chezmoi
+
+This repo is chezmoi-compatible via [`.chezmoiroot`](./.chezmoiroot). Chezmoi reads only the [`home/`](./home) subtree, so repo files like `README.md`, `package.json`, and `packages/cli` are not treated as home files.
+
+```bash
+dotfiles chezmoi diff      # 等价于 chezmoi --source <repo> diff
+dotfiles chezmoi apply     # apply files managed under home/
+```
+
+Current managed home files live under `home/`:
+
+- `home/dot_codex/AGENTS.md` → `~/.codex/AGENTS.md`
+- `home/dot_zshrc` → `~/.zshrc`
+- `home/Library/Application Support/Code/User/settings.json` → `~/Library/Application Support/Code/User/settings.json`
+
+VSCode settings are macOS-only for now and are ignored by chezmoi on non-macOS hosts via [`home/.chezmoiignore.tmpl`](./home/.chezmoiignore.tmpl). Use `dotfiles diff` for secret-safe diffs; raw `dotfiles chezmoi diff` may show unmasked local values.
+
+Run `dotfiles doctor` after cloning or pulling this repo to verify `.chezmoiroot`, managed source files, local secret placeholders, and chezmoi availability.
 
 ### Secrets
 

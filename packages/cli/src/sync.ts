@@ -6,6 +6,7 @@ import path from 'node:path'
 import process from 'node:process'
 import * as p from '@clack/prompts'
 import consola from 'consola'
+import { isChezmoiMissing, spawnChezmoi } from './chezmoi'
 import { dotfiles, resolveSource, resolveTarget } from './config'
 import { detectSecrets, findPlaceholders, loadSecretsFile, maskSecrets, saveSecrets, unmaskSecrets } from './secrets'
 
@@ -267,8 +268,10 @@ function pullEntry(entry: DotfileEntry, options: SyncOptions): SyncResult {
     missing = result.missing
   }
 
-  // 追加同步元信息
-  finalContent = `${finalContent.trimEnd()}\n${getSyncMeta()}`
+  if (entry.appendSyncMeta === false)
+    finalContent = `${finalContent.trimEnd()}\n`
+  else
+    finalContent = `${finalContent.trimEnd()}\n${getSyncMeta()}`
 
   fs.writeFileSync(homePath, finalContent, 'utf-8')
 
@@ -456,6 +459,17 @@ export function diff() {
 
 export function status() {
   p.intro('Dotfiles Status')
+
+  const chezmoiStatus = spawnChezmoi(['status'])
+  if (chezmoiStatus.error) {
+    if (isChezmoiMissing(chezmoiStatus.error))
+      consola.warn('chezmoi is not installed; showing legacy sync status only')
+    else
+      consola.warn(`chezmoi status failed: ${chezmoiStatus.error.message}`)
+  }
+  else if (typeof chezmoiStatus.status === 'number' && chezmoiStatus.status !== 0) {
+    consola.warn(`chezmoi status exited with code ${chezmoiStatus.status}; showing legacy sync status below`)
+  }
 
   const secretsMap = loadSecretsFile()
 

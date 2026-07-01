@@ -22,14 +22,28 @@ export function writeFile(filePath: string, content: string) {
   fs.writeFileSync(filePath, content, 'utf-8')
 }
 
+export function codexAgentsPath(root: string) {
+  return path.join(root, '.codex', 'AGENTS.md')
+}
+
+export function repoCodexAgentsPath(root: string) {
+  return path.join(root, 'home', 'dot_codex', 'AGENTS.md')
+}
+
+export function zshrcPath(root: string) {
+  return path.join(root, '.zshrc')
+}
+
+export function repoZshrcPath(root: string) {
+  return path.join(root, 'home', 'dot_zshrc')
+}
+
 export function vscodeSettingsPath(root: string) {
-  if (process.platform === 'darwin')
-    return path.join(root, 'Library', 'Application Support', 'Code', 'User', 'settings.json')
+  return path.join(root, 'Library', 'Application Support', 'Code', 'User', 'settings.json')
+}
 
-  if (process.platform === 'win32')
-    return path.join(root, 'AppData', 'Roaming', 'Code', 'User', 'settings.json')
-
-  return path.join(root, '.config', 'Code', 'User', 'settings.json')
+export function repoVscodeSettingsPath(root: string) {
+  return path.join(root, 'home', 'Library', 'Application Support', 'Code', 'User', 'settings.json')
 }
 
 export function createSyncFixture() {
@@ -41,7 +55,7 @@ export function createSyncFixture() {
   return { tempDir, repoRoot, homeRoot }
 }
 
-export function runCli(args: string[], repoRoot: string, homeRoot: string) {
+export function runCli(args: string[], repoRoot: string, homeRoot: string, extraEnv: NodeJS.ProcessEnv = {}) {
   return spawnSync(process.execPath, ['--import', 'tsx', cliPath, ...args], {
     cwd: packageRoot,
     encoding: 'utf-8',
@@ -51,6 +65,7 @@ export function runCli(args: string[], repoRoot: string, homeRoot: string) {
       DOTFILES_HOME: homeRoot,
       DOTFILES_REPO_ROOT: repoRoot,
       NO_COLOR: '1',
+      ...extraEnv,
     },
   })
 }
