@@ -13,6 +13,7 @@
     "docs:preview": "vitepress preview docs",
     "lint": "eslint .",
     "release": "bumpp packages/cli/package.json && pnpm --filter @yunyoujun/workstation build",
+    "secrets:scan": "gitleaks git --redact --verbose --no-banner",
     "software": "tsx scripts/software.ts",
     "software:check": "tsx scripts/software.ts check",
     "software:install": "tsx scripts/software.ts install",
