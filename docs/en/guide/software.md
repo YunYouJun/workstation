@@ -4,9 +4,9 @@ import SoftwareCatalog from '../../.vitepress/theme/components/SoftwareCatalog.v
 
 # Software
 
-This page lists common fresh-machine applications. The download links point to
-official project pages, while repeatable installs should use Homebrew manifests
-or the thin helper script in this repository.
+This page lists common fresh-machine applications. Official-site links are for
+product context; download-page links are for fast installs. Repeatable installs
+should use Homebrew manifests or the thin helper script in this repository.
 
 ## Install Strategy
 
@@ -21,6 +21,11 @@ or the thin helper script in this repository.
 
 <SoftwareCatalog />
 
+Search or switch categories in the catalog to open download pages for the
+current result set, or open an individual app's official site. Search accepts
+multiple space- or comma-separated keywords. Use the commands below for terminal
+batch operations.
+
 ## Quick Commands
 
 List known software ids:
@@ -32,7 +37,17 @@ pnpm software list
 Open selected official download pages:
 
 ```bash
-pnpm software:open microsoft-todo vscode neteasemusic qq wechat codex chrome raycast feishu
+pnpm software:open raycast feishu microsoft-todo ima
+```
+
+Fast-install Raycast, Feishu, and Microsoft To Do; keep ima on the official
+download page until it has a stable package-manager path:
+
+```bash
+brew install --cask raycast feishu
+brew install mas
+mas install 1274495053
+pnpm software:open ima
 ```
 
 Show install status from the shared software catalog:

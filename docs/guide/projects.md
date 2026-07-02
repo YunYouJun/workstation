@@ -150,6 +150,7 @@ workstation projects status --check
 
 ```bash
 wst p manifest --file projects.local.yaml
+wst p manifest --file projects.local.yaml --validate
 wst p manifest --file projects.local.yaml --yes
 ```
 
@@ -201,9 +202,170 @@ groups:
 
 当本地目标路径需要和远端路径不同，使用对象格式的 `name` + `path`：`name` 是本地路径，`path` 是远端仓库路径。这种情况会自动避开 `ghq get`，用显式 `git clone <url> <target>`，避免 ghq 按远端 URL 放到另一个目录。
 
+`--validate` 只校验清单并退出，不输出 clone 预览。CLI 会检查清单结构、字段类型、指定 group 是否存在、短路径是否配置了 `host`、clone URL/目标路径能否推断，以及多个条目是否会 clone 到同一个目标目录。普通 dry-run 和 `--yes` 写入前也会走同一套校验。
+
+## SSH 基线
+
+SSH key、`~/.ssh/config` 和远程机器地址都属于本机配置，不放进公开仓库。仓库只记录可复用模式。
+
+生成新的 GitHub SSH key：
+
+```bash
+ssh-keygen -t ed25519 -C "you@example.com"
+cat ~/.ssh/id_ed25519.pub
+```
+
+把公钥安装到远程机器：
+
+```bash
+ssh-copy-id -i ~/.ssh/id_ed25519.pub user@example-host
+```
+
+给远程开发机器写明确的 host 条目，方便 VS Code Remote SSH、终端和脚本复用同一个入口：
+
+```text
+Host devbox
+  HostName example-host
+  User user
+  PreferredAuthentications publickey
+  IdentityFile ~/.ssh/id_ed25519
+  IdentitiesOnly yes
+```
+
+如果网络只允许 443 出口，再为 GitHub SSH 添加 443 端口 fallback；不要为了访问 GitHub 长期维护过期的 hosts IP 列表：
+
+```text
+Host github.com
+  HostName ssh.github.com
+  Port 443
+  User git
+  IdentityFile ~/.ssh/id_ed25519_github
+  IdentitiesOnly yes
+```
+
+验证 GitHub SSH：
+
+```bash
+ssh -T git@github.com
+```
+
+macOS 如果需要让本机接受 SSH 连接，先在「系统设置 -> 共享」里打开「远程登录」。不要把真实内网主机名、用户名或端口写入公开仓库。
+
+临时 SSH 本地端口转发：
+
+```bash
+ssh -L <local-port>:<remote-host>:<remote-port> <ssh-hostname>
+```
+
+常见示例是把远程数据库端口只转发到本机：
+
+```bash
+ssh -L 3306:localhost:3306 user@example-host
+```
+
+需要后台保持隧道时再加 `-fN`；只有明确需要允许其他机器连入本机转发端口时才使用 `-g`。
+
+## Git 多账号与来源隔离
+
+同一台机器访问 GitHub、GitHub Enterprise、公司 GitLab 或其他内部 Git 源时，把“提交身份”和“远端认证账号”分开配置：
+
+- 提交身份用 Git 的 `includeIf` 按 checkout 目录选择。
+- 认证账号用 SSH `Host` / `IdentityFile` 或 HTTPS credential helper 选择。
+- 全局开启 `user.useConfigOnly`，避免 Git 自动猜测错误邮箱。
+- 同一个 host 上有多个账号时，使用 SSH Host alias，并把仓库 remote 指向 alias。
+
+全局 Git 配置只负责路由，不直接写默认身份：
+
+```ini
+[user]
+  useConfigOnly = true
+
+[includeIf "gitdir:~/repos/github.com/"]
+  path = ~/.gitconfig-github
+
+[includeIf "gitdir:~/repos/git.example.com/"]
+  path = ~/.gitconfig-work
+```
+
+不同来源的身份放在独立文件里：
+
+```ini
+# ~/.gitconfig-github
+[user]
+  name = Your Name
+  email = you@example.com
+```
+
+```ini
+# ~/.gitconfig-work
+[user]
+  name = Your Name
+  email = you@company.example
+```
+
+SSH 认证账号通过 host 配置决定：
+
+```text
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519_github
+  IdentitiesOnly yes
+
+Host git.example.com-work
+  HostName git.example.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519_work
+  IdentitiesOnly yes
+```
+
+同一 host 多账号时，仓库 remote 使用 alias：
+
+```bash
+git remote set-url origin git@git.example.com-work:team/repo.git
+```
+
+检查当前仓库最终生效的身份与认证入口：
+
+```bash
+git config --show-origin --get user.name
+git config --show-origin --get user.email
+git remote -v
+ssh -G git.example.com-work | grep identityfile
+```
+
+不建议默认依赖 `includeIf "hasconfig:remote.*.url:..."` 根据 remote URL 自动切换身份。新 clone、fork + upstream、多 remote 仓库都可能让规则变得含糊；按 `~/repos/<host>/...` 目录切换身份更容易预测和审计。
+
+CLI 中对应的初始化任务是 `git.include-if`。先查看任务和预览写入内容：
+
+```bash
+wst init --list
+wst init git.include-if --git-profile 'id=github;host=github.com;name=Your Name;email=you@example.com'
+```
+
+确认后再应用：
+
+```bash
+wst init git.include-if --git-profile 'id=github;host=github.com;name=Your Name;email=you@example.com' --yes
+```
+
+如果本机已经有 `~/.gitconfig-github` 且其中包含 `user.name` / `user.email`，也可以直接让 CLI 推断默认 GitHub profile：
+
+```bash
+wst init git.include-if --yes
+```
+
+需要手动选择初始化任务和输入身份信息时，使用交互模式：
+
+```bash
+wst init -i
+```
+
 ## 最佳实践
 
 - 普通项目 checkout 优先使用 `ghq`。
+- Git 提交身份按 `~/repos/<host>/...` 目录切换，远端认证账号按 SSH host 或 credential helper 切换。
+- 开启 `user.useConfigOnly`，让未匹配身份的仓库无法提交。
 - 按用途分组项目，而不是按历史偶然性分组；分组不应改变 clone 目标路径。
 - 公开示例保持通用。
 - 对需要主动 push 的仓库优先使用 SSH URL。

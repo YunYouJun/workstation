@@ -4,6 +4,7 @@ import cac from 'cac'
 import { version } from '../package.json'
 import { runChezmoi } from './chezmoi'
 import { doctor } from './doctor'
+import { runInit } from './init'
 import { cloneActiveProjects, cloneManifestProjects, projectStatus } from './projects'
 import { diff, status, sync, syncInteractive } from './sync'
 
@@ -58,6 +59,7 @@ async function runProjectsCommand(action: string | undefined, target: string | u
       groups: parseListOption(options.group),
       root: options.root,
       protocol: options.https ? 'https' : 'ssh',
+      validate: options.validate,
       update: options.update,
       yes: options.yes,
       dryRun: options.dryRun,
@@ -102,6 +104,7 @@ function registerProjectsCommand(name: string, description: string) {
     .option('--repo <url>', 'Git repository containing a project manifest')
     .option('--manifest <path>', 'Manifest path inside --repo (default: projects.yaml)')
     .option('--group <names>', 'Comma-separated manifest group names')
+    .option('--validate', 'Validate project manifest and exit without clone preview', { default: false })
     .option('--all', 'Show clean repositories in projects status output', { default: false })
     .option('--check', 'Exit non-zero when projects status finds repositories needing attention', { default: false })
     .option('--max-depth <number>', 'Maximum directory depth for projects status scan (default: 6)')
@@ -205,6 +208,28 @@ registerProjectsCommand('projects', 'Manage project checkouts')
 registerProjectsCommand('p', 'Alias for projects')
 registerDotfilesNamespace('dotfiles', 'Manage dotfiles')
 registerDotfilesNamespace('df', 'Alias for dotfiles')
+
+cli
+  .command('init [task]', 'Initialize workstation setup tasks')
+  .option('--task <ids>', 'Comma-separated init task ids')
+  .option('--all', 'Select all init tasks', { default: false })
+  .option('--list', 'List available init tasks', { default: false })
+  .option('--git-profile <profile>', 'Git identity profile: host=github.com;name=Your Name;email=you@example.com')
+  .option('--yes', 'Apply planned init changes (defaults to dry-run)', { default: false })
+  .option('--dry-run', 'Preview init changes without writing', { default: false })
+  .option('-i, --interactive', 'Select init tasks and inputs interactively', { default: false })
+  .action(async (task: string | undefined, options) => {
+    await runInit({
+      taskArg: task,
+      task: options.task,
+      all: options.all,
+      list: options.list,
+      yes: options.yes,
+      dryRun: options.dryRun,
+      interactive: options.interactive,
+      gitProfile: options.gitProfile,
+    })
+  })
 
 cli
   .command('push', 'Push dotfiles from home to repo (auto-mask secrets)')

@@ -18,6 +18,17 @@ Package installation should be reproducible enough to restore the machine, but n
 - Separate core tools from optional apps.
 - Run package setup before dotfiles that assume those tools exist.
 
+## Migrating Old Environment Notes
+
+When migrating historical environment notes, add only long-lived, repeatable
+tools to manifests. One-off server stacks, old mirrors, old install scripts, and
+deprecated casks should not become part of the workstation baseline.
+
+For example, OneinStack, LNMP one-click installers, and old `nvm`/Taobao mirror
+snippets are better archived or deleted than moved into `Brewfile`. Occasional
+compatibility tools such as `rar` can stay as temporary commands without being
+installed by default.
+
 ## Brewfiles
 
 Use the root `Brewfile` for terminal foundations and daily CLI tools:

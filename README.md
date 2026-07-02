@@ -2,11 +2,13 @@
 
 [![CI](https://github.com/YunYouJun/workstation/actions/workflows/ci.yml/badge.svg)](https://github.com/YunYouJun/workstation/actions/workflows/ci.yml)
 
+[English](./README.md) | [简体中文](./README.zh-CN.md)
+
 Personal developer workstation configuration, dotfiles sync tooling, setup notes, and operating practices.
 
 This repository is intentionally broader than a plain dotfiles repo: it keeps shell/editor configuration under `home/`, a TypeScript CLI under `packages/cli`, and long-form setup documentation under `docs/`.
 
-Docs: <https://workstation.yunyoujun.cn>
+Docs: <https://workstation.yunyoujun.cn/en/>
 
 ## Usage
 
@@ -25,18 +27,18 @@ pnpm docs:dev
 
 The VitePress docs are the source of truth for the workstation setup model:
 
-- [Overview](./docs/index.md)
-- [Repository scope](./docs/guide/repository.md)
-- [Bootstrap flow](./docs/guide/bootstrap.md)
-- [Copyable commands](./docs/guide/commands.md)
-- [Terminal](./docs/guide/terminal.md)
-- [Dotfiles sync](./docs/guide/dotfiles.md)
-- [Secrets](./docs/guide/secrets.md)
-- [Projects](./docs/guide/projects.md)
-- [Packages](./docs/guide/packages.md)
-- [Software](./docs/guide/software.md)
-- [Codex skills](./docs/guide/codex-skills.md)
-- [VSCode extensions](./docs/vscode/extensions.md)
+- [Overview](./docs/en/index.md)
+- [Repository scope](./docs/en/guide/repository.md)
+- [Bootstrap flow](./docs/en/guide/bootstrap.md)
+- [Copyable commands](./docs/en/guide/commands.md)
+- [Terminal](./docs/en/guide/terminal.md)
+- [Dotfiles sync](./docs/en/guide/dotfiles.md)
+- [Secrets](./docs/en/guide/secrets.md)
+- [Projects](./docs/en/guide/projects.md)
+- [Packages](./docs/en/guide/packages.md)
+- [Software](./docs/en/guide/software.md)
+- [Codex skills](./docs/en/guide/codex-skills.md)
+- [VSCode extensions](./docs/en/vscode/extensions.md)
 
 ## CLI
 
@@ -46,10 +48,13 @@ The historical `dotfiles` command remains available for compatibility.
 
 ```bash
 workstation doctor
+workstation init --list
+workstation init git.include-if --git-profile 'id=github;host=github.com;name=Your Name;email=you@example.com'
 workstation dotfiles pull --dry-run
 workstation projects clone-active
 workstation df pull --dry-run
 workstation p active --limit 20
+wst init -i
 wst df pull --dry-run
 wst p active --limit 20
 ```
@@ -59,41 +64,43 @@ associations and global alias collisions.
 
 ### Push (Home -> Repo)
 
-将本地 `~/` 下的 dotfiles 推送到仓库，自动检测并遮罩敏感 token：
+Push dotfiles from local `~/` into the repository. Sensitive tokens are detected
+and masked automatically:
 
 ```bash
-workstation dotfiles push              # 仅推送有变更的文件
-workstation dotfiles push --force      # 强制覆盖（自动备份）
-workstation dotfiles push --dry-run    # 预览变更
+workstation dotfiles push              # push only changed files
+workstation dotfiles push --force      # overwrite with automatic backups
+workstation dotfiles push --dry-run    # preview changes
 ```
 
 ### Pull (Repo -> Home)
 
-将仓库中的 dotfiles 拉取到本地，自动恢复 token：
+Pull dotfiles from the repository back into local HOME. Secret placeholders are
+restored automatically:
 
 ```bash
-workstation dotfiles pull              # copy 模式（默认）
-workstation dotfiles pull --mode link  # symlink 模式
-workstation dotfiles pull --force      # 强制覆盖（自动备份）
-workstation dotfiles pull --dry-run    # 预览变更
+workstation dotfiles pull              # copy mode, the default
+workstation dotfiles pull --mode link  # symlink mode
+workstation dotfiles pull --force      # overwrite with automatic backups
+workstation dotfiles pull --dry-run    # preview changes
 ```
 
 ### Sync
 
-指定方向同步，或使用交互模式：
+Sync in a chosen direction, or use interactive mode:
 
 ```bash
 workstation dotfiles sync --direction pull
 workstation dotfiles sync --direction push --force
-workstation dotfiles sync -i           # 交互式选择
+workstation dotfiles sync -i           # choose interactively
 ```
 
 ### Diff & Status
 
 ```bash
-workstation dotfiles diff              # 查看仓库与本地的差异（会遮罩本地 secrets）
-workstation dotfiles status            # 查看 chezmoi + legacy 同步状态
-workstation dotfiles doctor            # 检查 chezmoi source tree 与本地 secrets 准备情况
+workstation dotfiles diff              # show repo/local diffs with local secrets masked
+workstation dotfiles status            # show chezmoi + legacy sync status
+workstation dotfiles doctor            # check chezmoi source tree and local secret readiness
 ```
 
 ### Chezmoi
@@ -101,7 +108,7 @@ workstation dotfiles doctor            # 检查 chezmoi source tree 与本地 se
 This repo is chezmoi-compatible via [`.chezmoiroot`](./.chezmoiroot). Chezmoi reads only the [`home/`](./home) subtree, so repo files like `README.md`, `package.json`, and `packages/cli` are not treated as home files.
 
 ```bash
-workstation dotfiles chezmoi diff      # 等价于 chezmoi --source <repo> diff
+workstation dotfiles chezmoi diff      # equivalent to chezmoi --source <repo> diff
 workstation dotfiles chezmoi apply     # apply files managed under home/
 ```
 
@@ -158,6 +165,7 @@ private configuration repository:
 
 ```bash
 wst p manifest --file projects.local.yaml
+wst p manifest --file projects.local.yaml --validate
 wst p manifest https://git.example.com/<user>/<config-repo> --group common
 wst p manifest https://git.example.com/<user>/<config-repo> --group common --yes
 ```
@@ -179,19 +187,22 @@ shallower audit.
 
 ### Secrets
 
-Push 时自动将匹配 `API_KEY`、`TOKEN`、`SECRET`、`PASSWORD` 等关键词的环境变量值替换为 `{{DOTFILES_SECRET:KEY}}` 占位符，真实值保存在仓库根目录的 `.env.local`（已 gitignore）。
+During push, environment variable values whose names match keywords such as
+`API_KEY`, `TOKEN`, `SECRET`, or `PASSWORD` are replaced with
+`{{DOTFILES_SECRET:KEY}}` placeholders. Real values are stored in `.env.local` at
+the repository root, which is ignored by git.
 
-Pull 时自动从 `.env.local` 读取真实值并还原。
+During pull, real values are read from `.env.local` and restored automatically.
 
 ## Development
 
 ```bash
 pnpm run lint        # ESLint
-pnpm run typecheck   # TypeScript 类型检查
-pnpm test            # Vitest 单元测试
-pnpm run build       # 构建 CLI
-pnpm run docs:build  # 构建 VitePress 文档
-pnpm run ci          # 一键运行 lint + typecheck + test + build + docs:build
+pnpm run typecheck   # TypeScript type checks
+pnpm test            # Vitest unit tests
+pnpm run build       # build the CLI
+pnpm run docs:build  # build the VitePress docs
+pnpm run ci          # run lint + typecheck + test + build + docs:build
 ```
 
 ## Release
@@ -215,6 +226,6 @@ The release workflow validates lint, typecheck, tests, CLI build, package
 contents, and that the Git tag matches `packages/cli/package.json`. It uses OIDC,
 so no long-lived `NPM_TOKEN` is required.
 
-## Check Also
+## See Also
 
 - [antfu/dotfiles](https://github.com/antfu/dotfiles)

@@ -1,11 +1,16 @@
 node_modules
 .pnpm-store
 dist
+tmp
 docs/.vitepress/cache
 docs/.vitepress/dist
 
 .DS_Store
 *.backup.*
+
+# Alternate package-manager lockfiles; this repo commits pnpm-lock.yaml.
+package-lock.json
+yarn.lock
 
 .env.local
 projects.local.yaml

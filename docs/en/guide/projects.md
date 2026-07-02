@@ -166,6 +166,7 @@ defaults to dry-run; add `--yes` after reviewing the target paths:
 
 ```bash
 wst p manifest --file projects.local.yaml
+wst p manifest --file projects.local.yaml --validate
 wst p manifest --file projects.local.yaml --yes
 ```
 
@@ -233,9 +234,192 @@ remote repository path. Those entries automatically avoid `ghq get` and use
 explicit `git clone <url> <target>`, so ghq does not place the checkout at the
 remote URL path instead.
 
+`--validate` validates the manifest and exits without printing a clone preview.
+The CLI checks manifest structure, field types, requested groups, shorthand
+paths without `host`, clone URL/target path inference, and duplicate target
+directories. Normal dry-runs and `--yes` writes run the same validation first.
+
+## SSH Baseline
+
+SSH keys, `~/.ssh/config`, and remote hostnames are machine-local configuration,
+not public repository content. This repo documents the reusable shape only.
+
+Generate a new GitHub SSH key:
+
+```bash
+ssh-keygen -t ed25519 -C "you@example.com"
+cat ~/.ssh/id_ed25519.pub
+```
+
+Install a public key on a remote machine:
+
+```bash
+ssh-copy-id -i ~/.ssh/id_ed25519.pub user@example-host
+```
+
+Use explicit host entries for remote development machines so VS Code Remote
+SSH, terminal sessions, and scripts share the same connection name:
+
+```text
+Host devbox
+  HostName example-host
+  User user
+  PreferredAuthentications publickey
+  IdentityFile ~/.ssh/id_ed25519
+  IdentitiesOnly yes
+```
+
+If the network only allows outbound 443, add a GitHub SSH fallback on port 443.
+Do not keep stale hosts-file IP lists as the default way to reach GitHub:
+
+```text
+Host github.com
+  HostName ssh.github.com
+  Port 443
+  User git
+  IdentityFile ~/.ssh/id_ed25519_github
+  IdentitiesOnly yes
+```
+
+Verify GitHub SSH:
+
+```bash
+ssh -T git@github.com
+```
+
+On macOS, enable "Remote Login" in System Settings -> Sharing before accepting
+SSH connections to the machine. Do not commit real internal hostnames,
+usernames, or ports to the public repository.
+
+Temporary local SSH port forwarding:
+
+```bash
+ssh -L <local-port>:<remote-host>:<remote-port> <ssh-hostname>
+```
+
+A common example is forwarding a remote database port to localhost only:
+
+```bash
+ssh -L 3306:localhost:3306 user@example-host
+```
+
+Add `-fN` only when the tunnel should stay in the background. Use `-g` only when
+other machines must be allowed to connect to the forwarded local port.
+
+## Multiple Git Accounts and Source Isolation
+
+When one machine talks to GitHub, GitHub Enterprise, company GitLab, or other
+internal Git hosts, keep commit identity separate from remote authentication:
+
+- Select commit identity with Git `includeIf` rules based on checkout paths.
+- Select authentication accounts with SSH `Host` / `IdentityFile` entries or
+  HTTPS credential helpers.
+- Enable `user.useConfigOnly` globally so Git does not guess the wrong email.
+- When the same host has multiple accounts, use SSH host aliases and point
+  repository remotes at those aliases.
+
+Keep the global Git config as routing only, without a default identity:
+
+```ini
+[user]
+  useConfigOnly = true
+
+[includeIf "gitdir:~/repos/github.com/"]
+  path = ~/.gitconfig-github
+
+[includeIf "gitdir:~/repos/git.example.com/"]
+  path = ~/.gitconfig-work
+```
+
+Put per-source identities in separate files:
+
+```ini
+# ~/.gitconfig-github
+[user]
+  name = Your Name
+  email = you@example.com
+```
+
+```ini
+# ~/.gitconfig-work
+[user]
+  name = Your Name
+  email = you@company.example
+```
+
+Choose SSH authentication through host entries:
+
+```text
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519_github
+  IdentitiesOnly yes
+
+Host git.example.com-work
+  HostName git.example.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519_work
+  IdentitiesOnly yes
+```
+
+For multiple accounts on the same host, point the repository remote at the
+alias:
+
+```bash
+git remote set-url origin git@git.example.com-work:team/repo.git
+```
+
+Inspect the effective identity and authentication entry for the current
+repository:
+
+```bash
+git config --show-origin --get user.name
+git config --show-origin --get user.email
+git remote -v
+ssh -G git.example.com-work | grep identityfile
+```
+
+Avoid making `includeIf "hasconfig:remote.*.url:..."` the default way to select
+identity from remote URLs. New clones, fork + upstream setups, and multi-remote
+repositories can make those rules ambiguous; path-based identity under
+`~/repos/<host>/...` is easier to predict and audit.
+
+The matching CLI init task is `git.include-if`. List tasks and preview writes
+first:
+
+```bash
+wst init --list
+wst init git.include-if --git-profile 'id=github;host=github.com;name=Your Name;email=you@example.com'
+```
+
+Apply after reviewing the plan:
+
+```bash
+wst init git.include-if --git-profile 'id=github;host=github.com;name=Your Name;email=you@example.com' --yes
+```
+
+If the machine already has `~/.gitconfig-github` with `user.name` and
+`user.email`, the CLI can infer the default GitHub profile:
+
+```bash
+wst init git.include-if --yes
+```
+
+Use interactive mode when you want to choose init tasks and enter identities by
+hand:
+
+```bash
+wst init -i
+```
+
 ## Best Practices
 
 - Prefer `ghq` for ordinary project checkouts.
+- Switch Git commit identity by `~/repos/<host>/...` path, and switch remote
+  authentication by SSH host or credential helper.
+- Enable `user.useConfigOnly` so repositories without a matching identity cannot
+  commit.
 - Group projects by purpose, not by accident of history; groups should not
   change clone target paths.
 - Keep public examples generic.

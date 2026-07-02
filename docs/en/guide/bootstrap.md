@@ -42,6 +42,13 @@ pnpm install
 pnpm build
 ```
 
+Preview machine-local init tasks, such as Git `includeIf` identity routing:
+
+```bash
+wst init --list
+wst init git.include-if --git-profile 'id=github;host=github.com;name=Your Name;email=you@example.com'
+```
+
 Run checks before writing to `$HOME`:
 
 ```bash

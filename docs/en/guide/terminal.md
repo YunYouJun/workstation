@@ -8,6 +8,7 @@ The default terminal stack for a new macOS machine is:
 - Starship for the prompt.
 - fzf for fuzzy selection.
 - zoxide for smarter directory jumping.
+- Tmux for persistent sessions on remote machines and long-running tasks.
 - zsh-autosuggestions and zsh-syntax-highlighting for interactive editing.
 
 ## Decision
@@ -65,6 +66,7 @@ exec zsh
 | `starship` | Cross-shell prompt with Git, runtime, package, and command-duration context. |
 | `fzf` | Fuzzy finder for history, files, directories, Git branches, and ad hoc selection. |
 | `zoxide` | Smarter `cd`; learns frequently used directories and jumps with `z`. |
+| `tmux` | Terminal multiplexer for keeping remote shells, builds, deploys, or log sessions alive. |
 | `zsh-autosuggestions` | Shows command suggestions from history as you type. |
 | `zsh-syntax-highlighting` | Highlights valid commands, strings, paths, and errors in the prompt. |
 | `fnm` | Fast Node.js version manager. |
@@ -91,9 +93,78 @@ The Homebrew-installed fzf integration enables:
 - `Ctrl-T`: fuzzy insert a file or directory into the current command.
 - `Alt-C`: fuzzy jump into a directory.
 
+## Tmux Sessions
+
+Tmux is useful for remote machines, long builds, deployment debugging, and log
+sessions that should keep running after disconnecting.
+
+Create a named session:
+
+```bash
+tmux new -s <session-name>
+```
+
+Detach from the current session:
+
+```bash
+tmux detach
+```
+
+Inside Tmux, press `Ctrl-B`, then `d` to detach.
+
+Reattach to a session:
+
+```bash
+tmux attach -t <session-name>
+```
+
+Kill a named session:
+
+```bash
+tmux kill-session -t <session-name>
+```
+
+Reference: [Tmux guide](https://www.ruanyifeng.com/blog/2019/10/tmux.html).
+
+## Terminal Proxy
+
+`home/dot_zshrc` provides two temporary proxy functions:
+
+```bash
+goproxy
+disproxy
+```
+
+The default HTTP proxy is `127.0.0.1:8234`, and the default SOCKS proxy is
+`127.0.0.1:8235`. When a machine uses different ports, override the machine-local
+environment before calling `goproxy`:
+
+```bash
+TERMINAL_PROXY_HTTP_PORT=7890 TERMINAL_PROXY_SOCKS_PORT=7890 goproxy
+```
+
+In WSL, the proxy usually lives on the Windows side, so set
+`TERMINAL_PROXY_HOST` to the nameserver address from `/etc/resolv.conf`. On
+macOS, if Surge, Clash, or the system proxy already handles the traffic, leave
+the shell-level proxy off.
+
 ## p10k Fallback
 
 Powerlevel10k remains a valid fallback for machines that already use it. If `starship` is not installed and Powerlevel10k is available, `.zshrc` may still source it. New machines should install Starship first.
+
+## Migrated Environment Notes
+
+The old Yuque notes for oh-my-zsh, macOS/Linux bootstrap snippets, Tmux, and
+Terminal Proxy now collapse into this page and `home/dot_zshrc`:
+
+- New macOS machines use [Bootstrap Flow](./bootstrap.md) and
+  [Copyable Commands](./commands.md) instead of a separate ad hoc install script.
+- Node.js is installed through `fnm` by default; do not install `nvm` through
+  Homebrew.
+- Starship is the default prompt; Powerlevel10k is only a fallback for existing
+  machines.
+- `zsh-autosuggestions` and `zsh-syntax-highlighting` prefer Homebrew packages;
+  `.zshrc` still supports existing Oh My Zsh custom plugins.
 
 References:
 

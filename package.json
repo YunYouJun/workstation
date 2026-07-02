@@ -27,6 +27,8 @@
   },
   "devDependencies": {
     "@antfu/eslint-config": "^9.0.0",
+    "@iconify-json/logos": "^1.2.11",
+    "@iconify-json/simple-icons": "^1.2.88",
     "@shikijs/vitepress-twoslash": "^3.20.0",
     "@types/node": "^25.9.3",
     "@yunyoujun/docs": "^0.1.14",

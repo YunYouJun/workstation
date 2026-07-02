@@ -24,6 +24,113 @@
   --ws-c-line: rgba(226, 232, 240, 0.12);
 }
 
+.dark .software-catalog .software-console {
+  border-color: color-mix(in srgb, var(--vp-c-brand-1), var(--vp-c-divider) 44%);
+  box-shadow: none;
+}
+
+.dark .software-catalog {
+  --software-dark-border: rgba(148, 163, 184, 0.34);
+  --software-dark-border-strong: rgba(94, 234, 212, 0.56);
+  --software-dark-control: #1c2229;
+  --software-dark-control-hover: #24313a;
+  --software-dark-primary: #67e8d8;
+  --software-dark-primary-hover: #99f6e4;
+  --software-dark-primary-text: #042f2e;
+  --software-dark-text: #f8fafc;
+  --software-dark-muted: #cbd5e1;
+}
+
+.dark .software-catalog .software-console-body {
+  background:
+    linear-gradient(180deg, rgba(20, 184, 166, 0.16), transparent 66%),
+    #101418;
+}
+
+.dark .software-catalog .software-search input,
+.dark .software-catalog .software-toggle,
+.dark .software-catalog .software-tab,
+.dark .software-catalog .software-actions button,
+.dark .software-catalog .software-item-actions button,
+.dark .software-catalog .software-item-actions a {
+  border-color: var(--software-dark-border);
+  color: var(--software-dark-text);
+  background: var(--software-dark-control);
+}
+
+.dark .software-catalog .software-search input::placeholder {
+  color: #94a3b8;
+}
+
+.dark .software-catalog .software-tab:hover,
+.dark .software-catalog .software-actions button:hover:not(:disabled),
+.dark .software-catalog .software-item-actions button:hover,
+.dark .software-catalog .software-item-actions a:hover {
+  border-color: var(--software-dark-border-strong);
+  color: var(--software-dark-text);
+  background: var(--software-dark-control-hover);
+}
+
+.dark .software-catalog .software-tab.active,
+.dark .software-catalog .software-actions .software-primary-action,
+.dark .software-catalog .software-item-actions .software-download-link {
+  border-color: var(--software-dark-primary-hover);
+  color: var(--software-dark-primary-text);
+  background: var(--software-dark-primary);
+}
+
+.dark .software-catalog .software-tab.active:hover,
+.dark .software-catalog .software-actions .software-primary-action:hover:not(:disabled),
+.dark .software-catalog .software-item-actions .software-download-link:hover {
+  border-color: var(--software-dark-primary-hover);
+  color: var(--software-dark-primary-text);
+  background: var(--software-dark-primary-hover);
+}
+
+.dark .software-catalog .software-item-actions .software-official-link {
+  border-color: var(--software-dark-border);
+  color: var(--software-dark-muted);
+  background: transparent;
+}
+
+.dark .software-catalog .software-item-actions .software-official-link:hover {
+  border-color: var(--software-dark-border-strong);
+  color: var(--software-dark-text);
+  background: rgba(94, 234, 212, 0.1);
+}
+
+.dark .software-catalog .software-tab:not(.active) .software-tab-count {
+  color: var(--software-dark-muted);
+  opacity: 0.88;
+}
+
+.dark .software-catalog .software-copy-status,
+.dark .software-catalog .software-empty,
+.dark .software-catalog .software-note,
+.dark .software-catalog .software-meta,
+.dark .software-catalog .software-domain,
+.dark .software-catalog .software-name-alias,
+.dark .software-catalog .software-item-title code {
+  color: var(--software-dark-muted);
+}
+
+.dark .software-catalog .software-meta span {
+  border-color: rgba(148, 163, 184, 0.26);
+  background: #18202a;
+}
+
+.dark .software-catalog .software-item {
+  border-color: rgba(148, 163, 184, 0.24);
+  background: #15191f;
+}
+
+.dark .software-catalog .software-item:hover {
+  border-color: color-mix(in srgb, var(--software-icon-color), #94a3b8 46%);
+  box-shadow:
+    inset 3px 0 0 var(--software-icon-color),
+    0 14px 30px rgba(0, 0, 0, 0.22);
+}
+
 .VPNav {
   border-bottom: 1px solid var(--vp-c-divider);
 }

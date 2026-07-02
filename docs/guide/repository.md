@@ -39,6 +39,19 @@ wst p active --limit 20
 
 短入口使用 `wst`，避免占用更容易被理解成 WebSocket 或 workspace 的 `ws`。旧的 `dotfiles` 命令保留为兼容别名，用于现有同步工作流。
 
+## 常用 `.gitignore` 基线
+
+旧笔记里的通用模板可以合并到当前仓库的忽略策略，但本仓库使用 pnpm，并且应该提交 `pnpm-lock.yaml`，所以不要把它加入忽略列表。当前适合保留的通用项是：
+
+```text
+.DS_Store
+node_modules/
+dist/
+tmp/
+```
+
+如果本仓库里误生成了 npm 或 Yarn lockfile，可以忽略 `package-lock.json` 和 `yarn.lock`；依赖版本仍由 `pnpm-lock.yaml` 固定。
+
 ## 应该放在这里的内容
 
 - Shell、Git、编辑器、终端和 Codex 配置。

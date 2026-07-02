@@ -252,6 +252,85 @@ describe('projects CLI', () => {
     assert.match(`${result.stdout}\n${result.stderr}`, new RegExp(path.join(fixture.projectsRoot, 'git.example.com', 'example', 'service').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   })
 
+  it('validates latest project manifest format without clone preview', () => {
+    const fixture = createProjectsFixture([])
+    const manifestPath = path.join(fixture.repoRoot, 'projects.local.yaml')
+    writeFile(manifestPath, [
+      'groups:',
+      '  work:',
+      '    host: git.example.com',
+      '    repositories:',
+      '      - example/service',
+      '',
+    ].join('\n'))
+
+    const result = runCli(['projects', 'manifest', '--file', manifestPath, '--root', fixture.projectsRoot, '--validate'], fixture.repoRoot, fixture.homeRoot, fixture.env)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Project manifest is valid! 1 repositories/)
+    assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /Would clone/)
+  })
+
+  it('reports a helpful validation error when shorthand repositories are missing host', () => {
+    const fixture = createProjectsFixture([])
+    const manifestPath = path.join(fixture.repoRoot, 'projects.local.yaml')
+    writeFile(manifestPath, [
+      'groups:',
+      '  work:',
+      '    repositories:',
+      '      - example/service',
+      '',
+    ].join('\n'))
+
+    const result = runCli(['projects', 'manifest', '--file', manifestPath, '--root', fixture.projectsRoot], fixture.repoRoot, fixture.homeRoot, fixture.env)
+
+    assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Invalid project manifest/)
+    assert.match(`${result.stdout}\n${result.stderr}`, /groups\.work\.repositories\[0\]/)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Short project paths require a manifest or group host/)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Add host: git\.example\.com/)
+  })
+
+  it('reports duplicate manifest target paths before cloning', () => {
+    const fixture = createProjectsFixture([])
+    const manifestPath = path.join(fixture.repoRoot, 'projects.local.yaml')
+    writeFile(manifestPath, [
+      'groups:',
+      '  work:',
+      '    host: git.example.com',
+      '    repositories:',
+      '      - example/service',
+      '      - name: git.example.com/example/service',
+      '',
+    ].join('\n'))
+
+    const result = runCli(['projects', 'manifest', '--file', manifestPath, '--root', fixture.projectsRoot, '--yes'], fixture.repoRoot, fixture.homeRoot, fixture.env)
+
+    assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Duplicate target path/)
+    assert.match(`${result.stdout}\n${result.stderr}`, /First defined at groups\.work\.repositories\[0\]/)
+    assert.equal(fs.existsSync(path.join(fixture.projectsRoot, 'git.example.com', 'example', 'service')), false)
+  })
+
+  it('reports missing requested manifest groups with available groups', () => {
+    const fixture = createProjectsFixture([])
+    const manifestPath = path.join(fixture.repoRoot, 'projects.local.yaml')
+    writeFile(manifestPath, [
+      'groups:',
+      '  common:',
+      '    host: git.example.com',
+      '    repositories:',
+      '      - example/service',
+      '',
+    ].join('\n'))
+
+    const result = runCli(['projects', 'manifest', '--file', manifestPath, '--group', 'missing', '--validate'], fixture.repoRoot, fixture.homeRoot, fixture.env)
+
+    assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /--group missing/)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Available groups: common/)
+  })
+
   it('clones repositories from a local project manifest', () => {
     const fixture = createProjectsFixture([])
     const callsPath = path.join(fixture.tempDir, 'git-calls.json')
