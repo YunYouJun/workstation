@@ -231,6 +231,27 @@ describe('projects CLI', () => {
     assert.equal(fs.existsSync(path.join(fixture.projectsRoot, 'git.example.com', 'example', 'service')), false)
   })
 
+  it('previews host-scoped shorthand repositories from a local project manifest', () => {
+    const fixture = createProjectsFixture([])
+    const manifestPath = path.join(fixture.repoRoot, 'projects.local.yaml')
+    writeFile(manifestPath, [
+      'groups:',
+      '  work:',
+      '    host: git.example.com',
+      '    repositories:',
+      '      - example/service',
+      '',
+    ].join('\n'))
+
+    const result = runCli(['projects', 'manifest', '--file', manifestPath, '--root', fixture.projectsRoot], fixture.repoRoot, fixture.homeRoot, fixture.env)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /\[dry-run\] Would clone/)
+    assert.match(`${result.stdout}\n${result.stderr}`, /git\.example\.com\/example\/service/)
+    assert.match(`${result.stdout}\n${result.stderr}`, /git@git\.example\.com:example\/service\.git/)
+    assert.match(`${result.stdout}\n${result.stderr}`, new RegExp(path.join(fixture.projectsRoot, 'git.example.com', 'example', 'service').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  })
+
   it('clones repositories from a local project manifest', () => {
     const fixture = createProjectsFixture([])
     const callsPath = path.join(fixture.tempDir, 'git-calls.json')
@@ -261,6 +282,46 @@ describe('projects CLI', () => {
       'git@git.example.com:example/service.git',
       targetPath,
     ])
+  })
+
+  it('falls back to explicit git clone when manifest target path differs from clone URL', () => {
+    const fixture = createProjectsFixture([])
+    writeFakeGhq(fixture.binDir)
+    const gitCallsPath = path.join(fixture.tempDir, 'git-calls.json')
+    const ghqCallsPath = path.join(fixture.tempDir, 'ghq-calls.json')
+    const manifestPath = path.join(fixture.repoRoot, 'projects.local.yaml')
+    writeFile(manifestPath, [
+      'groups:',
+      '  work:',
+      `    root: ${fixture.projectsRoot}`,
+      '    host: git.example.com',
+      '    repositories:',
+      '      - name: aliases/service',
+      '        path: example/service',
+      '',
+    ].join('\n'))
+
+    const result = runCli(['projects', 'manifest', '--file', manifestPath, '--yes'], fixture.repoRoot, fixture.homeRoot, {
+      ...fixture.env,
+      FAKE_GIT_CALLS: gitCallsPath,
+      FAKE_GHQ_ROOTS: fixture.projectsRoot,
+      FAKE_GHQ_CALLS: ghqCallsPath,
+    })
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+
+    const targetPath = path.join(fixture.projectsRoot, 'aliases', 'service')
+    assert.equal(fs.existsSync(path.join(targetPath, '.fake-clone')), true)
+
+    const gitCalls = JSON.parse(fs.readFileSync(gitCallsPath, 'utf-8'))
+    assert.deepEqual(gitCalls.at(-1), [
+      'clone',
+      'git@git.example.com:example/service.git',
+      targetPath,
+    ])
+
+    const ghqCalls = JSON.parse(fs.readFileSync(ghqCallsPath, 'utf-8'))
+    assert.equal(ghqCalls.some((args: string[]) => args[0] === 'get'), false)
   })
 
   it('reads a project manifest from a private configuration repository', () => {
