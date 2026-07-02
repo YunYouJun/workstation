@@ -56,6 +56,7 @@ interface ProjectRepository {
   isArchived?: boolean
   isFork?: boolean
   root?: string
+  preferGhq?: boolean
 }
 
 interface CloneProjectsOptions {
@@ -392,6 +393,7 @@ function cloneRepository(repository: ProjectRepository, options: CloneProjectsOp
   const action = fs.existsSync(targetPath)
     ? options.update ? 'update' : 'skip'
     : 'clone'
+  const effectiveUseGhq = useGhq && repository.preferGhq !== false
 
   if (options.dryRun || !options.yes) {
     const dryPrefix = '[dry-run]'
@@ -419,7 +421,7 @@ function cloneRepository(repository: ProjectRepository, options: CloneProjectsOp
   }
 
   try {
-    if (useGhq)
+    if (effectiveUseGhq)
       cloneWithGhq(repository, options)
     else
       cloneWithGit(targetPath, repository)
@@ -781,39 +783,84 @@ function projectNameToCloneUrl(name: string, protocol: CloneProtocol): string {
     : `git@${host}:${repositoryPath}.git`
 }
 
-function parseManifestRepository(entry: unknown, groupName: string, index: number, protocol: CloneProtocol): ProjectRepository {
+function isHostQualifiedProjectName(name: string): boolean {
+  const [host, ...parts] = normalizeProjectName(name).split('/')
+  return Boolean(host?.includes('.') && parts.length > 0)
+}
+
+function resolveHostQualifiedProjectName(name: string, host: string | undefined, context: string): string {
+  const normalizedName = normalizeProjectName(name)
+
+  if (isHostQualifiedProjectName(normalizedName))
+    return normalizedName
+
+  if (host)
+    return normalizeProjectName(`${host}/${normalizedName}`)
+
+  throw new Error(`${context} must use a Git URL, a host-qualified name, or define a manifest/group host`)
+}
+
+function shouldUseGhqForTarget(name: string, cloneUrl: string): boolean {
+  const inferredName = inferProjectNameFromUrl(cloneUrl)
+  return Boolean(inferredName && normalizeProjectName(name) === inferredName)
+}
+
+function parseManifestRepository(entry: unknown, groupName: string, index: number, protocol: CloneProtocol, host?: string): ProjectRepository {
   const context = `${groupName}.repositories[${index}]`
 
   if (typeof entry === 'string') {
-    const cloneUrl = entry.trim()
-    const name = inferProjectNameFromUrl(cloneUrl)
-    if (!cloneUrl || !name)
-      throw new Error(`${context} must be a Git URL or an object with name/url`)
+    const value = entry.trim()
+    if (!value)
+      throw new Error(`${context} must be a Git URL, project path, or an object with name/url`)
+
+    const isUrl = isGitRepositorySource(value)
+    const name = isUrl
+      ? inferProjectNameFromUrl(value)
+      : resolveHostQualifiedProjectName(value, host, context)
+    if (!name)
+      throw new Error(`${context} must be a Git URL, project path, or an object with name/url`)
+
+    const cloneUrl = isUrl ? value : projectNameToCloneUrl(name, protocol)
 
     return {
       name,
       cloneUrl,
       displayName: name,
       hint: groupName === 'default' ? undefined : groupName,
+      preferGhq: shouldUseGhqForTarget(name, cloneUrl),
     }
   }
 
   if (!isRecord(entry))
     throw new Error(`${context} must be a Git URL or an object with name/url`)
 
-  const name = readString(entry, 'name')
+  const rawName = readString(entry, 'name')
   const description = readString(entry, 'description')
+  const repositoryPath = readString(entry, 'path')
+    || readString(entry, 'remotePath')
+    || readString(entry, 'repo')
+    || readString(entry, 'repository')
   const sshUrl = readString(entry, 'sshUrl') || readString(entry, 'ssh')
   const httpsUrl = readString(entry, 'httpsUrl') || readString(entry, 'https')
   const url = readString(entry, 'url')
+  const inferredUrlName = [sshUrl, httpsUrl, url]
+    .map(value => value ? inferProjectNameFromUrl(value) : undefined)
+    .find(Boolean)
+  const remoteName = repositoryPath
+    ? resolveHostQualifiedProjectName(repositoryPath, host, context)
+    : rawName
+      ? resolveHostQualifiedProjectName(rawName, host, context)
+      : inferredUrlName
   const cloneUrl = protocol === 'https'
-    ? httpsUrl || url || sshUrl || (name ? projectNameToCloneUrl(name, protocol) : undefined)
-    : sshUrl || url || httpsUrl || (name ? projectNameToCloneUrl(name, protocol) : undefined)
+    ? httpsUrl || url || sshUrl || (remoteName ? projectNameToCloneUrl(remoteName, protocol) : undefined)
+    : sshUrl || url || httpsUrl || (remoteName ? projectNameToCloneUrl(remoteName, protocol) : undefined)
 
   if (!cloneUrl)
     throw new Error(`${context} must define url, sshUrl, httpsUrl, or a host-qualified name`)
 
-  const resolvedName = name ? normalizeProjectName(name) : inferProjectNameFromUrl(cloneUrl)
+  const resolvedName = rawName
+    ? repositoryPath ? normalizeProjectName(rawName) : resolveHostQualifiedProjectName(rawName, host, context)
+    : inferProjectNameFromUrl(cloneUrl)
   if (!resolvedName)
     throw new Error(`${context} must define name because it cannot be inferred from ${cloneUrl}`)
 
@@ -822,6 +869,7 @@ function parseManifestRepository(entry: unknown, groupName: string, index: numbe
     cloneUrl,
     displayName: resolvedName,
     hint: [groupName === 'default' ? '' : groupName, description || ''].filter(Boolean).join(', ') || undefined,
+    preferGhq: shouldUseGhqForTarget(resolvedName, cloneUrl),
   }
 }
 
@@ -853,6 +901,7 @@ function getManifestGroups(manifest: unknown): Array<[string, UnknownRecord]> {
 
 function collectManifestRepositories(manifest: unknown, options: ResolvedCloneManifestProjectsOptions): ProjectRepository[] {
   const manifestRoot = isRecord(manifest) ? readString(manifest, 'root') : undefined
+  const manifestHost = isRecord(manifest) ? readString(manifest, 'host') : undefined
   const groups = getManifestGroups(manifest)
   const requestedGroups = new Set(options.groups)
   const availableGroups = new Set(groups.map(([groupName]) => groupName))
@@ -871,8 +920,9 @@ function collectManifestRepositories(manifest: unknown, options: ResolvedCloneMa
       throw new Error(`Project manifest group "${groupName}" must define repositories`)
 
     const root = options.rootOverride || readString(group, 'root') || manifestRoot || options.root
+    const host = readString(group, 'host') || manifestHost
     return group.repositories.map((entry, index) => ({
-      ...parseManifestRepository(entry, groupName, index, options.protocol),
+      ...parseManifestRepository(entry, groupName, index, options.protocol, host),
       root,
     }))
   })

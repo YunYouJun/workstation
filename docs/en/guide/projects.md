@@ -186,8 +186,11 @@ wst p manifest --repo https://git.example.com/<user>/<config-repo> --manifest wo
 
 Private configuration repositories are cached under
 `~/.cache/workstation/project-manifests/`. Projects still clone into the
-`~/repos/<host>/<group>/<repo>` layout. When the primary `ghq.root` matches the
-target root, the CLI uses `ghq get`; otherwise it falls back to `git clone`.
+`~/repos/<host>/<repo-path>` layout. `group` is only a manifest selection and
+organization mechanism; it does not become part of the target path. When the
+primary `ghq.root` matches the target root and the target path matches the path
+inferred from the clone URL, the CLI uses `ghq get`; otherwise it falls back to
+explicit `git clone`.
 
 Commit only a sample manifest to the public repo:
 
@@ -209,22 +212,32 @@ Manifest shape:
 groups:
   common:
     root: ~/repos
+    host: git.example.com
     repositories:
       - name: github.com/YunYouJun/workstation
         url: git@github.com:YunYouJun/workstation.git
-      - name: git.example.com/<group>/<repo>
-        url: git@git.example.com:<group>/<repo>.git
+      - example/private-service
+      - name: local-alias/private-service
+        path: example/private-service
 ```
 
 If an entry only has `name: git.example.com/<group>/<repo>`, the CLI infers an SSH
 clone URL by default; with `--https`, it infers an HTTPS clone URL instead. For
 entries that need both, define `sshUrl` and `httpsUrl`, and the command will
-choose based on `--https`.
+choose based on `--https`. You can also define `host` at the manifest or group
+level and then list concise repository paths such as `example/private-service`.
+
+When the local target path intentionally differs from the remote repository
+path, use object entries with `name` for the local path and `path` for the
+remote repository path. Those entries automatically avoid `ghq get` and use
+explicit `git clone <url> <target>`, so ghq does not place the checkout at the
+remote URL path instead.
 
 ## Best Practices
 
 - Prefer `ghq` for ordinary project checkouts.
-- Group projects by purpose, not by accident of history.
+- Group projects by purpose, not by accident of history; groups should not
+  change clone target paths.
 - Keep public examples generic.
 - Prefer SSH URLs for repositories you actively push to.
 - Make clone scripts default to dry-run.

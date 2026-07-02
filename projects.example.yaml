@@ -2,9 +2,15 @@
 groups:
   common:
     root: ~/repos
+    # With host set, short repository paths stay concise while target paths
+    # remain ghq-compatible: ~/repos/git.example.com/example/private-service.
+    host: git.example.com
     repositories:
       - name: github.com/YunYouJun/workstation
         url: git@github.com:YunYouJun/workstation.git
       # Keep real private repository names in projects.local.yaml or a private config repo.
-      - name: git.example.com/example/private-service
-        url: git@git.example.com:example/private-service.git
+      - example/private-service
+      # Use an object only when the local target path intentionally differs
+      # from the remote repository path; this uses explicit git clone instead of ghq.
+      - name: local-alias/private-service
+        path: example/private-service

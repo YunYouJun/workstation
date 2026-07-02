@@ -166,7 +166,7 @@ wst p manifest https://git.example.com/<user>/<config-repo> --group common --yes
 wst p manifest --repo https://git.example.com/<user>/<config-repo> --manifest workstation/projects.yaml
 ```
 
-私有配置仓库会缓存到 `~/.cache/workstation/project-manifests/`。项目本身仍会 clone 到 `~/repos/<host>/<group>/<repo>` 这种接近 `ghq` 的路径；当主 `ghq.root` 与目标 root 一致时使用 `ghq get`，否则回退到 `git clone`。
+私有配置仓库会缓存到 `~/.cache/workstation/project-manifests/`。项目本身仍会 clone 到 `~/repos/<host>/<repo-path>` 这种接近 `ghq` 的路径；`group` 只用于筛选和组织清单，不进入目标路径。当主 `ghq.root` 与目标 root 一致，且目标路径与 clone URL 推导出的路径一致时使用 `ghq get`，否则回退到显式 `git clone`。
 
 公开仓库只提交一个示例清单：
 
@@ -188,19 +188,23 @@ projects.local.yaml
 groups:
   common:
     root: ~/repos
+    host: git.example.com
     repositories:
       - name: github.com/YunYouJun/workstation
         url: git@github.com:YunYouJun/workstation.git
-      - name: git.example.com/<group>/<repo>
-        url: git@git.example.com:<group>/<repo>.git
+      - example/private-service
+      - name: local-alias/private-service
+        path: example/private-service
 ```
 
-如果只写 `name: git.example.com/<group>/<repo>`，CLI 会默认推断 SSH clone URL；加 `--https` 时会推断 HTTPS clone URL。需要同时支持两种协议时，也可以写 `sshUrl` 与 `httpsUrl`，命令会按 `--https` 选择。
+如果只写 `name: git.example.com/<group>/<repo>`，CLI 会默认推断 SSH clone URL；加 `--https` 时会推断 HTTPS clone URL。也可以在 manifest 或 group 上配置 `host`，随后用 `example/private-service` 这类短路径。需要同时支持两种协议时，也可以写 `sshUrl` 与 `httpsUrl`，命令会按 `--https` 选择。
+
+当本地目标路径需要和远端路径不同，使用对象格式的 `name` + `path`：`name` 是本地路径，`path` 是远端仓库路径。这种情况会自动避开 `ghq get`，用显式 `git clone <url> <target>`，避免 ghq 按远端 URL 放到另一个目录。
 
 ## 最佳实践
 
 - 普通项目 checkout 优先使用 `ghq`。
-- 按用途分组项目，而不是按历史偶然性分组。
+- 按用途分组项目，而不是按历史偶然性分组；分组不应改变 clone 目标路径。
 - 公开示例保持通用。
 - 对需要主动 push 的仓库优先使用 SSH URL。
 - Clone 脚本默认使用 dry-run。

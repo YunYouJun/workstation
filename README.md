@@ -163,8 +163,11 @@ wst p manifest https://git.example.com/<user>/<config-repo> --group common --yes
 ```
 
 Manifest repositories are cached under `~/.cache/workstation/project-manifests/`,
-and project checkouts use `~/repos/<host>/<group>/<repo>` paths such as
-`~/repos/git.example.com/<group>/<repo>`.
+and project checkouts use `~/repos/<host>/<repo-path>` paths such as
+`~/repos/git.example.com/example/service`. Manifest groups are only for
+selection and organization; they do not become part of the target path. If a
+manifest entry intentionally maps a remote `path` to a different local `name`,
+the CLI falls back to explicit `git clone` instead of `ghq get`.
 
 Use `workstation projects status` before switching machines to scan local
 repositories under `~/repos`. It reports uncommitted files, unpushed commits,
