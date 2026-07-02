@@ -90,11 +90,10 @@
     }
   ],
   "explorer.confirmDelete": false,
-  "javascript.updateImportsOnFileMove.enabled": "always",
+  "js/ts.updateImportsOnFileMove.enabled": "always",
   "terminal.integrated.fontFamily": "MesloLGS NF, Source Code Pro, monospace",
   "terminal.integrated.windowsEnableConpty": true,
   "explorer.confirmDragAndDrop": false,
-  "typescript.updateImportsOnFileMove.enabled": "always",
   "[typescript]": {
     "editor.defaultFormatter": "dbaeumer.vscode-eslint",
     "editor.autoClosingBrackets": "languageDefined"
