@@ -19,6 +19,7 @@ packages:
 
 overrides:
   tsup>chokidar: 4.0.1
+  vitepress>vite: 5.4.14
 
 allowBuilds:
   esbuild: true

@@ -1,7 +1,11 @@
 node_modules
+.pnpm-store
 dist
+docs/.vitepress/cache
+docs/.vitepress/dist
 
 .DS_Store
 *.backup.*
 
 .env.local
+projects.local.yaml

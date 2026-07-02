@@ -1,15 +1,21 @@
-name: Release
+name: Release CLI
 
 permissions:
   contents: write
+  id-token: write
 
 on:
   push:
     tags:
-      - v*
+      - 'v*'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  release:
+  publish:
+    name: Publish CLI
     runs-on: ubuntu-latest
 
     steps:
@@ -21,9 +27,14 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: lts/*
-          cache: pnpm
+          node-version: 24
           registry-url: https://registry.npmjs.org/
+
+      - name: Show tool versions
+        run: |
+          node --version
+          npm --version
+          pnpm --version
 
       - run: pnpm install --frozen-lockfile
 
@@ -33,12 +44,26 @@ jobs:
 
       - run: pnpm test
 
-      - run: pnpm run build
+      - run: pnpm --filter @yunyoujun/workstation build
 
-      - run: pnpm -r publish --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Check tag matches CLI package version
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          package_version="$(node -p "require('./packages/cli/package.json').version")"
+          if [ "$tag_version" != "$package_version" ]; then
+            echo "Tag version v${tag_version} does not match CLI package version ${package_version}"
+            exit 1
+          fi
 
-      - run: npx changelogithub
+      - name: Check package contents
+        working-directory: packages/cli
+        run: npm pack --dry-run
+
+      - name: Publish CLI to npm
+        working-directory: packages/cli
+        run: npm publish --access public
+
+      - name: Create GitHub release
+        run: pnpm exec changelogithub
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

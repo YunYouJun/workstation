@@ -1,0 +1,4 @@
+interface:
+  display_name: "Workstation Projects"
+  short_description: "Guide Codex through safe project checkout workflows"
+  default_prompt: "Use $workstation-projects to clone or inspect active workstation repositories safely."

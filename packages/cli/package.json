@@ -1,23 +1,29 @@
 {
-  "name": "@yunyoujun/dotfiles",
+  "name": "@yunyoujun/workstation",
   "type": "module",
   "version": "0.1.0",
-  "description": "CLI tool for syncing dotfiles",
+  "description": "CLI tool for workstation automation and dotfiles sync",
   "author": "YunYouJun <me@yunyoujun.cn>",
   "license": "MIT",
-  "homepage": "https://github.com/YunYouJun/dotfiles",
+  "homepage": "https://github.com/YunYouJun/workstation",
   "repository": {
     "type": "git",
-    "url": "https://github.com/YunYouJun/dotfiles",
+    "url": "https://github.com/YunYouJun/workstation",
     "directory": "packages/cli"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "keywords": [
+    "workstation",
     "dotfiles",
     "cli",
     "sync"
   ],
   "bin": {
-    "dotfiles": "./dist/cli.js"
+    "dotfiles": "./dist/cli.js",
+    "workstation": "./dist/cli.js",
+    "wst": "./dist/cli.js"
   },
   "files": [
     "dist"
@@ -33,7 +39,8 @@
   "dependencies": {
     "@clack/prompts": "^1.5.1",
     "cac": "^7.0.0",
-    "consola": "^3.4.2"
+    "consola": "^3.4.2",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",

@@ -34,6 +34,12 @@ export const dotfiles: DotfileEntry[] = [
     appendSyncMeta: false,
   },
   {
+    source: path.join('home', 'dot_config', 'starship.toml'),
+    target: path.join('.config', 'starship.toml'),
+    description: 'Starship Prompt Config',
+    appendSyncMeta: false,
+  },
+  {
     source: path.join('home', vscodeSettingsRelativePath),
     target: vscodeSettingsRelativePath,
     description: 'VSCode Global Settings (macOS)',

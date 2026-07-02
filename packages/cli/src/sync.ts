@@ -51,7 +51,7 @@ function getSyncMeta(): string {
   }
   catch {}
   const hashPart = hash ? ` (${hash})` : ''
-  return `# synced by @yunyoujun/dotfiles at ${time}${hashPart}\n`
+  return `# synced by @yunyoujun/workstation at ${time}${hashPart}\n`
 }
 
 function isSymlink(targetPath: string): boolean {

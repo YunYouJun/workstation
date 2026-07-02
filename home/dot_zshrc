@@ -2,90 +2,158 @@
 # oh-my-zsh template: https://github.com/ohmyzsh/ohmyzsh/blob/master/templates/zshrc.zsh-template
 # --------
 
-# Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
-# Initialization code that may require console input (password prompts, [y/n]
-# confirmations, etc.) must go above this block; everything else may go below.
-if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
-  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
+typeset -U path PATH
+
+_path_prepend() {
+  [[ -d "$1" ]] && path=("$1" "${path[@]}")
+}
+
+_path_append() {
+  [[ -d "$1" ]] && path+=("$1")
+}
+
+_is_interactive_tty() {
+  [[ -o interactive && -t 0 && -t 1 ]]
+}
+
+# Homebrew initialization
+if [[ -x /opt/homebrew/bin/brew ]]; then
+  eval "$(/opt/homebrew/bin/brew shellenv)"
+elif [[ -x /usr/local/bin/brew ]]; then
+  eval "$(/usr/local/bin/brew shellenv)"
 fi
 
-# Homebrew initialization (Apple Silicon)
-eval "$(/opt/homebrew/bin/brew shellenv)"
+# ---- Oh My Zsh ----
 
-# Path to your oh-my-zsh installation.
-export ZSH="$HOME/.oh-my-zsh"
+export ZSH="${ZSH:-$HOME/.oh-my-zsh}"
+export ZSH_CUSTOM="${ZSH_CUSTOM:-$ZSH/custom}"
 
-# Theme
-# See https://github.com/ohmyzsh/ohmyzsh/wiki/Themes
-# https://github.com/romkatv/powerlevel10k
-# If you not use iterm2/termux, you need install font. https://github.com/romkatv/powerlevel10k#manual-font-installation
-# ZSH_THEME="powerlevel10k/powerlevel10k"
+# Updates: auto-check every two weeks.
+zstyle ':omz:update' mode auto
+zstyle ':omz:update' frequency 14
 
-# install zsh plugins
-# git clone https://github.com/lukechilds/zsh-nvm ~/.oh-my-zsh/custom/plugins/zsh-nvm
+HIST_STAMPS="yyyy-mm-dd"
+COMPLETION_WAITING_DOTS="true"
+
+# Prompt
+# Starship is the default prompt for new machines. Powerlevel10k remains a
+# fallback for machines that already have it installed.
+ZSH_THEME=""
+if ! command -v starship >/dev/null 2>&1; then
+  if [[ -d "$ZSH_CUSTOM/themes/powerlevel10k" ]]; then
+    ZSH_THEME="powerlevel10k/powerlevel10k"
+  else
+    ZSH_THEME="robbyrussell"
+  fi
+fi
+
+# Optional custom plugins:
 # git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions
 # git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting
 
 # autojump https://github.com/wting/autojump
 # macos: brew install autojump
 
-plugins=(
-	autojump
-	git
-  node
-  dotenv
-  macos
-  zsh-autosuggestions
-  zsh-syntax-highlighting
-  docker
-  docker-compose
-)
+plugins=()
 
-source $ZSH/oh-my-zsh.sh
+for plugin in git node dotenv macos docker docker-compose; do
+  [[ -d "$ZSH/plugins/$plugin" ]] && plugins+=("$plugin")
+done
+
+if [[ -d "$ZSH/plugins/autojump" ]] && { command -v autojump >/dev/null 2>&1 || [[ -r "${HOMEBREW_PREFIX:-/opt/homebrew}/etc/profile.d/autojump.sh" ]]; }; then
+  plugins+=(autojump)
+fi
+
+for plugin in zsh-autosuggestions zsh-syntax-highlighting; do
+  [[ -d "$ZSH_CUSTOM/plugins/$plugin" ]] && plugins+=("$plugin")
+done
+unset plugin
+
+if [[ -r "$ZSH/oh-my-zsh.sh" ]]; then
+  source "$ZSH/oh-my-zsh.sh"
+fi
+
+# Homebrew zsh plugins, used when they are not installed as Oh My Zsh custom plugins.
+if [[ -n "${HOMEBREW_PREFIX:-}" ]]; then
+  if [[ ! -d "$ZSH_CUSTOM/plugins/zsh-autosuggestions" && -r "$HOMEBREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh" ]]; then
+    source "$HOMEBREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
+  fi
+fi
 
 # ---- User configuration ----
 
-export VISUAL=buddycn
+export VISUAL="${VISUAL:-buddycn}"
+export EDITOR="${EDITOR:-$VISUAL}"
 
 # fnm (fast node manager)
-eval "$(fnm env --use-on-cd)"
-
-# powerlevel10k theme (installed via homebrew)
-source /opt/homebrew/share/powerlevel10k/powerlevel10k.zsh-theme
-# To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
-[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+if command -v fnm >/dev/null 2>&1; then
+  eval "$(fnm env --use-on-cd --shell zsh)"
+fi
 
 # pnpm
-export PNPM_HOME="$HOME/Library/pnpm"
-case ":$PATH:" in
-  *":$PNPM_HOME:"*) ;;
-  *) export PATH="$PNPM_HOME:$PATH" ;;
-esac
+export PNPM_HOME="${PNPM_HOME:-$HOME/Library/pnpm}"
+_path_prepend "$PNPM_HOME"
 
 # bun
-[ -s "/Users/yunyou/.bun/_bun" ] && source "/Users/yunyou/.bun/_bun"
-export BUN_INSTALL="$HOME/.bun"
-export PATH="$BUN_INSTALL/bin:$PATH"
+export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
+[[ -s "$BUN_INSTALL/_bun" ]] && source "$BUN_INSTALL/_bun"
+_path_prepend "$BUN_INSTALL/bin"
 
 # ruby
-export PATH="/opt/homebrew/Cellar/ruby/3.3.5/bin:$PATH"
+if [[ -n "${HOMEBREW_PREFIX:-}" ]]; then
+  _path_prepend "$HOMEBREW_PREFIX/opt/ruby/bin"
+fi
 
 # android
-export ANDROID_HOME="$HOME/Library/Android/sdk"
-export PATH="$PATH:$ANDROID_HOME/platform-tools"
-export JAVA_HOME="/opt/homebrew/opt/openjdk@21"
-export NDK_HOME="$ANDROID_HOME/ndk/$(ls -1 $ANDROID_HOME/ndk)"
+export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+_path_append "$ANDROID_HOME/platform-tools"
+
+if [[ -n "${HOMEBREW_PREFIX:-}" && -d "$HOMEBREW_PREFIX/opt/openjdk@21" ]]; then
+  export JAVA_HOME="${JAVA_HOME:-$HOMEBREW_PREFIX/opt/openjdk@21}"
+fi
+
+if [[ -d "$ANDROID_HOME/ndk" ]]; then
+  ndk_versions=("$ANDROID_HOME"/ndk/*(N/))
+  if (( ${#ndk_versions[@]} > 0 )); then
+    export NDK_HOME="${NDK_HOME:-${ndk_versions[-1]}}"
+  fi
+  unset ndk_versions
+fi
 
 # envman
-[ -s "$HOME/.config/envman/load.sh" ] && source "$HOME/.config/envman/load.sh"
+[[ -s "$HOME/.config/envman/load.sh" ]] && source "$HOME/.config/envman/load.sh"
 
 # Additional PATH
-export PATH="$HOME/.codebuddy/bin:$PATH"        # CodeBuddy CN
-export PATH="$HOME/.local/bin:$PATH"             # CloudBase CLI
-export PATH="$HOME/background_agent_cli/bin:$PATH" # background_agent_cli
+_path_prepend "$HOME/.codebuddy/bin"            # CodeBuddy CN
+_path_prepend "$HOME/.local/bin"                # CloudBase CLI
+_path_prepend "$HOME/background_agent_cli/bin"  # background_agent_cli
 
 # simple-git-hooks: ensure pnpm is in PATH for GUI git clients
 export SIMPLE_GIT_HOOKS_RC="$HOME/.simple-git-hooks-rc"
+
+# fzf
+if _is_interactive_tty && command -v fzf >/dev/null 2>&1; then
+  source <(fzf --zsh)
+fi
+
+# zoxide
+if [[ -o interactive ]] && command -v zoxide >/dev/null 2>&1; then
+  eval "$(zoxide init zsh)"
+fi
+
+# prompt
+if [[ -o interactive && "${TERM:-}" != "dumb" ]] && command -v starship >/dev/null 2>&1; then
+  eval "$(starship init zsh)"
+else
+  # powerlevel10k fallback (installed via Homebrew)
+  if [[ -z "$ZSH_THEME" ]]; then
+    p10k_theme="${HOMEBREW_PREFIX:-/opt/homebrew}/share/powerlevel10k/powerlevel10k.zsh-theme"
+    [[ -r "$p10k_theme" ]] && source "$p10k_theme"
+    unset p10k_theme
+  fi
+  # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
+  [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+fi
 
 # ---- Aliases ----
 
@@ -101,7 +169,7 @@ alias tc="nr typecheck"
 # git
 alias gcgithub="git config user.name 'YunYouJun' && git config user.email 'me@yunyoujun.cn'"
 # git fetch & 工蜂
-unalias gf
+(( $+aliases[gf] )) && unalias gf
 
 # tencent npm mirror
 alias tnpm="pnpm i --registry=http://mirrors.tencent.com/npm/"
@@ -118,4 +186,16 @@ alias python2="$HOME/.pyenv/versions/2.7.18/bin/python2"
 
 # ---- Secrets (managed by dotfiles sync) ----
 
-export OA_PAGES_API_KEY="{{DOTFILES_SECRET:OA_PAGES_API_KEY}}"
+_oa_pages_api_key="{{DOTFILES_SECRET:OA_PAGES_API_KEY}}"
+if [[ "$_oa_pages_api_key" != "{{DOTFILES_SECRET:""OA_PAGES_API_KEY}}" ]]; then
+  export OA_PAGES_API_KEY="$_oa_pages_api_key"
+fi
+unset _oa_pages_api_key
+
+if [[ -n "${HOMEBREW_PREFIX:-}" ]]; then
+  if [[ ! -d "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" && -r "$HOMEBREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]]; then
+    source "$HOMEBREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
+  fi
+fi
+
+unfunction _path_prepend _path_append _is_interactive_tty

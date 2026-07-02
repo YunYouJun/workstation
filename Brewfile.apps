@@ -1,0 +1,29 @@
+# Terminal and editor apps
+cask "iterm2"
+cask "visual-studio-code"
+cask "cursor"
+
+# AI coding
+cask "codex-app"
+cask "codex"
+
+# Launcher and browsers
+cask "raycast"
+cask "google-chrome"
+cask "firefox@developer-edition"
+
+# Container runtime
+cask "orbstack"
+
+# Communication and media
+cask "neteasemusic"
+cask "qq"
+cask "wechat"
+cask "feishu"
+
+# Productivity apps
+brew "mas"
+mas "Microsoft To Do", id: 1274495053
+cask "1password"
+cask "obsidian"
+cask "notion"

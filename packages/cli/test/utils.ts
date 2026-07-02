@@ -38,6 +38,14 @@ export function repoZshrcPath(root: string) {
   return path.join(root, 'home', 'dot_zshrc')
 }
 
+export function starshipPath(root: string) {
+  return path.join(root, '.config', 'starship.toml')
+}
+
+export function repoStarshipPath(root: string) {
+  return path.join(root, 'home', 'dot_config', 'starship.toml')
+}
+
 export function vscodeSettingsPath(root: string) {
   return path.join(root, 'Library', 'Application Support', 'Code', 'User', 'settings.json')
 }

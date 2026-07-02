@@ -1,0 +1,10 @@
+# Copy to projects.local.yaml for private or machine-specific repositories.
+groups:
+  common:
+    root: ~/repos
+    repositories:
+      - name: github.com/YunYouJun/workstation
+        url: git@github.com:YunYouJun/workstation.git
+      # Keep real private repository names in projects.local.yaml or a private config repo.
+      - name: git.example.com/example/private-service
+        url: git@git.example.com:example/private-service.git
