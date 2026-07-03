@@ -46,3 +46,68 @@ workstation dotfiles chezmoi apply
 - macOS-only 文件可以通过 `home/.chezmoiignore.tmpl` 在其他平台排除。
 
 这一层应专注于能直接映射到 `$HOME` 的文件。更高层的设置任务应放在脚本或文档中。
+
+## 私有 dotfiles Overlay
+
+`workstation` 可以支持读取私有 dotfiles 仓库，但推荐把它设计成 overlay manifest，而不是把私有仓库当成第二个 `home/` 树直接 apply。
+
+推荐边界：
+
+- `workstation` 仍是公开、可复现、可安装的主配置源。
+- 私有 dotfiles 只提供机器可读 manifest、内部 server 名称、1Password `op://...` 引用和本机 inventory。
+- 默认只做 `dry-run` 和状态检查；写入 `$HOME` 前必须显式确认。
+- 只读取 allowlist 中的相对路径，不递归扫描整个私有仓库。
+- 写入前必须备份目标文件，并且只写 managed block 或本地 ignored 输出文件。
+- 永远不要从私有仓库直接覆盖完整 `~/.codex/config.toml`、`~/.codex/skills`、`.env`、`auth.json` 或包含 resolved token 的文件。
+
+私有仓库可以暴露一个 `config/sync-manifest.json`：
+
+```json
+{
+  "version": 1,
+  "workstationOverlay": {
+    "contractVersion": 1,
+    "defaultMode": "dry-run",
+    "secretSource": "1Password",
+    "allowedOperations": [
+      "inventory",
+      "op-inject-template",
+      "managed-block-fragment"
+    ],
+    "neverApply": [
+      "$HOME/.codex/config.toml",
+      "$HOME/.codex/skills",
+      "$HOME/.env",
+      "$HOME/.codex/auth.json"
+    ]
+  },
+  "mcp": {
+    "templates": [
+      {
+        "id": "json-op-template",
+        "path": "mcp/mcp.op.example.json",
+        "usage": "op inject --in-file mcp/mcp.op.example.json --out-file mcp/mcp.local.json"
+      }
+    ],
+    "sources": [
+      {
+        "id": "codex-user",
+        "path": "$HOME/.codex/config.toml",
+        "format": "toml-codex",
+        "syncMode": "inventory-only",
+        "managedBy": "workstation codex-mcp.toml managed block plus local unmanaged entries"
+      }
+    ]
+  }
+}
+```
+
+如果后续给 CLI 增加 overlay 支持，命令形态应保持显式：
+
+```bash
+workstation dotfiles overlay status --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
+workstation dotfiles overlay apply --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --dry-run
+workstation dotfiles overlay apply --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
+```
+
+`apply` 只能处理 manifest 声明的模板、片段和本地 ignored 输出，不能把私有仓库里的任意文件复制到 `$HOME`。
