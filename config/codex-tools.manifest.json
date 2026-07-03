@@ -1,0 +1,35 @@
+{
+  "$schema": "../schemas/codex-tools-manifest.schema.json",
+  "version": 1,
+  "visibility": "public",
+  "skills": {
+    "install": [
+      {
+        "id": "ui-ux-pro-max",
+        "targetName": "ui-ux-pro-max",
+        "description": "Broad UI/UX design intelligence for web, mobile, dashboards, landing pages, and component review.",
+        "visibility": "public",
+        "syncMode": "install",
+        "source": {
+          "type": "github",
+          "repo": "nextlevelbuilder/ui-ux-pro-max-skill",
+          "path": ".claude/skills/ui-ux-pro-max",
+          "ref": "main"
+        }
+      }
+    ]
+  },
+  "mcp": {
+    "fragments": [
+      {
+        "id": "public-codex",
+        "path": "codex-mcp.toml",
+        "format": "toml-codex",
+        "operation": "managed-block-fragment",
+        "visibility": "public",
+        "syncMode": "install",
+        "contentPolicy": "no-secrets-use-env-or-op-run"
+      }
+    ]
+  }
+}

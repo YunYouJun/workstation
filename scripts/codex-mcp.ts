@@ -2,13 +2,15 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { copyFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 
 interface Options {
   dest: string
   dryRun: boolean
-  source: string
+  manifest: string
+  privateManifest?: string
+  source?: string
 }
 
 type Command = 'check' | 'install' | 'list' | 'status'
@@ -24,6 +26,27 @@ interface StrippedConfig {
   removed: boolean
 }
 
+interface SourceFragment {
+  content: string
+  source: string
+}
+
+interface PrivateManifest {
+  mcp?: {
+    fragments?: PrivateMcpFragment[]
+  }
+  workstationOverlay?: {
+    allowedReadPaths?: string[]
+  }
+}
+
+interface PrivateMcpFragment {
+  format?: string
+  id: string
+  operation?: string
+  path: string
+}
+
 const helpFlags = new Set(['--help', '-h'])
 const managedStart = '# >>> workstation managed mcp'
 const managedEnd = '# <<< workstation managed mcp'
@@ -37,23 +60,43 @@ function usage(exitCode = 0): never {
   pnpm mcp:list
   pnpm mcp:status
   pnpm mcp:check
-  pnpm mcp:install [--dry-run] [--source <path>] [--dest <path>]
+  pnpm mcp:install [--dry-run] [--manifest <path>] [--source <path>] [--dest <path>] [--private-manifest <path>]
 
 Examples:
   pnpm mcp:list
   pnpm mcp:status
-  pnpm mcp:install --dry-run`)
+  pnpm mcp:install --dry-run
+  pnpm mcp:install --private-manifest ~/repos/private/dotfiles/config/sync-manifest.json`)
   process.exit(exitCode)
 }
 
-function defaultSourcePath(): string {
-  return resolve(import.meta.dirname, '..', 'codex-mcp.toml')
+function defaultManifestPath(): string {
+  return resolve(import.meta.dirname, '..', 'config', 'codex-tools.manifest.json')
 }
 
 function defaultConfigPath(): string {
   return process.env.CODEX_HOME
     ? resolve(process.env.CODEX_HOME, 'config.toml')
     : resolve(homedir(), '.codex', 'config.toml')
+}
+
+function defaultPrivateManifestPath(): string | undefined {
+  return process.env.WORKSTATION_PRIVATE_MANIFEST
+    ? resolve(expandHome(process.env.WORKSTATION_PRIVATE_MANIFEST))
+    : undefined
+}
+
+function expandHome(value: string): string {
+  if (value === '~')
+    return homedir()
+
+  if (value.startsWith('~/'))
+    return join(homedir(), value.slice(2))
+
+  if (value.startsWith('$HOME/'))
+    return join(homedir(), value.slice(6))
+
+  return value
 }
 
 function parseCommand(value: string | undefined): Command {
@@ -71,7 +114,8 @@ function parseOptions(args: string[]): Options {
   const options: Options = {
     dest: defaultConfigPath(),
     dryRun: false,
-    source: defaultSourcePath(),
+    manifest: defaultManifestPath(),
+    privateManifest: defaultPrivateManifestPath(),
   }
 
   for (let index = 0; index < args.length; index += 1) {
@@ -80,7 +124,10 @@ function parseOptions(args: string[]): Options {
     if (helpFlags.has(arg))
       usage()
 
-    if (arg === '--dry-run') {
+    if (arg === '--') {
+      continue
+    }
+    else if (arg === '--dry-run') {
       options.dryRun = true
     }
     else if (arg === '--source') {
@@ -92,6 +139,15 @@ function parseOptions(args: string[]): Options {
       options.source = resolve(value)
       index += 1
     }
+    else if (arg === '--manifest') {
+      const value = args[index + 1]
+      if (!value) {
+        console.error('--manifest requires a path')
+        usage(1)
+      }
+      options.manifest = resolve(expandHome(value))
+      index += 1
+    }
     else if (arg === '--dest') {
       const value = args[index + 1]
       if (!value) {
@@ -99,6 +155,15 @@ function parseOptions(args: string[]): Options {
         usage(1)
       }
       options.dest = resolve(value)
+      index += 1
+    }
+    else if (arg === '--private-manifest') {
+      const value = args[index + 1]
+      if (!value) {
+        console.error('--private-manifest requires a path')
+        usage(1)
+      }
+      options.privateManifest = resolve(expandHome(value))
       index += 1
     }
     else {
@@ -199,13 +264,112 @@ function extractTopLevelKeys(fragment: string): string[] {
   return keys
 }
 
-function readSourceFragment(source: string): string {
+function readFragmentContent(source: string): string {
   if (!existsSync(source))
     throw new Error(`MCP source file not found: ${source}`)
 
   const fragment = normalizeContent(readFileSync(source, 'utf-8'))
   validateMcpFragment(fragment)
   return fragment
+}
+
+function repoRootFromManifest(manifestPath: string): string {
+  const parent = dirname(manifestPath)
+  return parent.endsWith('/config') ? dirname(parent) : parent
+}
+
+function isSafeRelativePath(path: string): boolean {
+  return Boolean(path)
+    && !isAbsolute(path)
+    && !path.split('/').includes('..')
+}
+
+function globToRegExp(pattern: string): RegExp {
+  const escaped = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '[^/]*')
+
+  return new RegExp(`^${escaped}$`)
+}
+
+function matchesAny(path: string, patterns: string[]): boolean {
+  return patterns.some(pattern => globToRegExp(pattern).test(path))
+}
+
+function assertAllowedRead(path: string, manifest: PrivateManifest): void {
+  if (!matchesAny(path, manifest.workstationOverlay?.allowedReadPaths || []))
+    throw new Error(`Path is not allowlisted for private overlay reads: ${path}`)
+}
+
+function resolveRepoPath(repoRoot: string, relativePath: string): string {
+  if (!isSafeRelativePath(relativePath))
+    throw new Error(`Unsafe relative path in private overlay manifest: ${relativePath}`)
+
+  const absolutePath = resolve(repoRoot, relativePath)
+  const rel = relative(repoRoot, absolutePath)
+  if (rel.startsWith('..') || isAbsolute(rel))
+    throw new Error(`Path escapes private overlay repository: ${relativePath}`)
+
+  return absolutePath
+}
+
+function readManifest(path: string): PrivateManifest {
+  if (!existsSync(path))
+    throw new Error(`Codex tools manifest not found: ${path}`)
+
+  return JSON.parse(readFileSync(path, 'utf-8')) as PrivateManifest
+}
+
+function manifestSourceFragments(manifestPath: string | undefined, requireAllowlist: boolean): SourceFragment[] {
+  if (!manifestPath)
+    return []
+
+  const manifest = readManifest(manifestPath)
+  const repoRoot = repoRootFromManifest(manifestPath)
+  const fragments = manifest.mcp?.fragments || []
+
+  return fragments
+    .filter(fragment => !fragment.operation || fragment.operation === 'managed-block-fragment' || fragment.operation === 'codex-mcp-fragment')
+    .map((fragment) => {
+      if (fragment.format && fragment.format !== 'toml-codex')
+        throw new Error(`Unsupported MCP fragment format for ${fragment.id}: ${fragment.format}`)
+
+      if (requireAllowlist)
+        assertAllowedRead(fragment.path, manifest)
+
+      const source = resolveRepoPath(repoRoot, fragment.path)
+
+      return {
+        content: readFragmentContent(source),
+        source: `${manifestPath}:${fragment.path}`,
+      }
+    })
+}
+
+function readSourceFragments(options: Options): SourceFragment[] {
+  if (options.source) {
+    return [
+      {
+        content: readFragmentContent(options.source),
+        source: options.source,
+      },
+      ...manifestSourceFragments(options.privateManifest, true),
+    ]
+  }
+
+  return [
+    ...manifestSourceFragments(options.manifest, false),
+    ...manifestSourceFragments(options.privateManifest, true),
+  ]
+}
+
+function combineFragments(fragments: SourceFragment[]): string {
+  return normalizeContent(
+    fragments
+      .map(fragment => fragment.content.trim())
+      .filter(Boolean)
+      .join('\n\n'),
+  )
 }
 
 function readConfig(dest: string): string {
@@ -295,11 +459,17 @@ function backupPath(dest: string): string {
   return `${dest}.backup.${Date.now()}`
 }
 
-function printList(source: string, fragment: string): void {
+function sourceLabel(fragments: SourceFragment[]): string {
+  return fragments.map(fragment => fragment.source).join(', ')
+}
+
+function printList(fragments: SourceFragment[], fragment: string): void {
   const topLevelKeys = extractTopLevelKeys(fragment)
   const sections = extractSections(fragment)
 
-  console.log(`Source: ${source}`)
+  console.log('Sources:')
+  for (const source of fragments)
+    console.log(`  - ${source.source}`)
 
   if (topLevelKeys.length === 0 && sections.length === 0) {
     console.log('No managed MCP config entries.')
@@ -375,16 +545,18 @@ async function main(): Promise<void> {
     ? process.argv.slice(2)
     : process.argv.slice(3)
   const options = parseOptions(optionArgs)
-  const fragment = readSourceFragment(options.source)
+  const fragments = readSourceFragments(options)
+  const fragment = combineFragments(fragments)
+  const source = sourceLabel(fragments)
 
   if (command === 'list') {
-    printList(options.source, fragment)
+    printList(fragments, fragment)
   }
   else if (command === 'install') {
-    await install(options.source, options.dest, fragment, options.dryRun)
+    await install(source, options.dest, fragment, options.dryRun)
   }
   else {
-    printStatus(options.source, options.dest, fragment, command === 'check')
+    printStatus(source, options.dest, fragment, command === 'check')
   }
 }
 

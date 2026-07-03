@@ -58,13 +58,15 @@ Recommended boundary:
 
 - `workstation` remains the public, reproducible, installable source of truth.
 - Private dotfiles only provide a machine-readable manifest, internal server
-  names, 1Password `op://...` references, and local inventory.
+  names, private MCP fragments, explicit installable skills, 1Password
+  `op://...` references, and local inventory.
 - Default to `dry-run` and status checks; writing into `$HOME` must require an
   explicit confirmation.
 - Read only allowlisted relative paths, never recursively scan the whole
   private repository.
-- Back up targets before writing, and write only managed blocks or local ignored
-  output files.
+- Back up targets before writing, and write only managed blocks, local ignored
+  output files, or explicitly declared `$CODEX_HOME/skills/<name>` skill
+  directories.
 - Never copy over the full `~/.codex/config.toml`, `~/.codex/skills`, `.env`,
   `auth.json`, or files that contain resolved tokens.
 
@@ -72,7 +74,9 @@ A private repository can expose `config/sync-manifest.json`:
 
 ```json
 {
+  "$schema": "https://raw.githubusercontent.com/YunYouJun/workstation/main/schemas/codex-tools-manifest.schema.json",
   "version": 1,
+  "visibility": "private",
   "workstationOverlay": {
     "contractVersion": 1,
     "defaultMode": "dry-run",
@@ -80,7 +84,15 @@ A private repository can expose `config/sync-manifest.json`:
     "allowedOperations": [
       "inventory",
       "op-inject-template",
+      "codex-skill-install",
+      "codex-mcp-fragment",
       "managed-block-fragment"
+    ],
+    "allowedReadPaths": [
+      "config/sync-manifest.json",
+      "mcp/*.op.example.json",
+      "mcp/codex-mcp.overlay.toml",
+      "skills/install/*"
     ],
     "neverApply": [
       "$HOME/.codex/config.toml",
@@ -89,7 +101,28 @@ A private repository can expose `config/sync-manifest.json`:
       "$HOME/.codex/auth.json"
     ]
   },
+  "skills": {
+    "install": [
+      {
+        "id": "internal-example",
+        "targetName": "internal-example",
+        "description": "Private internal workflow.",
+        "source": {
+          "type": "local",
+          "path": "skills/install/internal-example"
+        }
+      }
+    ]
+  },
   "mcp": {
+    "fragments": [
+      {
+        "id": "private-codex",
+        "path": "mcp/codex-mcp.overlay.toml",
+        "format": "toml-codex",
+        "operation": "managed-block-fragment"
+      }
+    ],
     "templates": [
       {
         "id": "json-op-template",
@@ -124,9 +157,10 @@ pnpm private:apply -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-mani
 pnpm private:apply -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
 ```
 
-`apply` may only process templates, fragments, and local ignored outputs
-declared in the manifest. It must not copy arbitrary files from the private
-repository into `$HOME`. Without `--yes`, `apply` still runs as a dry-run.
+`apply` may only process templates, MCP fragments, explicit installable skills,
+and local ignored outputs declared in the manifest. It must not copy arbitrary
+files from the private repository into `$HOME`. Without `--yes`, `apply` still
+runs as a dry-run.
 
 `private:connect` asks in a TTY whether to connect a private Git dotfiles
 repository and lets the user paste the Git URL. Non-interactive environments

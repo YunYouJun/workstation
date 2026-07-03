@@ -1,0 +1,406 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/YunYouJun/workstation/main/schemas/codex-tools-manifest.schema.json",
+  "title": "Workstation Codex Tools Manifest",
+  "type": "object",
+  "required": ["version"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "const": 1
+    },
+    "visibility": {
+      "$ref": "#/$defs/visibility"
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "secretSource": {
+          "type": "string"
+        },
+        "opAccount": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "defaultName": {
+              "type": "string"
+            },
+            "defaultUserId": {
+              "type": "string"
+            },
+            "accountEnvPath": {
+              "type": "string"
+            },
+            "vault": {
+              "type": "string"
+            },
+            "purpose": {
+              "type": "string"
+            }
+          }
+        },
+        "plaintextSecretsAllowed": {
+          "type": "boolean"
+        },
+        "defaultSyncMode": {
+          "$ref": "#/$defs/syncMode"
+        },
+        "neverSync": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "relatedRepositories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "path", "role"],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "workstationOverlay": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "contractVersion": {
+          "const": 1
+        },
+        "defaultMode": {
+          "enum": ["dry-run"]
+        },
+        "secretSource": {
+          "type": "string"
+        },
+        "allowedOperations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/operation"
+          }
+        },
+        "allowedReadPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "localIgnoredOutputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "neverApply": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "skills": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "roots": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/skillRoot"
+          }
+        },
+        "install": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/skillInstall"
+          }
+        },
+        "exportDestinations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path"],
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "gitIgnored": {
+                "type": "boolean"
+              },
+              "policy": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "mcp": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fragments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/mcpFragment"
+          }
+        },
+        "templates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/mcpTemplate"
+          }
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/mcpSource"
+          }
+        },
+        "ignoredSources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "reason"],
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "localOutputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path"],
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "gitIgnored": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "visibility": {
+      "enum": ["public", "private", "internal", "system"]
+    },
+    "syncMode": {
+      "enum": ["install", "inventory-only", "project-owned"]
+    },
+    "operation": {
+      "enum": [
+        "inventory",
+        "op-account-select",
+        "op-run-env",
+        "op-run-wrapper",
+        "op-typescript-cli",
+        "op-inject-template",
+        "codex-skill-install",
+        "codex-mcp-fragment",
+        "managed-block-fragment"
+      ]
+    },
+    "skillRoot": {
+      "type": "object",
+      "required": ["id", "label", "path", "kind", "syncMode", "contentPolicy"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "syncMode": {
+          "$ref": "#/$defs/syncMode"
+        },
+        "managedBy": {
+          "type": "string"
+        },
+        "contentPolicy": {
+          "type": "string"
+        }
+      }
+    },
+    "skillInstall": {
+      "type": "object",
+      "required": ["id", "description", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "targetName": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "visibility": {
+          "$ref": "#/$defs/visibility"
+        },
+        "syncMode": {
+          "$ref": "#/$defs/syncMode"
+        },
+        "source": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["type", "repo", "path"],
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "github"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "ref": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": ["type", "path"],
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "local"
+                },
+                "path": {
+                  "type": "string"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "mcpFragment": {
+      "type": "object",
+      "required": ["id", "path", "format", "operation"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "format": {
+          "enum": ["toml-codex"]
+        },
+        "operation": {
+          "enum": ["managed-block-fragment", "codex-mcp-fragment"]
+        },
+        "visibility": {
+          "$ref": "#/$defs/visibility"
+        },
+        "syncMode": {
+          "$ref": "#/$defs/syncMode"
+        },
+        "contentPolicy": {
+          "type": "string"
+        }
+      }
+    },
+    "mcpTemplate": {
+      "type": "object",
+      "required": ["id", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "operation": {
+          "$ref": "#/$defs/operation"
+        },
+        "outputPath": {
+          "type": "string"
+        },
+        "usage": {
+          "type": "string"
+        }
+      }
+    },
+    "mcpSource": {
+      "type": "object",
+      "required": ["id", "label", "path", "format", "scope", "syncMode"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "format": {
+          "enum": ["json", "toml-codex"]
+        },
+        "scope": {
+          "enum": ["global", "project"]
+        },
+        "syncMode": {
+          "$ref": "#/$defs/syncMode"
+        },
+        "managedBy": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

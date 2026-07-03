@@ -54,17 +54,19 @@ workstation dotfiles chezmoi apply
 推荐边界：
 
 - `workstation` 仍是公开、可复现、可安装的主配置源。
-- 私有 dotfiles 只提供机器可读 manifest、内部 server 名称、1Password `op://...` 引用和本机 inventory。
+- 私有 dotfiles 只提供机器可读 manifest、内部 server 名称、私有 MCP fragment、显式 installable skill、1Password `op://...` 引用和本机 inventory。
 - 默认只做 `dry-run` 和状态检查；写入 `$HOME` 前必须显式确认。
 - 只读取 allowlist 中的相对路径，不递归扫描整个私有仓库。
-- 写入前必须备份目标文件，并且只写 managed block 或本地 ignored 输出文件。
+- 写入前必须备份目标文件，并且只写 managed block、本地 ignored 输出文件，或显式声明的 `$CODEX_HOME/skills/<name>` skill 目录。
 - 永远不要从私有仓库直接覆盖完整 `~/.codex/config.toml`、`~/.codex/skills`、`.env`、`auth.json` 或包含 resolved token 的文件。
 
 私有仓库可以暴露一个 `config/sync-manifest.json`：
 
 ```json
 {
+  "$schema": "https://raw.githubusercontent.com/YunYouJun/workstation/main/schemas/codex-tools-manifest.schema.json",
   "version": 1,
+  "visibility": "private",
   "workstationOverlay": {
     "contractVersion": 1,
     "defaultMode": "dry-run",
@@ -72,7 +74,15 @@ workstation dotfiles chezmoi apply
     "allowedOperations": [
       "inventory",
       "op-inject-template",
+      "codex-skill-install",
+      "codex-mcp-fragment",
       "managed-block-fragment"
+    ],
+    "allowedReadPaths": [
+      "config/sync-manifest.json",
+      "mcp/*.op.example.json",
+      "mcp/codex-mcp.overlay.toml",
+      "skills/install/*"
     ],
     "neverApply": [
       "$HOME/.codex/config.toml",
@@ -81,7 +91,28 @@ workstation dotfiles chezmoi apply
       "$HOME/.codex/auth.json"
     ]
   },
+  "skills": {
+    "install": [
+      {
+        "id": "internal-example",
+        "targetName": "internal-example",
+        "description": "Private internal workflow.",
+        "source": {
+          "type": "local",
+          "path": "skills/install/internal-example"
+        }
+      }
+    ]
+  },
   "mcp": {
+    "fragments": [
+      {
+        "id": "private-codex",
+        "path": "mcp/codex-mcp.overlay.toml",
+        "format": "toml-codex",
+        "operation": "managed-block-fragment"
+      }
+    ],
     "templates": [
       {
         "id": "json-op-template",
@@ -115,7 +146,7 @@ pnpm private:apply -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-mani
 pnpm private:apply -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
 ```
 
-`apply` 只能处理 manifest 声明的模板、片段和本地 ignored 输出，不能把私有仓库里的任意文件复制到 `$HOME`。没有 `--yes` 时即使使用 `apply` 也只会 dry-run。
+`apply` 只能处理 manifest 声明的模板、MCP fragment、显式 installable skill 和本地 ignored 输出，不能把私有仓库里的任意文件复制到 `$HOME`。没有 `--yes` 时即使使用 `apply` 也只会 dry-run。
 
 `private:connect` 会在 TTY 中询问是否连接私有 Git dotfiles 仓库，并允许粘贴 Git URL。非交互环境必须传 `--repo`；没有 `--yes` 时只预览 `git clone`。
 

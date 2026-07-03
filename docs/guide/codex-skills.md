@@ -62,8 +62,11 @@ $skill-installer
 
 ## 个人 Skill 清单
 
-这个仓库用 [`codex-skills.config.ts`](../../codex-skills.config.ts) 记录可复用的个人
-skills。同步脚本会把它们安装到 `$CODEX_HOME/skills`，默认是 `~/.codex/skills`。
+这个仓库用 [`config/codex-tools.manifest.json`](../../config/codex-tools.manifest.json)
+记录可复用的个人 skills。同步脚本会把它们安装到 `$CODEX_HOME/skills`，默认是
+`~/.codex/skills`。
+本机公开可记录的候选清单放在 `codex-skills.inventory.md`；它只是 inventory，
+只有确认上游来源后才提升到安装清单。
 
 ```bash
 pnpm skills:list      # 查看配置的来源
@@ -72,24 +75,30 @@ pnpm skills:check     # 有配置项缺失时返回非零退出码
 pnpm skills:install   # 安装缺失的 skills
 ```
 
-要增加新的个人 skill，在清单里添加 `id`、`description`、`source` 和可选
+要增加新的个人 skill，在 `skills.install` 里添加 `id`、`description`、`source` 和可选
 `targetName`。`source.ref` 可以用 `main` 跟随上游，也可以固定到 tag 或 commit，
 让新机器迁移结果更可复现。
 
-```ts
-export const codexSkills = [
-  {
-    id: 'ui-ux-pro-max',
-    targetName: 'ui-ux-pro-max',
-    description: 'Broad UI/UX design intelligence for web, mobile, dashboards, landing pages, and component review.',
-    source: {
-      type: 'github',
-      repo: 'nextlevelbuilder/ui-ux-pro-max-skill',
-      path: '.claude/skills/ui-ux-pro-max',
-      ref: 'main',
-    },
-  },
-]
+```json
+{
+  "skills": {
+    "install": [
+      {
+        "id": "ui-ux-pro-max",
+        "targetName": "ui-ux-pro-max",
+        "description": "Broad UI/UX design intelligence for web, mobile, dashboards, landing pages, and component review.",
+        "visibility": "public",
+        "syncMode": "install",
+        "source": {
+          "type": "github",
+          "repo": "nextlevelbuilder/ui-ux-pro-max-skill",
+          "path": ".claude/skills/ui-ux-pro-max",
+          "ref": "main"
+        }
+      }
+    ]
+  }
+}
 ```
 
 其中 `id` 是 workstation 清单里的唯一标识，`targetName` 是安装到
@@ -99,9 +108,11 @@ export const codexSkills = [
 
 ## Codex MCP 同步
 
-Codex MCP servers 使用 Codex 原生 `config.toml` 结构。这个仓库不设计额外
-schema，也不直接同步完整 `~/.codex/config.toml`；只把 `codex-mcp.toml`
-作为可审查的 MCP 片段，并由脚本合并到
+Codex MCP servers 使用 Codex 原生 `config.toml` 结构。这个仓库用
+[`schemas/codex-tools-manifest.schema.json`](../../schemas/codex-tools-manifest.schema.json)
+统一约束清单元数据，但不重新发明 MCP server 的 TOML 结构，也不直接同步完整
+`~/.codex/config.toml`；`config/codex-tools.manifest.json` 只声明
+`codex-mcp.toml` 这个可审查 MCP 片段，并由脚本合并到
 `$CODEX_HOME/config.toml`（默认 `~/.codex/config.toml`）里的 managed block。
 
 ```bash
@@ -119,8 +130,9 @@ MCP 片段只应包含 `[mcp_servers.*]`、插件 MCP 策略，以及少量 MCP 
 
 ## 与私有 dotfiles 的分工
 
-`workstation` 是可复现安装源：`codex-skills.config.ts` 决定要安装哪些个人 skills；
-`codex-mcp.toml` 只管理 `~/.codex/config.toml` 里的 workstation managed block。
+`workstation` 是可复现安装源：`config/codex-tools.manifest.json` 决定要安装哪些个人
+skills，并声明哪些 MCP fragment 要进入 `~/.codex/config.toml` 里的 workstation
+managed block。
 
 私有 `dotfiles` 可以记录本机已有 skills/MCP inventory、内部 server 名称和 1Password
 `op://...` 引用，但不应该直接复制或覆盖 `~/.codex/skills`、完整

@@ -1,20 +1,30 @@
 #!/usr/bin/env node
 import type { CodexSkill } from '../codex-skills.config'
 import { spawnSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, renameSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import process from 'node:process'
-import { codexSkills } from '../codex-skills.config'
 
 interface Options {
   dest: string
   dryRun: boolean
   force: boolean
+  manifest: string
+  privateManifest?: string
   selectedIds: Set<string> | null
 }
 
 type Command = 'check' | 'install' | 'list' | 'status'
+
+interface PrivateManifest {
+  skills?: {
+    install?: CodexSkill[]
+  }
+  workstationOverlay?: {
+    allowedReadPaths?: string[]
+  }
+}
 
 const helpFlags = new Set(['--help', '-h'])
 const defaultRef = 'main'
@@ -24,12 +34,13 @@ function usage(exitCode = 0): never {
   pnpm skills:list
   pnpm skills:status
   pnpm skills:check
-  pnpm skills:install [--skill <id>] [--force] [--dry-run] [--dest <path>]
+  pnpm skills:install [--skill <id>] [--force] [--dry-run] [--manifest <path>] [--dest <path>] [--private-manifest <path>]
 
 Examples:
   pnpm skills:status
   pnpm skills:install
-  pnpm skills:install --skill ui-ux-pro-max --force`)
+  pnpm skills:install --skill ui-ux-pro-max --force
+  pnpm skills:install --private-manifest ~/repos/private/dotfiles/config/sync-manifest.json`)
   process.exit(exitCode)
 }
 
@@ -37,6 +48,29 @@ function codexSkillsRoot(): string {
   return process.env.CODEX_HOME
     ? resolve(process.env.CODEX_HOME, 'skills')
     : resolve(homedir(), '.codex', 'skills')
+}
+
+function defaultManifestPath(): string {
+  return resolve(import.meta.dirname, '..', 'config', 'codex-tools.manifest.json')
+}
+
+function defaultPrivateManifestPath(): string | undefined {
+  return process.env.WORKSTATION_PRIVATE_MANIFEST
+    ? resolve(expandHome(process.env.WORKSTATION_PRIVATE_MANIFEST))
+    : undefined
+}
+
+function expandHome(value: string): string {
+  if (value === '~')
+    return homedir()
+
+  if (value.startsWith('~/'))
+    return join(homedir(), value.slice(2))
+
+  if (value.startsWith('$HOME/'))
+    return join(homedir(), value.slice(6))
+
+  return value
 }
 
 function parseCommand(value: string | undefined): Command {
@@ -62,6 +96,8 @@ function parseOptions(args: string[]): Options {
     dest: codexSkillsRoot(),
     dryRun: false,
     force: false,
+    manifest: defaultManifestPath(),
+    privateManifest: defaultPrivateManifestPath(),
     selectedIds: null,
   }
 
@@ -71,7 +107,10 @@ function parseOptions(args: string[]): Options {
     if (helpFlags.has(arg))
       usage()
 
-    if (arg === '--dry-run') {
+    if (arg === '--') {
+      continue
+    }
+    else if (arg === '--dry-run') {
       options.dryRun = true
     }
     else if (arg === '--force') {
@@ -84,6 +123,24 @@ function parseOptions(args: string[]): Options {
         usage(1)
       }
       options.dest = resolve(value)
+      index += 1
+    }
+    else if (arg === '--manifest') {
+      const value = args[index + 1]
+      if (!value) {
+        console.error('--manifest requires a path')
+        usage(1)
+      }
+      options.manifest = resolve(expandHome(value))
+      index += 1
+    }
+    else if (arg === '--private-manifest') {
+      const value = args[index + 1]
+      if (!value) {
+        console.error('--private-manifest requires a path')
+        usage(1)
+      }
+      options.privateManifest = resolve(expandHome(value))
       index += 1
     }
     else if (arg === '--skill') {
@@ -108,12 +165,12 @@ function parseOptions(args: string[]): Options {
   return options
 }
 
-function selectedSkills(options: Options): CodexSkill[] {
+function selectedSkills(skills: CodexSkill[], options: Options): CodexSkill[] {
   if (!options.selectedIds)
-    return codexSkills
+    return skills
 
-  const selected = codexSkills.filter(skill => options.selectedIds?.has(skill.id))
-  const missing = [...options.selectedIds].filter(id => !codexSkills.some(skill => skill.id === id))
+  const selected = skills.filter(skill => options.selectedIds?.has(skill.id))
+  const missing = [...options.selectedIds].filter(id => !skills.some(skill => skill.id === id))
 
   if (missing.length > 0) {
     console.error(`Unknown skill id: ${missing.join(', ')}`)
@@ -121,6 +178,97 @@ function selectedSkills(options: Options): CodexSkill[] {
   }
 
   return selected
+}
+
+function repoRootFromManifest(manifestPath: string): string {
+  const parent = dirname(manifestPath)
+  return parent.endsWith('/config') ? dirname(parent) : parent
+}
+
+function isSafeRelativePath(path: string): boolean {
+  return Boolean(path)
+    && !isAbsolute(path)
+    && !path.split('/').includes('..')
+}
+
+function globToRegExp(pattern: string): RegExp {
+  const escaped = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '[^/]*')
+
+  return new RegExp(`^${escaped}$`)
+}
+
+function matchesAny(path: string, patterns: string[]): boolean {
+  return patterns.some(pattern => globToRegExp(pattern).test(path))
+}
+
+function assertAllowedRead(path: string, manifest: PrivateManifest): void {
+  if (!matchesAny(path, manifest.workstationOverlay?.allowedReadPaths || []))
+    throw new Error(`Path is not allowlisted for private overlay reads: ${path}`)
+}
+
+function resolveRepoPath(repoRoot: string, relativePath: string): string {
+  if (!isSafeRelativePath(relativePath))
+    throw new Error(`Unsafe relative path in private overlay manifest: ${relativePath}`)
+
+  const absolutePath = resolve(repoRoot, relativePath)
+  const rel = relative(repoRoot, absolutePath)
+  if (rel.startsWith('..') || isAbsolute(rel))
+    throw new Error(`Path escapes private overlay repository: ${relativePath}`)
+
+  return absolutePath
+}
+
+function readManifest(path: string): PrivateManifest {
+  if (!existsSync(path))
+    throw new Error(`Codex tools manifest not found: ${path}`)
+
+  return JSON.parse(readFileSync(path, 'utf-8')) as PrivateManifest
+}
+
+function publicSkills(manifestPath: string): CodexSkill[] {
+  return readManifest(manifestPath).skills?.install || []
+}
+
+function privateSkills(manifestPath: string | undefined): CodexSkill[] {
+  if (!manifestPath)
+    return []
+
+  const manifest = readManifest(manifestPath)
+  const repoRoot = repoRootFromManifest(manifestPath)
+
+  return (manifest.skills?.install || []).map((skill) => {
+    if (skill.source.type !== 'local')
+      return skill
+
+    assertAllowedRead(skill.source.path, manifest)
+
+    return {
+      ...skill,
+      source: {
+        ...skill.source,
+        path: resolveRepoPath(repoRoot, skill.source.path),
+      },
+    }
+  })
+}
+
+function allSkills(options: Options): CodexSkill[] {
+  const skills = [...publicSkills(options.manifest), ...privateSkills(options.privateManifest)]
+  const seen = new Set<string>()
+  const duplicates = new Set<string>()
+
+  for (const skill of skills) {
+    if (seen.has(skill.id))
+      duplicates.add(skill.id)
+    seen.add(skill.id)
+  }
+
+  if (duplicates.size > 0)
+    throw new Error(`Duplicate skill id: ${[...duplicates].join(', ')}`)
+
+  return skills
 }
 
 function skillName(skill: CodexSkill): string {
@@ -148,6 +296,29 @@ function repoUrl(skill: CodexSkill): string {
     return skill.source.repo
 
   return `https://github.com/${skill.source.repo}.git`
+}
+
+function copySkillDirectory(source: string, destination: string, name: string): void {
+  if (!existsSync(join(source, 'SKILL.md')))
+    throw new Error(`SKILL.md not found in ${source}`)
+
+  let backup: string | null = null
+  if (existsSync(destination)) {
+    backup = `${destination}.bak-${new Date().toISOString().replace(/[:.]/g, '-')}`
+    renameSync(destination, backup)
+  }
+
+  try {
+    cpSync(source, destination, { recursive: true })
+  }
+  catch (error) {
+    if (backup && !existsSync(destination))
+      renameSync(backup, destination)
+    throw error
+  }
+
+  const backupSuffix = backup ? ` (previous copy moved to ${backup})` : ''
+  console.log(`[ok] installed ${name}${backupSuffix}`)
 }
 
 function run(command: string, args: string[]): void {
@@ -181,6 +352,11 @@ function installSkill(skill: CodexSkill, options: Options): void {
 
   mkdirSync(options.dest, { recursive: true })
 
+  if (skill.source.type === 'local') {
+    copySkillDirectory(skill.source.path, destination, name)
+    return
+  }
+
   const tempDir = mkdtempSync(join(tmpdir(), 'workstation-codex-skill-'))
   const repoDir = join(tempDir, 'repo')
   const ref = skill.source.ref || defaultRef
@@ -202,26 +378,7 @@ function installSkill(skill: CodexSkill, options: Options): void {
     run('git', ['-C', repoDir, 'checkout', ref])
 
     const source = join(repoDir, skill.source.path)
-    if (!existsSync(join(source, 'SKILL.md')))
-      throw new Error(`SKILL.md not found in ${skill.source.repo}:${skill.source.path}`)
-
-    let backup: string | null = null
-    if (existsSync(destination)) {
-      backup = `${destination}.bak-${new Date().toISOString().replace(/[:.]/g, '-')}`
-      renameSync(destination, backup)
-    }
-
-    try {
-      cpSync(source, destination, { recursive: true })
-    }
-    catch (error) {
-      if (backup && !existsSync(destination))
-        renameSync(backup, destination)
-      throw error
-    }
-
-    const backupSuffix = backup ? ` (previous copy moved to ${backup})` : ''
-    console.log(`[ok] installed ${name}${backupSuffix}`)
+    copySkillDirectory(source, destination, name)
   }
   finally {
     rmSync(tempDir, { force: true, recursive: true })
@@ -230,11 +387,16 @@ function installSkill(skill: CodexSkill, options: Options): void {
 
 function listSkills(skills: CodexSkill[]): void {
   for (const skill of skills) {
-    const ref = skill.source.ref || defaultRef
     console.log(`${skill.id}`)
     console.log(`  description: ${skill.description}`)
     console.log(`  target:      ${skillName(skill)}`)
-    console.log(`  source:      ${skill.source.repo}@${ref}:${skill.source.path}`)
+    if (skill.source.type === 'github') {
+      const ref = skill.source.ref || defaultRef
+      console.log(`  source:      ${skill.source.repo}@${ref}:${skill.source.path}`)
+    }
+    else {
+      console.log(`  source:      local:${skill.source.path}`)
+    }
   }
 }
 
@@ -261,7 +423,7 @@ async function main(): Promise<void> {
     ? process.argv.slice(2)
     : process.argv.slice(3)
   const options = parseOptions(optionArgs)
-  const skills = selectedSkills(options)
+  const skills = selectedSkills(allSkills(options), options)
 
   if (command === 'list') {
     listSkills(skills)

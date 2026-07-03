@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+
 export interface GitHubCodexSkillSource {
   type: 'github'
   repo: string
@@ -5,23 +7,29 @@ export interface GitHubCodexSkillSource {
   ref?: string
 }
 
+export interface LocalCodexSkillSource {
+  type: 'local'
+  path: string
+}
+
+export type CodexSkillSource = GitHubCodexSkillSource | LocalCodexSkillSource
+
 export interface CodexSkill {
   id: string
   description: string
-  source: GitHubCodexSkillSource
+  source: CodexSkillSource
   targetName?: string
+  syncMode?: 'install' | 'inventory-only' | 'project-owned'
+  visibility?: 'public' | 'private' | 'internal' | 'system'
 }
 
-export const codexSkills: CodexSkill[] = [
-  {
-    id: 'ui-ux-pro-max',
-    targetName: 'ui-ux-pro-max',
-    description: 'Broad UI/UX design intelligence for web, mobile, dashboards, landing pages, and component review.',
-    source: {
-      type: 'github',
-      repo: 'nextlevelbuilder/ui-ux-pro-max-skill',
-      path: '.claude/skills/ui-ux-pro-max',
-      ref: 'main',
-    },
-  },
-]
+interface CodexToolsManifest {
+  skills?: {
+    install?: CodexSkill[]
+  }
+}
+
+const publicManifestUrl = new URL('./config/codex-tools.manifest.json', import.meta.url)
+const publicManifest = JSON.parse(readFileSync(publicManifestUrl, 'utf-8')) as CodexToolsManifest
+
+export const codexSkills: CodexSkill[] = publicManifest.skills?.install || []

@@ -10,12 +10,16 @@ type Command = 'apply' | 'check' | 'connect' | 'list' | 'status'
 
 interface Manifest {
   mcp?: {
+    fragments?: McpFragment[]
     localOutputs?: LocalOutput[]
     templates?: McpTemplate[]
   }
   policy?: {
     plaintextSecretsAllowed?: boolean
     secretSource?: string
+  }
+  skills?: {
+    install?: PrivateSkill[]
   }
   workstationOverlay?: OverlayContract
 }
@@ -38,10 +42,28 @@ interface McpTemplate {
   usage?: string
 }
 
+interface McpFragment {
+  format?: string
+  id: string
+  operation?: string
+  path: string
+}
+
 interface LocalOutput {
   gitIgnored?: boolean
   path: string
   reason?: string
+}
+
+interface PrivateSkill {
+  description?: string
+  id: string
+  source: {
+    path?: string
+    repo?: string
+    type: string
+  }
+  targetName?: string
 }
 
 interface Options {
@@ -53,7 +75,17 @@ interface Options {
 }
 
 const helpFlags = new Set(['--help', '-h'])
-const knownOperations = new Set(['inventory', 'managed-block-fragment', 'op-inject-template'])
+const knownOperations = new Set([
+  'codex-mcp-fragment',
+  'codex-skill-install',
+  'inventory',
+  'managed-block-fragment',
+  'op-account-select',
+  'op-run-env',
+  'op-inject-template',
+  'op-run-wrapper',
+  'op-typescript-cli',
+])
 
 function usage(exitCode = 0): never {
   console.log(`Usage:
@@ -208,6 +240,31 @@ function validateManifest(manifest: Manifest): string[] {
       errors.push(`template ${template.id} uses op-inject-template but has no outputPath`)
   }
 
+  for (const fragment of manifest.mcp?.fragments || []) {
+    if (fragment.operation && !['managed-block-fragment', 'codex-mcp-fragment'].includes(fragment.operation))
+      errors.push(`unsupported MCP fragment operation for ${fragment.id}: ${fragment.operation}`)
+
+    if (fragment.format && fragment.format !== 'toml-codex')
+      errors.push(`unsupported MCP fragment format for ${fragment.id}: ${fragment.format}`)
+
+    if (!matchesAny(fragment.path, contract.allowedReadPaths || []))
+      errors.push(`MCP fragment path is not allowlisted: ${fragment.path}`)
+  }
+
+  for (const skill of manifest.skills?.install || []) {
+    if (skill.source.type === 'local') {
+      if (!skill.source.path) {
+        errors.push(`local skill ${skill.id} has no source.path`)
+      }
+      else if (!matchesAny(skill.source.path, contract.allowedReadPaths || [])) {
+        errors.push(`skill source path is not allowlisted for ${skill.id}: ${skill.source.path}`)
+      }
+    }
+    else if (skill.source.type !== 'github') {
+      errors.push(`unsupported skill source type for ${skill.id}: ${skill.source.type}`)
+    }
+  }
+
   return errors
 }
 
@@ -308,6 +365,15 @@ function privateTemplates(manifest: Manifest): McpTemplate[] {
     .filter(template => template.operation === 'op-inject-template')
 }
 
+function privateMcpFragments(manifest: Manifest): McpFragment[] {
+  return (manifest.mcp?.fragments || [])
+    .filter(fragment => !fragment.operation || fragment.operation === 'managed-block-fragment' || fragment.operation === 'codex-mcp-fragment')
+}
+
+function privateSkillInstalls(manifest: Manifest): PrivateSkill[] {
+  return manifest.skills?.install || []
+}
+
 function list(manifestPath: string, manifest: Manifest): void {
   console.log(`Manifest: ${manifestPath}`)
   console.log(`Secret source: ${manifest.workstationOverlay?.secretSource || manifest.policy?.secretSource || 'unknown'}`)
@@ -321,6 +387,17 @@ function list(manifestPath: string, manifest: Manifest): void {
   for (const template of manifest.mcp?.templates || []) {
     const output = template.outputPath ? ` -> ${template.outputPath}` : ''
     console.log(`  - ${template.id}: ${template.path}${output}`)
+  }
+
+  console.log('\nMCP fragments:')
+  for (const fragment of privateMcpFragments(manifest))
+    console.log(`  - ${fragment.id}: ${fragment.path}`)
+
+  console.log('\nCodex skill installs:')
+  for (const skill of privateSkillInstalls(manifest)) {
+    const target = skill.targetName ? ` -> ${skill.targetName}` : ''
+    const source = skill.source.path || skill.source.repo || '<missing source>'
+    console.log(`  - ${skill.id}${target}: ${skill.source.type}:${source}`)
   }
 }
 
@@ -366,6 +443,49 @@ function status(manifestPath: string, manifest: Manifest, check: boolean): void 
         process.exitCode = 1
     }
   }
+
+  for (const fragment of privateMcpFragments(manifest)) {
+    try {
+      assertAllowedRead(fragment.path, contract)
+      const source = resolveRepoPath(repoRoot, fragment.path)
+      const sourceState = existsSync(source) ? 'ok' : 'missing'
+      console.log(`[${sourceState}] MCP fragment ${fragment.id}: ${fragment.path}`)
+      if (sourceState === 'missing' && check)
+        process.exitCode = 1
+    }
+    catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.log(`[error] ${message}`)
+      if (check)
+        process.exitCode = 1
+    }
+  }
+
+  for (const skill of privateSkillInstalls(manifest)) {
+    try {
+      if (skill.source.type === 'local') {
+        if (!skill.source.path)
+          throw new Error(`local skill ${skill.id} has no source.path`)
+
+        assertAllowedRead(skill.source.path, contract)
+        const source = resolveRepoPath(repoRoot, skill.source.path)
+        const sourceState = existsSync(join(source, 'SKILL.md')) ? 'ok' : 'missing'
+        console.log(`[${sourceState}] skill ${skill.id}: ${skill.source.path}`)
+        if (sourceState === 'missing' && check)
+          process.exitCode = 1
+      }
+      else {
+        const source = skill.source.repo || '<missing repo>'
+        console.log(`[configured] skill ${skill.id}: ${skill.source.type}:${source}`)
+      }
+    }
+    catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.log(`[error] ${message}`)
+      if (check)
+        process.exitCode = 1
+    }
+  }
 }
 
 function backupPath(path: string): string {
@@ -397,12 +517,53 @@ function runOpInject(source: string, output: string, dryRun: boolean): void {
   console.log(`[ok] wrote local ignored output ${output}`)
 }
 
+function workstationRoot(): string {
+  return resolve(import.meta.dirname, '..')
+}
+
+function formatCommand(command: string, args: string[]): string {
+  return [command, ...args]
+    .map(value => /\s/.test(value) ? JSON.stringify(value) : value)
+    .join(' ')
+}
+
+function runWorkstationScript(script: string, args: string[], dryRun: boolean): void {
+  if (!commandExists('pnpm'))
+    throw new Error('pnpm is required to apply Codex private overlay entries')
+
+  const commandArgs = ['exec', 'tsx', join(import.meta.dirname, script), ...args]
+  console.log(`${dryRun ? '[dry-run]' : '[apply]'} ${formatCommand('pnpm', commandArgs)}`)
+
+  const result = spawnSync('pnpm', commandArgs, {
+    cwd: workstationRoot(),
+    stdio: 'inherit',
+  })
+
+  if (result.status !== 0)
+    throw new Error(`workstation script failed: ${script}`)
+}
+
+function applyCodexOverlay(manifestPath: string, manifest: Manifest, dryRun: boolean): void {
+  const hasSkillInstalls = Boolean(manifest.skills?.install)
+  const hasMcpFragments = privateMcpFragments(manifest).length > 0
+
+  if (!hasSkillInstalls && !hasMcpFragments) {
+    console.log('[skip] no Codex skill installs or MCP fragments')
+    return
+  }
+
+  const dryRunArgs = dryRun ? ['--dry-run'] : []
+  runWorkstationScript('codex-skills.ts', ['install', '--private-manifest', manifestPath, ...dryRunArgs], dryRun)
+  runWorkstationScript('codex-mcp.ts', ['install', '--private-manifest', manifestPath, ...dryRunArgs], dryRun)
+}
+
 function apply(manifestPath: string, manifest: Manifest, dryRun: boolean): void {
   const errors = validateManifest(manifest)
   if (errors.length > 0)
     throw new Error(`Invalid private overlay manifest:\n${errors.map(error => `- ${error}`).join('\n')}`)
 
-  if (!dryRun) {
+  const templates = privateTemplates(manifest)
+  if (!dryRun && templates.length > 0) {
     const state = opState()
     if (state !== 'available')
       throw new Error('1Password CLI must be installed and signed in before applying private overlay templates')
@@ -413,10 +574,8 @@ function apply(manifestPath: string, manifest: Manifest, dryRun: boolean): void 
   if (!contract)
     throw new Error('workstationOverlay is missing')
 
-  const templates = privateTemplates(manifest)
   if (templates.length === 0) {
     console.log('[skip] no op-inject-template entries')
-    return
   }
 
   for (const template of templates) {
@@ -432,6 +591,8 @@ function apply(manifestPath: string, manifest: Manifest, dryRun: boolean): void 
 
     runOpInject(source, output, dryRun)
   }
+
+  applyCodexOverlay(manifestPath, manifest, dryRun)
 }
 
 function shouldPrompt(): boolean {

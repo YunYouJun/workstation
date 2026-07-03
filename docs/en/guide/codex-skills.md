@@ -74,8 +74,12 @@ plugin instead of only checking in a local skill.
 ## Personal Skill Manifest
 
 This repository keeps reusable personal skills in
-[`codex-skills.config.ts`](../../../codex-skills.config.ts). The sync script
-installs them into `$CODEX_HOME/skills`, which defaults to `~/.codex/skills`.
+[`config/codex-tools.manifest.json`](../../../config/codex-tools.manifest.json).
+The sync script installs them into `$CODEX_HOME/skills`, which defaults to
+`~/.codex/skills`.
+Public-safe local candidates are recorded in `codex-skills.inventory.md`. That
+file is only an inventory; promote entries into the install manifest only after
+their upstream source is known.
 
 ```bash
 pnpm skills:list      # show configured sources
@@ -84,24 +88,31 @@ pnpm skills:check     # fail when a configured skill is missing
 pnpm skills:install   # install missing skills
 ```
 
-To add another personal skill, add an entry with `id`, `description`, `source`,
-and optional `targetName`. `source.ref` can track `main`, or it can be pinned to
-a tag or commit for more reproducible machine migrations.
+To add another personal skill, add an entry under `skills.install` with `id`,
+`description`, `source`, and optional `targetName`. `source.ref` can track
+`main`, or it can be pinned to a tag or commit for more reproducible machine
+migrations.
 
-```ts
-export const codexSkills = [
-  {
-    id: 'ui-ux-pro-max',
-    targetName: 'ui-ux-pro-max',
-    description: 'Broad UI/UX design intelligence for web, mobile, dashboards, landing pages, and component review.',
-    source: {
-      type: 'github',
-      repo: 'nextlevelbuilder/ui-ux-pro-max-skill',
-      path: '.claude/skills/ui-ux-pro-max',
-      ref: 'main',
-    },
-  },
-]
+```json
+{
+  "skills": {
+    "install": [
+      {
+        "id": "ui-ux-pro-max",
+        "targetName": "ui-ux-pro-max",
+        "description": "Broad UI/UX design intelligence for web, mobile, dashboards, landing pages, and component review.",
+        "visibility": "public",
+        "syncMode": "install",
+        "source": {
+          "type": "github",
+          "repo": "nextlevelbuilder/ui-ux-pro-max-skill",
+          "path": ".claude/skills/ui-ux-pro-max",
+          "ref": "main"
+        }
+      }
+    ]
+  }
+}
 ```
 
 Here `id` is the unique workstation manifest key, and `targetName` is the
@@ -112,9 +123,11 @@ descriptions and make Codex noisier.
 
 ## Codex MCP Sync
 
-Codex MCP servers use Codex's native `config.toml` shape. This repository does
-not define another schema and does not sync the full `~/.codex/config.toml`.
-Instead, `codex-mcp.toml` is a reviewable MCP fragment, and the sync script
+Codex MCP servers use Codex's native `config.toml` shape. This repository uses
+[`schemas/codex-tools-manifest.schema.json`](../../../schemas/codex-tools-manifest.schema.json)
+to validate manifest metadata, but it does not redefine MCP server TOML or sync
+the full `~/.codex/config.toml`. Instead, `config/codex-tools.manifest.json`
+declares `codex-mcp.toml` as a reviewable MCP fragment, and the sync script
 merges it into a managed block in
 `$CODEX_HOME/config.toml`, which defaults to `~/.codex/config.toml`.
 
@@ -134,9 +147,10 @@ environment variable name, such as `bearer_token_env_var = "FIGMA_OAUTH_TOKEN"`.
 
 ## Relationship With Private Dotfiles
 
-`workstation` is the reproducible install source: `codex-skills.config.ts`
-decides which personal skills are installed, and `codex-mcp.toml` only manages
-the workstation managed block inside `~/.codex/config.toml`.
+`workstation` is the reproducible install source:
+`config/codex-tools.manifest.json` decides which personal skills are installed
+and which MCP fragments enter the workstation managed block inside
+`~/.codex/config.toml`.
 
 A private `dotfiles` repository may record local skills/MCP inventory, internal
 server names, and 1Password `op://...` references, but it should not directly
