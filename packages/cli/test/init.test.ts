@@ -1,0 +1,147 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
+import { afterEach, describe, it } from 'vitest'
+import { createTempDir, removePath, runCli, writeFile } from './utils'
+
+let tempDir: string | undefined
+
+function createInitFixture() {
+  tempDir = createTempDir('workstation-init-')
+  const repoRoot = path.join(tempDir, 'repo')
+  const homeRoot = path.join(tempDir, 'home')
+  fs.mkdirSync(repoRoot)
+  fs.mkdirSync(homeRoot)
+
+  return {
+    repoRoot,
+    homeRoot,
+  }
+}
+
+function gitConfigPath(homeRoot: string) {
+  return path.join(homeRoot, '.gitconfig')
+}
+
+function githubConfigPath(homeRoot: string) {
+  return path.join(homeRoot, '.gitconfig-github')
+}
+
+function workConfigPath(homeRoot: string) {
+  return path.join(homeRoot, '.gitconfig-work')
+}
+
+function countOccurrences(value: string, pattern: string) {
+  return value.split(pattern).length - 1
+}
+
+afterEach(() => {
+  removePath(tempDir)
+  tempDir = undefined
+})
+
+describe('init CLI', () => {
+  it('lists available init tasks', () => {
+    const fixture = createInitFixture()
+    const result = runCli(['init', '--list'], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(result.stdout, /git\.include-if/)
+    assert.match(result.stdout, /recommended/)
+  })
+
+  it('previews git includeIf identity routing by default', () => {
+    const fixture = createInitFixture()
+    const result = runCli([
+      'init',
+      'git.include-if',
+      '--git-profile',
+      'id=github;host=github.com;name=YunYouJun;email=me@yunyoujun.cn',
+    ], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(result.stdout, /Dry-run mode/)
+    assert.match(result.stdout, /\[create\] ~\/\.gitconfig/)
+    assert.equal(fs.existsSync(gitConfigPath(fixture.homeRoot)), false)
+    assert.equal(fs.existsSync(githubConfigPath(fixture.homeRoot)), false)
+  })
+
+  it('applies git includeIf identity routing for multiple profiles', () => {
+    const fixture = createInitFixture()
+    const result = runCli([
+      'init',
+      'git.include-if',
+      '--git-profile',
+      'id=github;host=github.com;name=YunYouJun;email=me@yunyoujun.cn',
+      '--git-profile',
+      'id=work;host=git.example.com;name=Work User;email=you@company.example',
+      '--yes',
+    ], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(result.stdout, /verified planned file contents/)
+
+    const globalConfig = fs.readFileSync(gitConfigPath(fixture.homeRoot), 'utf-8')
+    assert.match(globalConfig, /\[user\]\n\tuseConfigOnly = true/)
+    assert.match(globalConfig, new RegExp(`\\[includeIf "gitdir:${escapeRegExp(path.join(fixture.homeRoot, 'repos', 'github.com'))}/"\\]`))
+    assert.match(globalConfig, new RegExp(`\\[includeIf "gitdir:${escapeRegExp(path.join(fixture.homeRoot, 'repos', 'git.example.com'))}/"\\]`))
+    assert.match(globalConfig, new RegExp(`path = ${escapeRegExp(githubConfigPath(fixture.homeRoot))}`))
+    assert.match(globalConfig, new RegExp(`path = ${escapeRegExp(workConfigPath(fixture.homeRoot))}`))
+
+    assert.equal(fs.readFileSync(githubConfigPath(fixture.homeRoot), 'utf-8'), [
+      '[user]',
+      '\tname = YunYouJun',
+      '\temail = me@yunyoujun.cn',
+      '',
+    ].join('\n'))
+    assert.equal(fs.readFileSync(workConfigPath(fixture.homeRoot), 'utf-8'), [
+      '[user]',
+      '\tname = Work User',
+      '\temail = you@company.example',
+      '',
+    ].join('\n'))
+  })
+
+  it('updates existing git config idempotently', () => {
+    const fixture = createInitFixture()
+    const args = [
+      'init',
+      'git.include-if',
+      '--git-profile',
+      'id=github;host=github.com;name=YunYouJun;email=me@yunyoujun.cn',
+      '--yes',
+    ]
+
+    const first = runCli(args, fixture.repoRoot, fixture.homeRoot)
+    const second = runCli(args, fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(first.status, 0, `${first.stdout}\n${first.stderr}`)
+    assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`)
+    assert.match(second.stdout, /\[unchanged\] ~\/\.gitconfig/)
+    assert.match(second.stdout, /\[unchanged\] ~\/\.gitconfig-github/)
+
+    const globalConfig = fs.readFileSync(gitConfigPath(fixture.homeRoot), 'utf-8')
+    assert.equal(countOccurrences(globalConfig, '[includeIf "gitdir:'), 1)
+    assert.equal(countOccurrences(globalConfig, 'useConfigOnly = true'), 1)
+  })
+
+  it('infers the default github profile from an existing identity file', () => {
+    const fixture = createInitFixture()
+    writeFile(githubConfigPath(fixture.homeRoot), [
+      '[user]',
+      '\tname = Existing User',
+      '\temail = existing@example.com',
+      '',
+    ].join('\n'))
+
+    const result = runCli(['init', 'git.include-if', '--yes'], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    const globalConfig = fs.readFileSync(gitConfigPath(fixture.homeRoot), 'utf-8')
+    assert.match(globalConfig, new RegExp(`path = ${escapeRegExp(githubConfigPath(fixture.homeRoot))}`))
+  })
+})
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}

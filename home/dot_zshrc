@@ -1,4 +1,4 @@
-# More info see https://www.yuque.com/yunyoujun/notes/oh-my-zsh
+# More info: https://workstation.yunyoujun.cn/guide/terminal
 # oh-my-zsh template: https://github.com/ohmyzsh/ohmyzsh/blob/master/templates/zshrc.zsh-template
 # --------
 
@@ -174,12 +174,25 @@ alias gcgithub="git config user.name 'YunYouJun' && git config user.email 'me@yu
 # tencent npm mirror
 alias tnpm="pnpm i --registry=http://mirrors.tencent.com/npm/"
 
-# for terminal proxy
-# WSL use windows dns ip, see it by `cat /etc/resolv.conf`
-# local use 127.0.0.1
-# macos surge do not need it
-alias goproxy="export https_proxy=http://127.0.0.1:8234;export http_proxy=http://127.0.0.1:8234;export all_proxy=socks5://127.0.0.1:8235"
-alias disproxy="unset https_proxy;unset http_proxy;unset all_proxy"
+# Terminal proxy.
+# Override TERMINAL_PROXY_HOST / TERMINAL_PROXY_HTTP_PORT /
+# TERMINAL_PROXY_SOCKS_PORT in a machine-local shell file when needed.
+goproxy() {
+  local host="${TERMINAL_PROXY_HOST:-127.0.0.1}"
+  local http_port="${TERMINAL_PROXY_HTTP_PORT:-8234}"
+  local socks_port="${TERMINAL_PROXY_SOCKS_PORT:-8235}"
+
+  export https_proxy="http://${host}:${http_port}"
+  export http_proxy="http://${host}:${http_port}"
+  export all_proxy="socks5://${host}:${socks_port}"
+  export HTTPS_PROXY="$https_proxy"
+  export HTTP_PROXY="$http_proxy"
+  export ALL_PROXY="$all_proxy"
+}
+
+disproxy() {
+  unset https_proxy http_proxy all_proxy HTTPS_PROXY HTTP_PROXY ALL_PROXY
+}
 
 # python
 alias python2="$HOME/.pyenv/versions/2.7.18/bin/python2"

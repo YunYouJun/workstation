@@ -24,6 +24,7 @@ const enNav: DefaultTheme.NavItem[] = [
     text: 'Setup',
     items: [
       { text: 'Repository Scope', link: '/en/guide/repository' },
+      { text: 'Migration Index', link: '/en/guide/migration' },
       { text: 'Bootstrap Flow', link: '/en/guide/bootstrap' },
       { text: 'Copyable Commands', link: '/en/guide/commands' },
       { text: 'Packages', link: '/en/guide/packages' },
@@ -54,6 +55,7 @@ const zhNav: DefaultTheme.NavItem[] = [
     text: '装机',
     items: [
       { text: '仓库范围', link: '/guide/repository' },
+      { text: '迁移索引', link: '/guide/migration' },
       { text: '引导流程', link: '/guide/bootstrap' },
       { text: '可复制命令', link: '/guide/commands' },
       { text: '软件包', link: '/guide/packages' },
@@ -84,6 +86,7 @@ const enSidebar: DefaultTheme.Sidebar = [
     items: [
       { text: 'Home', link: '/en/' },
       { text: 'Repository Scope', link: '/en/guide/repository' },
+      { text: 'Migration Index', link: '/en/guide/migration' },
     ],
   },
   {
@@ -119,6 +122,7 @@ const zhSidebar: DefaultTheme.Sidebar = [
     items: [
       { text: '首页', link: '/' },
       { text: '仓库范围', link: '/guide/repository' },
+      { text: '迁移索引', link: '/guide/migration' },
     ],
   },
   {

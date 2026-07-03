@@ -52,6 +52,7 @@ interface ProjectRepository {
   cloneUrl: string
   displayName?: string
   hint?: string
+  sourcePath?: string
   pushedAt?: string | null
   isArchived?: boolean
   isFork?: boolean
@@ -81,7 +82,9 @@ export interface CloneManifestProjectsOptions extends CloneProjectsOptions {
   repo?: string
   manifest?: string
   groups: string[]
+  repositories: string[]
   protocol: CloneProtocol
+  validate: boolean
 }
 
 export interface ProjectStatusOptions {
@@ -124,6 +127,33 @@ interface ProjectInspection {
   error: string | null
 }
 
+interface ManifestGroup {
+  name: string
+  path: string
+  record: UnknownRecord
+}
+
+interface ManifestValidationIssue {
+  path: string
+  message: string
+  hint?: string
+}
+
+class ManifestEntryError extends Error {
+  hint?: string
+
+  constructor(message: string, hint?: string) {
+    super(message)
+    this.hint = hint
+  }
+}
+
+class ProjectManifestValidationError extends Error {
+  constructor(label: string, issues: ManifestValidationIssue[]) {
+    super(formatManifestValidationIssues(label, issues))
+  }
+}
+
 interface GhRepositoryResponse {
   data?: {
     repositoryOwner?: {
@@ -137,6 +167,14 @@ interface GhRepositoryResponse {
 interface ResolvedManifestFile {
   filePath: string
   label: string
+}
+
+interface ManifestSourceChoice {
+  type: 'default' | 'file' | 'repo' | 'url'
+  label: string
+  hint?: string
+  file?: string
+  repo?: string
 }
 
 export function resolveProjectRoot(root: string): string {
@@ -346,6 +384,309 @@ async function selectRepositories(repositories: ProjectRepository[], effectiveDr
   return selected as ProjectRepository[]
 }
 
+function cancelPrompt(): never {
+  p.cancel('Cancelled')
+  process.exit(0)
+}
+
+function unwrapPromptValue<T>(value: T | symbol): T {
+  if (p.isCancel(value))
+    cancelPrompt()
+
+  return value as T
+}
+
+function hasManifestSource(options: ResolvedCloneManifestProjectsOptions): boolean {
+  return Boolean(options.source || options.file || options.repo)
+}
+
+function getLocalManifestChoices(): ManifestSourceChoice[] {
+  const choices: ManifestSourceChoice[] = []
+  const repoRoot = getRepoRoot()
+
+  for (const [index, candidate] of LOCAL_MANIFEST_CANDIDATES.entries()) {
+    const filePath = path.resolve(repoRoot, candidate)
+    if (!fs.existsSync(filePath))
+      continue
+
+    choices.push({
+      type: index === 0 ? 'default' : 'file',
+      label: candidate,
+      hint: index === 0 ? 'default local manifest' : 'local manifest',
+      file: filePath,
+    })
+  }
+
+  return choices
+}
+
+async function chooseManifestSource(options: ResolvedCloneManifestProjectsOptions): Promise<ResolvedCloneManifestProjectsOptions> {
+  if (hasManifestSource(options))
+    return options
+
+  const localChoices = getLocalManifestChoices()
+  const choices: ManifestSourceChoice[] = [
+    ...localChoices,
+    {
+      type: 'file',
+      label: 'Enter local manifest path',
+      hint: 'private file on this machine',
+    },
+    {
+      type: 'repo',
+      label: 'Enter configuration repository URL',
+      hint: 'repository containing projects.yaml',
+    },
+    {
+      type: 'url',
+      label: 'Enter online manifest file URL',
+      hint: 'raw/blob YAML URL',
+    },
+  ]
+
+  const selectedChoice = unwrapPromptValue(await p.select({
+    message: 'Select a project manifest',
+    options: choices.map(choice => ({
+      value: choice,
+      label: choice.label,
+      hint: choice.hint,
+    })),
+    initialValue: localChoices[0] || choices[0],
+  }))
+
+  if (selectedChoice.type === 'default') {
+    return {
+      ...options,
+      file: undefined,
+      repo: undefined,
+      source: undefined,
+    }
+  }
+
+  if (selectedChoice.file) {
+    return {
+      ...options,
+      file: selectedChoice.file,
+      repo: undefined,
+      source: undefined,
+    }
+  }
+
+  if (selectedChoice.type === 'file') {
+    const file = unwrapPromptValue(await p.text({
+      message: 'Manifest file path',
+      placeholder: '~/repos/example/projects.yaml',
+      validate(value) {
+        const trimmed = (value || '').trim()
+        if (!trimmed)
+          return 'Enter a manifest file path.'
+
+        if (!fs.existsSync(resolveProjectRoot(trimmed)))
+          return 'Manifest file does not exist.'
+
+        return undefined
+      },
+    }))
+
+    return {
+      ...options,
+      file: file.trim(),
+      repo: undefined,
+      source: undefined,
+    }
+  }
+
+  if (selectedChoice.type === 'url') {
+    const source = unwrapPromptValue(await p.text({
+      message: 'Online manifest file URL',
+      placeholder: 'https://git.example.com/user/config/raw/main/projects.yaml',
+      validate(value) {
+        if (!normalizeRemoteManifestUrl(value || ''))
+          return 'Enter an HTTP(S) raw/blob YAML URL.'
+
+        return undefined
+      },
+    }))
+
+    return {
+      ...options,
+      source: source.trim(),
+      file: undefined,
+      repo: undefined,
+    }
+  }
+
+  const repo = unwrapPromptValue(await p.text({
+    message: 'Configuration repository URL',
+    placeholder: 'https://git.example.com/user/config-repo',
+    validate(value) {
+      if (!(value || '').trim())
+        return 'Enter a repository URL.'
+
+      return undefined
+    },
+  }))
+
+  const manifest = unwrapPromptValue(await p.text({
+    message: 'Manifest path inside repository',
+    placeholder: 'projects.yaml',
+    defaultValue: '',
+  }))
+
+  return {
+    ...options,
+    repo: repo.trim(),
+    manifest: manifest.trim() || undefined,
+    file: undefined,
+    source: undefined,
+  }
+}
+
+function getManifestGroupChoices(manifest: unknown) {
+  const issues: ManifestValidationIssue[] = []
+  return getManifestGroups(manifest, issues)
+    .filter(group => Array.isArray(group.record.repositories))
+    .map((group) => {
+      const repositoryCount = Array.isArray(group.record.repositories)
+        ? group.record.repositories.length
+        : 0
+
+      return {
+        value: group.name,
+        label: group.name,
+        hint: `${repositoryCount} ${repositoryCount === 1 ? 'repository' : 'repositories'}`,
+      }
+    })
+}
+
+async function chooseManifestGroups(
+  manifest: unknown,
+  options: ResolvedCloneManifestProjectsOptions,
+): Promise<ResolvedCloneManifestProjectsOptions> {
+  const groupChoices = getManifestGroupChoices(manifest)
+  if (groupChoices.length === 0)
+    return options
+
+  const availableGroups = new Set(groupChoices.map(choice => choice.value))
+  const requestedGroups = options.groups.filter(group => availableGroups.has(group))
+  const initialValues = requestedGroups.length
+    ? requestedGroups
+    : groupChoices.map(choice => choice.value)
+
+  const selectedGroups = unwrapPromptValue(await p.multiselect({
+    message: 'Select manifest groups',
+    options: groupChoices,
+    initialValues,
+    required: true,
+  }))
+
+  return {
+    ...options,
+    groups: selectedGroups,
+  }
+}
+
+function getRepositoryFilterKeys(repository: ProjectRepository): string[] {
+  return [repository.name, repository.displayName]
+    .filter((value): value is string => Boolean(value))
+    .map(normalizeProjectName)
+}
+
+function filterManifestRepositories(repositories: ProjectRepository[], requestedRepositories: string[]): ProjectRepository[] {
+  if (requestedRepositories.length === 0)
+    return repositories
+
+  const selectedRepositories: ProjectRepository[] = []
+  const selectedNames = new Set<string>()
+  const missingRepositories: string[] = []
+  const ambiguousRepositories: string[] = []
+
+  for (const requestedRepository of requestedRepositories) {
+    const normalizedRequest = normalizeProjectName(requestedRepository)
+    const matches = repositories.filter((repository) => {
+      const keys = getRepositoryFilterKeys(repository)
+      return keys.some(key => key === normalizedRequest || key.endsWith(`/${normalizedRequest}`))
+    })
+
+    if (matches.length === 0) {
+      missingRepositories.push(requestedRepository)
+      continue
+    }
+
+    if (matches.length > 1) {
+      ambiguousRepositories.push(requestedRepository)
+      continue
+    }
+
+    const [repository] = matches
+    if (!selectedNames.has(repository.name)) {
+      selectedRepositories.push(repository)
+      selectedNames.add(repository.name)
+    }
+  }
+
+  if (missingRepositories.length > 0) {
+    throw new Error(`Manifest repositories not found: ${missingRepositories.join(', ')}`)
+  }
+
+  if (ambiguousRepositories.length > 0) {
+    throw new Error(`Manifest repository filters are ambiguous: ${ambiguousRepositories.join(', ')}`)
+  }
+
+  return selectedRepositories
+}
+
+function shellQuote(value: string): string {
+  if (/^[\w./:=@%+-]+$/.test(value))
+    return value
+
+  return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+function formatManifestCommand(options: ResolvedCloneManifestProjectsOptions, forceYes = false): string {
+  const args = ['wst', 'p', 'manifest']
+
+  if (options.source) {
+    args.push(options.source)
+  }
+  else if (options.file) {
+    args.push('--file', options.file)
+  }
+  else if (options.repo) {
+    args.push('--repo', options.repo)
+  }
+
+  if (options.repo && options.manifest)
+    args.push('--manifest', options.manifest)
+
+  if (options.groups.length > 0)
+    args.push('--group', options.groups.join(','))
+
+  if (options.repositories.length > 0)
+    args.push('--repository', options.repositories.join(','))
+
+  if (options.rootOverride)
+    args.push('--root', options.root)
+
+  if (options.protocol === 'https')
+    args.push('--https')
+
+  if (options.update)
+    args.push('--update')
+
+  if (options.yes || forceYes)
+    args.push('--yes')
+
+  return args.map(shellQuote).join(' ')
+}
+
+function printManifestCommandHint(options: ResolvedCloneManifestProjectsOptions, effectiveDryRun: boolean): void {
+  console.log(`Selected command: ${formatManifestCommand(options)}`)
+
+  if (effectiveDryRun)
+    console.log(`Clone after review: ${formatManifestCommand(options, true)}`)
+}
+
 function getConfiguredGhqRoots(): string[] {
   if (!commandExists('ghq'))
     return []
@@ -462,6 +803,26 @@ function printCloneResults(results: CloneResult[]) {
     skipped: results.filter(result => result.status === 'skipped').length,
     errors: results.filter(result => result.status === 'error').length,
   }
+}
+
+function formatManifestValidationIssues(label: string, issues: ManifestValidationIssue[]): string {
+  const lines = [
+    `Invalid project manifest: ${label}`,
+    '',
+  ]
+
+  for (const issue of issues) {
+    lines.push(`  - ${issue.path}`)
+    lines.push(`    ${issue.message}`)
+    if (issue.hint)
+      lines.push(`    Hint: ${issue.hint}`)
+  }
+
+  return lines.join('\n')
+}
+
+function pushManifestIssue(issues: ManifestValidationIssue[], path: string, message: string, hint?: string): void {
+  issues.push({ path, message, hint })
 }
 
 function isGitRepository(repositoryPath: string): boolean {
@@ -735,9 +1096,42 @@ function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function readString(record: UnknownRecord, key: string): string | undefined {
+function readManifestString(record: UnknownRecord, key: string, path: string, issues: ManifestValidationIssue[]): string | undefined {
+  if (!(key in record)) {
+    return undefined
+  }
+
   const value = record[key]
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (trimmed) {
+      return trimmed
+    }
+
+    pushManifestIssue(issues, path, 'Expected a non-empty string.')
+    return undefined
+  }
+
+  pushManifestIssue(issues, path, 'Expected a string.')
+  return undefined
+}
+
+function readManifestEntryString(record: UnknownRecord, key: string): string | undefined {
+  if (!(key in record)) {
+    return undefined
+  }
+
+  const value = record[key]
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (trimmed) {
+      return trimmed
+    }
+
+    throw new ManifestEntryError(`${key} must be a non-empty string.`)
+  }
+
+  throw new ManifestEntryError(`${key} must be a string.`)
 }
 
 function inferProjectNameFromUrl(value: string): string | undefined {
@@ -747,8 +1141,9 @@ function inferProjectNameFromUrl(value: string): string | undefined {
     const parsed = new URL(trimmed)
     if (parsed.hostname && parsed.pathname) {
       const pathname = trimGitSuffix(decodeURIComponent(parsed.pathname))
-      if (pathname)
+      if (pathname) {
         return normalizeProjectName(`${parsed.hostname}/${pathname}`)
+      }
     }
   }
   catch {
@@ -756,15 +1151,17 @@ function inferProjectNameFromUrl(value: string): string | undefined {
   }
 
   const scpLike = trimmed.match(/^(?:[^@/\s]+@)?([^:\s/]+):(.+)$/)
-  if (scpLike)
+  if (scpLike) {
     return normalizeProjectName(`${scpLike[1]}/${trimGitSuffix(scpLike[2])}`)
+  }
 
   const slashIndex = trimmed.indexOf('/')
   if (slashIndex > 0) {
     const host = trimmed.slice(0, slashIndex)
     const projectPath = trimmed.slice(slashIndex + 1)
-    if (host.includes('.') && projectPath)
+    if (host.includes('.') && projectPath) {
       return normalizeProjectName(`${host}/${trimGitSuffix(projectPath)}`)
+    }
   }
 
   return undefined
@@ -774,8 +1171,12 @@ function projectNameToCloneUrl(name: string, protocol: CloneProtocol): string {
   const normalizedName = normalizeProjectName(name)
   const [host, ...parts] = normalizedName.split('/')
 
-  if (!host || parts.length === 0)
-    throw new Error(`Repository ${name} needs a url because a clone URL cannot be inferred from the name`)
+  if (!host || parts.length === 0) {
+    throw new ManifestEntryError(
+      `Cannot infer a clone URL from "${name}".`,
+      'Use a host-qualified path such as git.example.com/example/service, or add url/sshUrl/httpsUrl.',
+    )
+  }
 
   const repositoryPath = parts.join('/')
   return protocol === 'https'
@@ -788,16 +1189,21 @@ function isHostQualifiedProjectName(name: string): boolean {
   return Boolean(host?.includes('.') && parts.length > 0)
 }
 
-function resolveHostQualifiedProjectName(name: string, host: string | undefined, context: string): string {
+function resolveHostQualifiedProjectName(name: string, host: string | undefined): string {
   const normalizedName = normalizeProjectName(name)
 
-  if (isHostQualifiedProjectName(normalizedName))
+  if (isHostQualifiedProjectName(normalizedName)) {
     return normalizedName
+  }
 
-  if (host)
+  if (host) {
     return normalizeProjectName(`${host}/${normalizedName}`)
+  }
 
-  throw new Error(`${context} must use a Git URL, a host-qualified name, or define a manifest/group host`)
+  throw new ManifestEntryError(
+    'Short project paths require a manifest or group host.',
+    'Add host: git.example.com to the manifest/group, or use git.example.com/<group>/<repo>.',
+  )
 }
 
 function shouldUseGhqForTarget(name: string, cloneUrl: string): boolean {
@@ -805,20 +1211,26 @@ function shouldUseGhqForTarget(name: string, cloneUrl: string): boolean {
   return Boolean(inferredName && normalizeProjectName(name) === inferredName)
 }
 
-function parseManifestRepository(entry: unknown, groupName: string, index: number, protocol: CloneProtocol, host?: string): ProjectRepository {
-  const context = `${groupName}.repositories[${index}]`
-
+function parseManifestRepository(entry: unknown, groupName: string, protocol: CloneProtocol, host?: string): ProjectRepository {
   if (typeof entry === 'string') {
     const value = entry.trim()
-    if (!value)
-      throw new Error(`${context} must be a Git URL, project path, or an object with name/url`)
+    if (!value) {
+      throw new ManifestEntryError(
+        'Expected a non-empty Git URL, project path, or repository object.',
+        'Use example/service with a group host, or git.example.com/example/service.',
+      )
+    }
 
     const isUrl = isGitRepositorySource(value)
     const name = isUrl
       ? inferProjectNameFromUrl(value)
-      : resolveHostQualifiedProjectName(value, host, context)
-    if (!name)
-      throw new Error(`${context} must be a Git URL, project path, or an object with name/url`)
+      : resolveHostQualifiedProjectName(value, host)
+    if (!name) {
+      throw new ManifestEntryError(
+        'Cannot infer a target path from this Git URL.',
+        'Use an object entry with name: git.example.com/<group>/<repo>.',
+      )
+    }
 
     const cloneUrl = isUrl ? value : projectNameToCloneUrl(name, protocol)
 
@@ -832,37 +1244,45 @@ function parseManifestRepository(entry: unknown, groupName: string, index: numbe
   }
 
   if (!isRecord(entry))
-    throw new Error(`${context} must be a Git URL or an object with name/url`)
+    throw new ManifestEntryError('Expected a string or an object.')
 
-  const rawName = readString(entry, 'name')
-  const description = readString(entry, 'description')
-  const repositoryPath = readString(entry, 'path')
-    || readString(entry, 'remotePath')
-    || readString(entry, 'repo')
-    || readString(entry, 'repository')
-  const sshUrl = readString(entry, 'sshUrl') || readString(entry, 'ssh')
-  const httpsUrl = readString(entry, 'httpsUrl') || readString(entry, 'https')
-  const url = readString(entry, 'url')
+  const rawName = readManifestEntryString(entry, 'name')
+  const description = readManifestEntryString(entry, 'description')
+  const repositoryPath = readManifestEntryString(entry, 'path')
+    || readManifestEntryString(entry, 'remotePath')
+    || readManifestEntryString(entry, 'repo')
+    || readManifestEntryString(entry, 'repository')
+  const sshUrl = readManifestEntryString(entry, 'sshUrl') || readManifestEntryString(entry, 'ssh')
+  const httpsUrl = readManifestEntryString(entry, 'httpsUrl') || readManifestEntryString(entry, 'https')
+  const url = readManifestEntryString(entry, 'url')
   const inferredUrlName = [sshUrl, httpsUrl, url]
     .map(value => value ? inferProjectNameFromUrl(value) : undefined)
     .find(Boolean)
   const remoteName = repositoryPath
-    ? resolveHostQualifiedProjectName(repositoryPath, host, context)
+    ? resolveHostQualifiedProjectName(repositoryPath, host)
     : rawName
-      ? resolveHostQualifiedProjectName(rawName, host, context)
+      ? resolveHostQualifiedProjectName(rawName, host)
       : inferredUrlName
   const cloneUrl = protocol === 'https'
     ? httpsUrl || url || sshUrl || (remoteName ? projectNameToCloneUrl(remoteName, protocol) : undefined)
     : sshUrl || url || httpsUrl || (remoteName ? projectNameToCloneUrl(remoteName, protocol) : undefined)
 
-  if (!cloneUrl)
-    throw new Error(`${context} must define url, sshUrl, httpsUrl, or a host-qualified name`)
+  if (!cloneUrl) {
+    throw new ManifestEntryError(
+      'Missing clone URL or repository path.',
+      'Define url/sshUrl/httpsUrl, or use name/path with a manifest/group host.',
+    )
+  }
 
   const resolvedName = rawName
-    ? repositoryPath ? normalizeProjectName(rawName) : resolveHostQualifiedProjectName(rawName, host, context)
+    ? repositoryPath ? normalizeProjectName(rawName) : resolveHostQualifiedProjectName(rawName, host)
     : inferProjectNameFromUrl(cloneUrl)
-  if (!resolvedName)
-    throw new Error(`${context} must define name because it cannot be inferred from ${cloneUrl}`)
+  if (!resolvedName) {
+    throw new ManifestEntryError(
+      `Cannot infer target path from ${cloneUrl}.`,
+      'Add name: git.example.com/<group>/<repo> to this repository entry.',
+    )
+  }
 
   return {
     name: resolvedName,
@@ -873,64 +1293,224 @@ function parseManifestRepository(entry: unknown, groupName: string, index: numbe
   }
 }
 
-function getManifestGroups(manifest: unknown): Array<[string, UnknownRecord]> {
-  if (!isRecord(manifest))
-    throw new Error('Project manifest must be a YAML object')
+function getManifestGroups(manifest: unknown, issues: ManifestValidationIssue[]): ManifestGroup[] {
+  if (!isRecord(manifest)) {
+    pushManifestIssue(
+      issues,
+      '$',
+      'Expected a YAML object.',
+      'Use groups: { common: { host, repositories } } or a top-level repositories list.',
+    )
+    return []
+  }
 
-  const groups: Array<[string, UnknownRecord]> = []
-  if (Array.isArray(manifest.repositories))
-    groups.push(['default', manifest])
+  const groups: ManifestGroup[] = []
+  if (Array.isArray(manifest.repositories)) {
+    groups.push({ name: 'default', path: '$', record: manifest })
+  }
+  else if ('repositories' in manifest) {
+    pushManifestIssue(issues, 'repositories', 'Expected an array.')
+  }
 
   if (manifest.groups !== undefined) {
-    if (!isRecord(manifest.groups))
-      throw new Error('Project manifest "groups" must be an object')
+    if (!isRecord(manifest.groups)) {
+      pushManifestIssue(issues, 'groups', 'Expected an object.')
+    }
+    else {
+      for (const [groupName, group] of Object.entries(manifest.groups)) {
+        const groupPath = `groups.${groupName}`
 
-    for (const [groupName, group] of Object.entries(manifest.groups)) {
-      if (!isRecord(group))
-        throw new Error(`Project manifest group "${groupName}" must be an object`)
+        if (!groupName.trim()) {
+          pushManifestIssue(issues, 'groups', 'Group names must be non-empty strings.')
+          continue
+        }
 
-      groups.push([groupName, group])
+        if (!isRecord(group)) {
+          pushManifestIssue(issues, groupPath, 'Expected an object.')
+          continue
+        }
+
+        groups.push({ name: groupName, path: groupPath, record: group })
+      }
     }
   }
 
-  if (groups.length === 0)
-    throw new Error('Project manifest must define repositories or groups')
+  if (groups.length === 0) {
+    pushManifestIssue(
+      issues,
+      '$',
+      'Expected repositories or groups.',
+      'Add groups.common.repositories, or a top-level repositories array.',
+    )
+  }
 
   return groups
 }
 
-function collectManifestRepositories(manifest: unknown, options: ResolvedCloneManifestProjectsOptions): ProjectRepository[] {
-  const manifestRoot = isRecord(manifest) ? readString(manifest, 'root') : undefined
-  const manifestHost = isRecord(manifest) ? readString(manifest, 'host') : undefined
-  const groups = getManifestGroups(manifest)
+function collectManifestRepositories(manifest: unknown, options: ResolvedCloneManifestProjectsOptions, label: string): ProjectRepository[] {
+  const issues: ManifestValidationIssue[] = []
+  const manifestRoot = isRecord(manifest) ? readManifestString(manifest, 'root', 'root', issues) : undefined
+  const manifestHost = isRecord(manifest) ? readManifestString(manifest, 'host', 'host', issues) : undefined
+  const groups = getManifestGroups(manifest, issues)
   const requestedGroups = new Set(options.groups)
-  const availableGroups = new Set(groups.map(([groupName]) => groupName))
+  const availableGroups = new Set(groups.map(group => group.name))
 
   for (const groupName of requestedGroups) {
-    if (!availableGroups.has(groupName))
-      throw new Error(`Project manifest group not found: ${groupName}`)
+    if (!availableGroups.has(groupName)) {
+      const available = [...availableGroups].join(', ') || 'none'
+      pushManifestIssue(
+        issues,
+        `--group ${groupName}`,
+        'Group not found.',
+        `Available groups: ${available}.`,
+      )
+    }
   }
 
   const selectedGroups = requestedGroups.size
-    ? groups.filter(([groupName]) => requestedGroups.has(groupName))
+    ? groups.filter(group => requestedGroups.has(group.name))
     : groups
 
-  return selectedGroups.flatMap(([groupName, group]) => {
-    if (!Array.isArray(group.repositories))
-      throw new Error(`Project manifest group "${groupName}" must define repositories`)
+  const repositories: ProjectRepository[] = []
+  const seenTargets = new Map<string, string>()
 
-    const root = options.rootOverride || readString(group, 'root') || manifestRoot || options.root
-    const host = readString(group, 'host') || manifestHost
-    return group.repositories.map((entry, index) => ({
-      ...parseManifestRepository(entry, groupName, index, options.protocol, host),
-      root,
-    }))
-  })
+  for (const group of selectedGroups) {
+    const repositoriesPath = group.path === '$' ? 'repositories' : `${group.path}.repositories`
+    if (!Array.isArray(group.record.repositories)) {
+      pushManifestIssue(
+        issues,
+        repositoriesPath,
+        'Expected an array.',
+        'Add repositories: [] or list repository entries under this group.',
+      )
+      continue
+    }
+
+    const root = options.rootOverride
+      || readManifestString(group.record, 'root', group.path === '$' ? 'root' : `${group.path}.root`, issues)
+      || manifestRoot
+      || options.root
+    const host = readManifestString(group.record, 'host', group.path === '$' ? 'host' : `${group.path}.host`, issues) || manifestHost
+
+    for (const [index, entry] of group.record.repositories.entries()) {
+      const sourcePath = `${repositoriesPath}[${index}]`
+      try {
+        const repository = {
+          ...parseManifestRepository(entry, group.name, options.protocol, host),
+          root,
+          sourcePath,
+        }
+        const targetPath = projectTargetPath(root, repository.name)
+        const previousSourcePath = seenTargets.get(targetPath)
+        if (previousSourcePath) {
+          pushManifestIssue(
+            issues,
+            sourcePath,
+            `Duplicate target path: ${targetPath}`,
+            `First defined at ${previousSourcePath}. Change name/root/path to avoid cloning two repositories to the same directory.`,
+          )
+        }
+        else {
+          seenTargets.set(targetPath, sourcePath)
+        }
+
+        repositories.push(repository)
+      }
+      catch (error) {
+        pushManifestIssue(
+          issues,
+          sourcePath,
+          error instanceof Error ? error.message : String(error),
+          error instanceof ManifestEntryError ? error.hint : undefined,
+        )
+      }
+    }
+  }
+
+  if (issues.length > 0)
+    throw new ProjectManifestValidationError(label, issues)
+
+  return repositories
 }
 
 function loadManifest(filePath: string): unknown {
   const content = fs.readFileSync(filePath, 'utf-8')
   return parseYaml(content)
+}
+
+function hasYamlPathname(url: URL): boolean {
+  return /\.ya?ml$/i.test(url.pathname)
+}
+
+function normalizeRemoteManifestUrl(source: string): string | undefined {
+  const trimmed = source.trim()
+  if (!trimmed)
+    return undefined
+
+  let url: URL
+  try {
+    url = new URL(trimmed)
+  }
+  catch {
+    return undefined
+  }
+
+  if (url.protocol !== 'http:' && url.protocol !== 'https:')
+    return undefined
+
+  if (url.pathname.endsWith('.git'))
+    return undefined
+
+  const pathParts = url.pathname.split('/')
+  const blobIndex = pathParts.indexOf('blob')
+  if (blobIndex !== -1) {
+    pathParts[blobIndex] = 'raw'
+    url.pathname = pathParts.join('/')
+  }
+
+  if (!hasYamlPathname(url))
+    return undefined
+
+  return url.toString()
+}
+
+function remoteManifestCachePath(remoteUrl: string): string {
+  const hash = createHash('sha256').update(remoteUrl).digest('hex').slice(0, 12)
+  const parsed = new URL(remoteUrl)
+  const fileName = path.posix.basename(parsed.pathname) || DEFAULT_REMOTE_MANIFEST
+  const cacheName = safeCacheName(`${parsed.hostname}-${fileName}`)
+  return path.join(getManifestCacheRoot(), `${cacheName}-${hash}`, fileName)
+}
+
+function looksLikeHtml(content: string): boolean {
+  const start = content.trimStart().slice(0, 64).toLowerCase()
+  return start.startsWith('<!doctype html') || start.startsWith('<html')
+}
+
+function ensureRemoteManifestFile(remoteUrl: string): ResolvedManifestFile {
+  const normalizedUrl = normalizeRemoteManifestUrl(remoteUrl)
+  if (!normalizedUrl)
+    throw new Error(`Unsupported remote project manifest URL: ${remoteUrl}`)
+
+  const cachePath = remoteManifestCachePath(normalizedUrl)
+  fs.mkdirSync(path.dirname(cachePath), { recursive: true })
+
+  const result = ensureCommandSuccess('curl', ['-fsSL', normalizedUrl])
+  if (!result.stdout.trim())
+    throw new Error(`Remote project manifest is empty: ${normalizedUrl}`)
+
+  if (looksLikeHtml(result.stdout)) {
+    throw new Error(
+      `Remote project manifest returned HTML instead of YAML: ${normalizedUrl}. `
+      + 'If this is a private Git web page, use --repo <git-url> --manifest <path>, or make the URL accessible to curl.',
+    )
+  }
+
+  fs.writeFileSync(cachePath, result.stdout, 'utf-8')
+  return {
+    filePath: cachePath,
+    label: normalizedUrl,
+  }
 }
 
 function isGitRepositorySource(source: string): boolean {
@@ -1014,12 +1594,16 @@ function resolveManifestFileInDirectory(directory: string, manifestPath: string 
 function resolveManifestFile(rawOptions: ResolvedCloneManifestProjectsOptions): ResolvedManifestFile {
   let file = rawOptions.file
   let repo = rawOptions.repo
+  let remoteUrl: string | undefined
 
   if (rawOptions.source) {
     if (file || repo)
       throw new Error('Use either a positional manifest source or --file/--repo, not both')
 
-    if (isGitRepositorySource(rawOptions.source))
+    remoteUrl = normalizeRemoteManifestUrl(rawOptions.source)
+    if (remoteUrl)
+      repo = undefined
+    else if (isGitRepositorySource(rawOptions.source))
       repo = rawOptions.source
     else
       file = rawOptions.source
@@ -1027,6 +1611,9 @@ function resolveManifestFile(rawOptions: ResolvedCloneManifestProjectsOptions): 
 
   if (file && repo)
     throw new Error('Use either --file or --repo, not both')
+
+  if (remoteUrl)
+    return ensureRemoteManifestFile(remoteUrl)
 
   if (repo) {
     const repoPath = ensureManifestRepository(repo)
@@ -1199,35 +1786,43 @@ export async function projectStatus(rawOptions: Partial<ProjectStatusOptions> = 
 }
 
 export async function cloneManifestProjects(rawOptions: Partial<CloneManifestProjectsOptions> = {}) {
-  const options: ResolvedCloneManifestProjectsOptions = {
+  let options: ResolvedCloneManifestProjectsOptions = {
     source: rawOptions.source,
     file: rawOptions.file,
     repo: rawOptions.repo,
     manifest: rawOptions.manifest,
     groups: rawOptions.groups || [],
+    repositories: rawOptions.repositories || [],
     root: rawOptions.root || DEFAULT_ROOT,
     rootOverride: rawOptions.root,
     protocol: rawOptions.protocol || 'ssh',
+    validate: rawOptions.validate ?? false,
     update: rawOptions.update ?? false,
     dryRun: rawOptions.dryRun ?? false,
     yes: rawOptions.yes ?? false,
     interactive: rawOptions.interactive ?? false,
   }
 
-  const effectiveDryRun = options.dryRun || !options.yes
+  let effectiveDryRun = options.dryRun || !options.yes
 
-  p.intro('Clone projects from manifest')
-  if (effectiveDryRun)
+  p.intro(options.validate ? 'Validate project manifest' : 'Clone projects from manifest')
+  if (effectiveDryRun && !options.validate)
     console.log('Dry-run mode: pass --yes to clone or update repositories')
+
+  if (options.interactive) {
+    options = await chooseManifestSource(options)
+    effectiveDryRun = options.dryRun || !options.yes
+  }
 
   const s = p.spinner()
   s.start('Loading project manifest...')
   let repositories: ProjectRepository[]
   let manifestFile: ResolvedManifestFile
+  let manifest: unknown
   try {
     manifestFile = resolveManifestFile(options)
-    repositories = collectManifestRepositories(loadManifest(manifestFile.filePath), options)
-    s.stop(`Loaded ${repositories.length} repositories from ${manifestFile.label}`)
+    manifest = loadManifest(manifestFile.filePath)
+    s.stop(`Loaded project manifest from ${manifestFile.label}`)
   }
   catch (error) {
     s.stop('Failed to load project manifest')
@@ -1237,8 +1832,32 @@ export async function cloneManifestProjects(rawOptions: Partial<CloneManifestPro
     return
   }
 
+  if (options.interactive) {
+    options = await chooseManifestGroups(manifest, options)
+  }
+
+  try {
+    repositories = collectManifestRepositories(manifest, options, manifestFile.label)
+    repositories = filterManifestRepositories(repositories, options.repositories)
+    console.log(`Loaded ${repositories.length} repositories from ${manifestFile.label}`)
+  }
+  catch (error) {
+    console.error(error instanceof Error ? error.message : String(error))
+    p.outro('No repositories cloned')
+    process.exitCode = 1
+    return
+  }
+
   if (repositories.length === 0) {
     p.outro('No repositories found')
+    return
+  }
+
+  if (options.validate) {
+    if (options.interactive)
+      printManifestCommandHint(options, false)
+
+    p.outro(`Project manifest is valid! ${repositories.length} repositories`)
     return
   }
 
@@ -1251,6 +1870,14 @@ export async function cloneManifestProjects(rawOptions: Partial<CloneManifestPro
 
     if (selectedRepositories.length !== repositories.length)
       console.log(`Selected ${selectedRepositories.length}/${repositories.length} repositories`)
+
+    options = {
+      ...options,
+      repositories: selectedRepositories.length === repositories.length && options.repositories.length === 0
+        ? []
+        : selectedRepositories.map(repository => repository.name),
+    }
+    printManifestCommandHint(options, effectiveDryRun)
 
     repositories = selectedRepositories
   }

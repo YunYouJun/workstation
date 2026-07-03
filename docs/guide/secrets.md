@@ -14,6 +14,18 @@ export API_TOKEN="{{DOTFILES_SECRET:API_TOKEN}}"
 
 真实值存储在 `.env.local` 中，而该文件被 Git 忽略。
 
+## 门禁
+
+CI 会用 Gitleaks 扫描完整 Git 历史。普通 CI 和 GitHub Pages 部署都会先跑密钥扫描；扫描失败时不要部署，先移除敏感值并轮换已经暴露的凭据。
+
+本地提交或推送前也可以手动扫描：
+
+```bash
+pnpm secrets:scan
+```
+
+`&#123;&#123;DOTFILES_SECRET:KEY&#125;&#125;` 是允许提交的占位符，不是真实密钥。
+
 ## 规则
 
 - 提交占位符，不提交密钥值。

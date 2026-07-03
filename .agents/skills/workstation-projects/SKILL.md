@@ -1,6 +1,6 @@
 ---
 name: workstation-projects
-description: Guide Codex through this repository's project checkout workflow. Use when the user asks about cloning, previewing, updating, or documenting workstation project checkouts; recent or active GitHub repositories for YunYouJun; ghq layout; wst/workstation project commands; projects.example.yaml; or safe project bootstrap practices. Do not use for dotfiles sync, software installation, or package catalog work unless the task also involves project checkout policy.
+description: Guide Codex through this repository's project checkout workflow. Use when the user asks about cloning, previewing, updating, or documenting workstation project checkouts; recent or active GitHub repositories for a GitHub owner/org such as YunYouJun or YunLeFun; ghq layout; wst/workstation project commands; projects.example.yaml; or safe project bootstrap practices. Do not use for dotfiles sync, software installation, or package catalog work unless the task also involves project checkout policy.
 ---
 
 # Workstation Projects
@@ -47,6 +47,15 @@ Use the built CLI outside the repo:
 wst p active --limit 50
 ```
 
+To target a different GitHub owner or organization, pass it as the target. The
+repo script already includes `p active`, so pass the owner directly after the
+script name:
+
+```bash
+pnpm projects:clone-active YunLeFun --limit 20
+wst p active YunLeFun --limit 20
+```
+
 When the user wants to choose a subset by hand, use interactive selection:
 
 ```bash
@@ -58,6 +67,7 @@ wst p active --limit 50 -i
 
 ```bash
 wst p active --limit 50 --yes
+wst p active YunLeFun --limit 20 --yes
 ```
 
 5. For existing checkouts, update only when requested:

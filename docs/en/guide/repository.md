@@ -42,6 +42,23 @@ Use `wst` instead of `ws` so the published binary is less likely to be confused
 with WebSocket or workspace aliases. The old `dotfiles` command remains as a
 compatibility alias for existing sync workflows.
 
+## Common `.gitignore` Baseline
+
+The old general-purpose template can map into this repository's ignore policy,
+but this repo uses pnpm and should commit `pnpm-lock.yaml`, so do not add it to
+the ignore list. These shared entries still belong here:
+
+```text
+.DS_Store
+node_modules/
+dist/
+tmp/
+```
+
+If npm or Yarn lockfiles are generated accidentally in this repository, ignore
+`package-lock.json` and `yarn.lock`; dependency versions remain pinned by
+`pnpm-lock.yaml`.
+
 ## What Belongs Here
 
 - Shell, Git, editor, terminal, and Codex configuration.

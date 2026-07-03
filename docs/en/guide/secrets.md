@@ -14,6 +14,20 @@ export API_TOKEN="{{DOTFILES_SECRET:API_TOKEN}}"
 
 The real value is stored in `.env.local`, which is ignored by Git.
 
+## Gate
+
+CI runs Gitleaks against the full Git history. Both regular CI and the GitHub
+Pages deployment run the secret scan first; if the scan fails, do not deploy.
+Remove the sensitive value and rotate any credential that was exposed.
+
+Run the same scan locally before committing or pushing:
+
+```bash
+pnpm secrets:scan
+```
+
+`&#123;&#123;DOTFILES_SECRET:KEY&#125;&#125;` is a committed placeholder, not the real secret.
+
 ## Rules
 
 - Commit placeholders, not secret values.

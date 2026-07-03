@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import type { BrewfileKind, SoftwareItem } from '../software.config'
+import type { BrewfileKind, LocalizedText, SoftwareItem } from '../software.config'
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -36,6 +36,22 @@ const byId = new Map<string, SoftwareItem>(softwareItems.map(item => [item.id, i
 
 const command = process.argv[2] ?? 'help'
 const args = process.argv.slice(3)
+const helpFlags = new Set(['--help', '-h'])
+
+if (helpFlags.has(command) || args.some(arg => helpFlags.has(arg)))
+  usage()
+
+function downloadUrl(item: SoftwareItem): string {
+  return item.downloadUrl || item.url
+}
+
+function hasSeparateDownloadUrl(item: SoftwareItem): boolean {
+  return Boolean(item.downloadUrl && item.downloadUrl !== item.url)
+}
+
+function displayText(text: LocalizedText): string {
+  return text.en
+}
 
 function usage(exitCode = 0): never {
   console.log(`Usage:
@@ -56,7 +72,7 @@ Examples:
 
 function list(): void {
   for (const group of softwareGroups) {
-    console.log(`\n${group.group}`)
+    console.log(`\n${displayText(group.label)}`)
     for (const item of group.items) {
       const defaultNote = item.defaultInstall === false ? ', manual review' : ''
       const installRef = item.cask
@@ -65,8 +81,10 @@ function list(): void {
           ? `mas: ${item.masId}`
           : 'manual'
       const suffix = ` (${installRef}${defaultNote})`
-      console.log(`  ${item.id.padEnd(16)} ${item.name}${suffix}`)
-      console.log(`  ${' '.repeat(16)} ${item.url}`)
+      console.log(`  ${item.id.padEnd(16)} ${displayText(item.name)}${suffix}`)
+      console.log(`  ${' '.repeat(16)} site:     ${item.url}`)
+      if (hasSeparateDownloadUrl(item))
+        console.log(`  ${' '.repeat(16)} download: ${downloadUrl(item)}`)
     }
   }
 }
@@ -221,7 +239,7 @@ function status(selectedArgs: string[]): void {
     if (rows.length === 0)
       continue
 
-    console.log(`\n${group.group}`)
+    console.log(`\n${displayText(group.label)}`)
 
     for (const row of rows) {
       shownCount += 1
@@ -232,7 +250,7 @@ function status(selectedArgs: string[]): void {
         missingCount += 1
 
       const label = `[${row.status.state}]`.padEnd(12)
-      console.log(`  ${label} ${row.item.id.padEnd(16)} ${row.item.name} (${row.status.via})`)
+      console.log(`  ${label} ${row.item.id.padEnd(16)} ${displayText(row.item.name)} (${row.status.via})`)
     }
   }
 
@@ -266,7 +284,7 @@ function openDownloadPages(selectedIds: string[]): void {
       })
 
   for (const item of selected)
-    run('open', [item.url])
+    run('open', [downloadUrl(item)])
 }
 
 function selectedBrewfiles(selectedArgs: string[]): string[] {

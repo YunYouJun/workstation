@@ -105,6 +105,32 @@ function writeFakeGit(binDir: string) {
   ].join('\r\n'))
 }
 
+function writeFakeCurl(binDir: string) {
+  writeExecutable(path.join(binDir, 'curl'), [
+    'const fs = require("node:fs")',
+    'const args = process.argv.slice(2)',
+    'const url = args.at(-1)',
+    'const callsPath = process.env.FAKE_CURL_CALLS',
+    'if (callsPath) {',
+    '  const calls = fs.existsSync(callsPath) ? JSON.parse(fs.readFileSync(callsPath, "utf-8")) : []',
+    '  calls.push(args)',
+    '  fs.writeFileSync(callsPath, JSON.stringify(calls))',
+    '}',
+    'const responses = JSON.parse(process.env.FAKE_CURL_RESPONSES || "{}")',
+    'if (!(url in responses)) {',
+    '  process.stderr.write("No fake curl response for " + url)',
+    '  process.exit(22)',
+    '}',
+    'process.stdout.write(responses[url])',
+  ])
+
+  writeFile(path.join(binDir, 'curl.cmd'), [
+    '@echo off',
+    `node "${path.join(binDir, 'curl')}" %*`,
+    '',
+  ].join('\r\n'))
+}
+
 function writeFakeGhq(binDir: string) {
   writeExecutable(path.join(binDir, 'ghq'), [
     'const fs = require("node:fs")',
@@ -137,6 +163,7 @@ function createProjectsFixture(repositories: FakeRepo[]) {
 
   const ghEnv = writeFakeGh(binDir, repositories)
   writeFakeGit(binDir)
+  writeFakeCurl(binDir)
 
   return {
     tempDir,
@@ -252,6 +279,128 @@ describe('projects CLI', () => {
     assert.match(`${result.stdout}\n${result.stderr}`, new RegExp(path.join(fixture.projectsRoot, 'git.example.com', 'example', 'service').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   })
 
+  it('validates latest project manifest format without clone preview', () => {
+    const fixture = createProjectsFixture([])
+    const manifestPath = path.join(fixture.repoRoot, 'projects.local.yaml')
+    writeFile(manifestPath, [
+      'groups:',
+      '  work:',
+      '    host: git.example.com',
+      '    repositories:',
+      '      - example/service',
+      '',
+    ].join('\n'))
+
+    const result = runCli(['projects', 'manifest', '--file', manifestPath, '--root', fixture.projectsRoot, '--validate'], fixture.repoRoot, fixture.homeRoot, fixture.env)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Project manifest is valid! 1 repositories/)
+    assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /Would clone/)
+  })
+
+  it('reports a helpful validation error when shorthand repositories are missing host', () => {
+    const fixture = createProjectsFixture([])
+    const manifestPath = path.join(fixture.repoRoot, 'projects.local.yaml')
+    writeFile(manifestPath, [
+      'groups:',
+      '  work:',
+      '    repositories:',
+      '      - example/service',
+      '',
+    ].join('\n'))
+
+    const result = runCli(['projects', 'manifest', '--file', manifestPath, '--root', fixture.projectsRoot], fixture.repoRoot, fixture.homeRoot, fixture.env)
+
+    assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Invalid project manifest/)
+    assert.match(`${result.stdout}\n${result.stderr}`, /groups\.work\.repositories\[0\]/)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Short project paths require a manifest or group host/)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Add host: git\.example\.com/)
+  })
+
+  it('reports duplicate manifest target paths before cloning', () => {
+    const fixture = createProjectsFixture([])
+    const manifestPath = path.join(fixture.repoRoot, 'projects.local.yaml')
+    writeFile(manifestPath, [
+      'groups:',
+      '  work:',
+      '    host: git.example.com',
+      '    repositories:',
+      '      - example/service',
+      '      - name: git.example.com/example/service',
+      '',
+    ].join('\n'))
+
+    const result = runCli(['projects', 'manifest', '--file', manifestPath, '--root', fixture.projectsRoot, '--yes'], fixture.repoRoot, fixture.homeRoot, fixture.env)
+
+    assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Duplicate target path/)
+    assert.match(`${result.stdout}\n${result.stderr}`, /First defined at groups\.work\.repositories\[0\]/)
+    assert.equal(fs.existsSync(path.join(fixture.projectsRoot, 'git.example.com', 'example', 'service')), false)
+  })
+
+  it('reports missing requested manifest groups with available groups', () => {
+    const fixture = createProjectsFixture([])
+    const manifestPath = path.join(fixture.repoRoot, 'projects.local.yaml')
+    writeFile(manifestPath, [
+      'groups:',
+      '  common:',
+      '    host: git.example.com',
+      '    repositories:',
+      '      - example/service',
+      '',
+    ].join('\n'))
+
+    const result = runCli(['projects', 'manifest', '--file', manifestPath, '--group', 'missing', '--validate'], fixture.repoRoot, fixture.homeRoot, fixture.env)
+
+    assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /--group missing/)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Available groups: common/)
+  })
+
+  it('supports the short manifest alias and group option', () => {
+    const fixture = createProjectsFixture([])
+    const manifestPath = path.join(fixture.repoRoot, 'projects.local.yaml')
+    writeFile(manifestPath, [
+      'groups:',
+      '  common:',
+      '    host: git.example.com',
+      '    repositories:',
+      '      - example/common',
+      '  ai:',
+      '    host: git.example.com',
+      '    repositories:',
+      '      - example/agent',
+      '',
+    ].join('\n'))
+
+    const result = runCli(['p', 'm', '--file', manifestPath, '-g', 'ai', '--root', fixture.projectsRoot], fixture.repoRoot, fixture.homeRoot, fixture.env)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /git\.example\.com\/example\/agent/)
+    assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /git\.example\.com\/example\/common/)
+  })
+
+  it('filters manifest repositories by target name', () => {
+    const fixture = createProjectsFixture([])
+    const manifestPath = path.join(fixture.repoRoot, 'projects.local.yaml')
+    writeFile(manifestPath, [
+      'groups:',
+      '  ai:',
+      '    host: git.example.com',
+      '    repositories:',
+      '      - example/agent',
+      '      - example/docs',
+      '',
+    ].join('\n'))
+
+    const result = runCli(['p', 'm', '--file', manifestPath, '-g', 'ai', '--repository', 'git.example.com/example/agent', '--root', fixture.projectsRoot], fixture.repoRoot, fixture.homeRoot, fixture.env)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /git\.example\.com\/example\/agent/)
+    assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /git\.example\.com\/example\/docs/)
+  })
+
   it('clones repositories from a local project manifest', () => {
     const fixture = createProjectsFixture([])
     const callsPath = path.join(fixture.tempDir, 'git-calls.json')
@@ -354,6 +503,65 @@ describe('projects CLI', () => {
     assert.equal(gitCalls[0][1], manifestRepo)
     assert.equal(manifestCachePath.startsWith(manifestCachePrefix), true)
     assert.equal(path.basename(manifestCachePath).length, 'example-config-'.length + 12)
+  })
+
+  it('reads a project manifest from a remote raw file URL', () => {
+    const fixture = createProjectsFixture([])
+    const callsPath = path.join(fixture.tempDir, 'curl-calls.json')
+    const manifestUrl = 'https://git.example.com/example/config/raw/main/projects.yaml'
+    const manifest = [
+      'groups:',
+      '  ai:',
+      '    host: git.example.com',
+      '    repositories:',
+      '      - example/agent',
+      '      - example/docs',
+      '',
+    ].join('\n')
+
+    const result = runCli(['p', 'm', manifestUrl, '-g', 'ai', '--repository', 'agent', '--root', fixture.projectsRoot], fixture.repoRoot, fixture.homeRoot, {
+      ...fixture.env,
+      FAKE_CURL_CALLS: callsPath,
+      FAKE_CURL_RESPONSES: JSON.stringify({
+        [manifestUrl]: manifest,
+      }),
+    })
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /git\.example\.com\/example\/agent/)
+    assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /git\.example\.com\/example\/docs/)
+
+    const curlCalls = JSON.parse(fs.readFileSync(callsPath, 'utf-8'))
+    assert.deepEqual(curlCalls.at(-1), ['-fsSL', manifestUrl])
+  })
+
+  it('normalizes remote blob manifest URLs to raw URLs', () => {
+    const fixture = createProjectsFixture([])
+    const callsPath = path.join(fixture.tempDir, 'curl-calls.json')
+    const blobUrl = 'https://git.example.com/example/config/blob/main/projects.yaml'
+    const rawUrl = 'https://git.example.com/example/config/raw/main/projects.yaml'
+    const manifest = [
+      'groups:',
+      '  common:',
+      '    host: git.example.com',
+      '    repositories:',
+      '      - example/service',
+      '',
+    ].join('\n')
+
+    const result = runCli(['p', 'm', blobUrl, '-g', 'common', '--root', fixture.projectsRoot], fixture.repoRoot, fixture.homeRoot, {
+      ...fixture.env,
+      FAKE_CURL_CALLS: callsPath,
+      FAKE_CURL_RESPONSES: JSON.stringify({
+        [rawUrl]: manifest,
+      }),
+    })
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /git\.example\.com\/example\/service/)
+
+    const curlCalls = JSON.parse(fs.readFileSync(callsPath, 'utf-8'))
+    assert.deepEqual(curlCalls.at(-1), ['-fsSL', rawUrl])
   })
 
   it('uses the configured active project limit from the environment', () => {

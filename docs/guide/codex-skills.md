@@ -38,7 +38,7 @@ Codex 会从多个范围发现 skills：
 | 范围 | 位置 | 用途 |
 | --- | --- | --- |
 | 仓库 | `.agents/skills` | 此仓库共享的工作流 |
-| 用户 | `~/.agents/skills` | 跨仓库的个人工作流 |
+| 用户 | `$CODEX_HOME/skills`（默认 `~/.codex/skills`） | 跨仓库的个人工作流 |
 | 管理员 | `/etc/codex/skills` | 机器或组织默认项 |
 | 系统 | Codex 内置 | 例如 skill 创建等内置工作流 |
 
@@ -59,6 +59,63 @@ $skill-installer
 ```
 
 如果一个工作流需要分发给其他开发者，应把它打包成插件，而不是只提交一个本地 skill。
+
+## 个人 Skill 清单
+
+这个仓库用 [`codex-skills.config.ts`](../../codex-skills.config.ts) 记录可复用的个人
+skills。同步脚本会把它们安装到 `$CODEX_HOME/skills`，默认是 `~/.codex/skills`。
+
+```bash
+pnpm skills:list      # 查看配置的来源
+pnpm skills:status    # 查看已安装 / 缺失状态
+pnpm skills:check     # 有配置项缺失时返回非零退出码
+pnpm skills:install   # 安装缺失的 skills
+```
+
+要增加新的个人 skill，在清单里添加 `id`、`description`、`source` 和可选
+`targetName`。`source.ref` 可以用 `main` 跟随上游，也可以固定到 tag 或 commit，
+让新机器迁移结果更可复现。
+
+```ts
+export const codexSkills = [
+  {
+    id: 'ui-ux-pro-max',
+    targetName: 'ui-ux-pro-max',
+    description: 'Broad UI/UX design intelligence for web, mobile, dashboards, landing pages, and component review.',
+    source: {
+      type: 'github',
+      repo: 'nextlevelbuilder/ui-ux-pro-max-skill',
+      path: '.claude/skills/ui-ux-pro-max',
+      ref: 'main',
+    },
+  },
+]
+```
+
+其中 `id` 是 workstation 清单里的唯一标识，`targetName` 是安装到
+`$CODEX_HOME/skills/<targetName>` 的目录名。一般让 `id`、`targetName` 和
+`SKILL.md` 里的 `name` 保持一致最省心。建议保持小而精：全局 skills 太多时，
+触发描述容易重叠，Codex 会变得更吵。
+
+## Codex MCP 同步
+
+Codex MCP servers 使用 Codex 原生 `config.toml` 结构。这个仓库不设计额外
+schema，也不直接同步完整 `~/.codex/config.toml`；只把 `codex-mcp.toml`
+作为可审查的 MCP 片段，并由脚本合并到
+`$CODEX_HOME/config.toml`（默认 `~/.codex/config.toml`）里的 managed block。
+
+```bash
+pnpm mcp:list             # 查看仓库声明的 MCP 片段
+pnpm mcp:status           # 查看 managed block 状态
+pnpm mcp:check            # managed block 缺失或过期时返回非零退出码
+pnpm mcp:install --dry-run
+pnpm mcp:install          # 合并 managed block，并备份原 config.toml
+```
+
+MCP 片段只应包含 `[mcp_servers.*]`、插件 MCP 策略，以及少量 MCP OAuth callback
+顶层配置。不要把 `auth.json`、OAuth token、bearer token 实值、插件运行态或自动生成的
+本机 MCP server 写进仓库。需要凭证时只提交环境变量名，例如
+`bearer_token_env_var = "FIGMA_OAUTH_TOKEN"`。
 
 ## Skills、插件与脚本
 

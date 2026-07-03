@@ -2,6 +2,7 @@
 brew "starship"
 brew "fzf"
 brew "zoxide"
+brew "tmux"
 brew "zsh-autosuggestions"
 brew "zsh-syntax-highlighting"
 
@@ -16,6 +17,7 @@ brew "fd"
 brew "eza"
 brew "jq"
 brew "chezmoi"
+brew "gitleaks"
 
 # Prompt glyphs and terminal icons
 cask "font-hack-nerd-font"

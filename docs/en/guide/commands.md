@@ -80,6 +80,132 @@ pnpm install
 pnpm build
 ```
 
+Sync personal Codex skills and the MCP fragment:
+
+```bash
+pnpm skills:status
+pnpm skills:install
+pnpm mcp:status
+pnpm mcp:install --dry-run
+pnpm mcp:install
+```
+
+## SSH And Remote Access
+
+Generate a new GitHub SSH key and print the public key:
+
+```bash
+ssh-keygen -t ed25519 -C "you@example.com"
+cat ~/.ssh/id_ed25519.pub
+```
+
+Install the public key on a remote machine:
+
+```bash
+ssh-copy-id -i ~/.ssh/id_ed25519.pub user@example-host
+```
+
+Check GitHub SSH authentication:
+
+```bash
+ssh -T git@github.com
+```
+
+## macOS And Unix Maintenance
+
+Flush the macOS DNS cache:
+
+```bash
+sudo killall -HUP mDNSResponder
+```
+
+If the built-in Apache server is occupying `localhost`, stop it first:
+
+```bash
+sudo apachectl stop
+```
+
+Temporarily inspect internal-disk SMART data:
+
+```bash
+brew install smartmontools
+smartctl -a /dev/disk0
+```
+
+List installed JDKs and register Homebrew OpenJDK with the macOS Java wrapper:
+
+```bash
+/usr/libexec/java_home -V
+brew install openjdk
+sudo ln -sfn "$(brew --prefix openjdk)/libexec/openjdk.jdk" /Library/Java/JavaVirtualMachines/openjdk.jdk
+```
+
+If a machine needs to switch between multiple JDKs long-term, install `jenv`:
+
+```bash
+brew install jenv
+echo 'export PATH="$HOME/.jenv/bin:$PATH"' >> ~/.zshrc
+echo 'eval "$(jenv init -)"' >> ~/.zshrc
+jenv add "$(/usr/libexec/java_home)"
+jenv versions
+```
+
+If a machine already has `rar`, use `-ep1` to avoid storing the full source path
+inside the archive. `rar` does not belong in the default workstation manifest;
+use it only when the recipient specifically requires RAR.
+
+```bash
+rar a -ep1 archive.rar /path/to/source
+```
+
+Common macOS shortcuts:
+
+| Shortcut | Action |
+| --- | --- |
+| `Control-Command-Space` | Show emoji and symbols |
+| `Control-Command-F` | Enter or exit full screen |
+| `Shift-Command-5` | Open screenshot and screen recording tools |
+| `Shift-Command-.` | Show or hide hidden files in Finder |
+| `Command-Option-C` | Copy the selected Finder item's path |
+| `Command-Shift-G` | Go to a path in Finder |
+
+Common Linux/Unix read-only checks:
+
+```bash
+hostname
+uname -m
+df -h
+du -sh <path>
+```
+
+## Windows PowerShell
+
+List all TCP port usage:
+
+```powershell
+Get-NetTCPConnection
+```
+
+Check one port, such as `8080`:
+
+```powershell
+Get-NetTCPConnection | Where-Object { $_.LocalPort -eq 8080 }
+```
+
+Open the current directory in File Explorer:
+
+```powershell
+ii .
+```
+
+Use the current Windows command for WSL setup. The older feature-toggle commands
+from historical notes are archived only:
+
+```powershell
+wsl --install
+wsl --list --verbose
+```
+
 ## Safe Checks
 
 Inspect the current dotfiles state:
@@ -88,6 +214,18 @@ Inspect the current dotfiles state:
 workstation dotfiles doctor
 workstation dotfiles status
 workstation dotfiles diff
+```
+
+List available init tasks:
+
+```bash
+wst init --list
+```
+
+Preview Git `includeIf` identity routing setup:
+
+```bash
+wst init git.include-if --git-profile 'id=github;host=github.com;name=Your Name;email=you@example.com'
 ```
 
 Preview a restore from the repository into `$HOME`:
@@ -124,18 +262,23 @@ Select repositories interactively:
 
 ```bash
 wst p active --limit 50 -i
+wst p manifest -i
 ```
 
 Preview cloning from a local project manifest:
 
 ```bash
 wst p manifest --file projects.local.yaml
+wst p manifest --file projects.local.yaml --validate
 ```
 
 Preview reading a project manifest from a private configuration repository:
 
 ```bash
 wst p manifest https://git.example.com/<user>/<config-repo> --group common
+wst p manifest https://git.example.com/<user>/<config-repo>/raw/main/projects.yaml -g common
+wst p m https://git.example.com/<user>/<config-repo> -g common
+wst p m --file projects.local.yaml -g common --repository git.example.com/example/service
 ```
 
 Configure the default count through the script entry:
@@ -151,6 +294,25 @@ workstation projects status
 wst p status --check
 wst p status --max-depth 8
 pnpm projects:status
+```
+
+Enter a known `ghq` project:
+
+```bash
+cd "$(ghq list -p github.com/YunYouJun/workstation)"
+```
+
+Jump to a project that `zoxide` has already learned:
+
+```bash
+z workstation
+zi workstation
+```
+
+Pick from every `ghq` checkout and enter it:
+
+```bash
+project="$(ghq list -p | fzf)" && cd "$project"
 ```
 
 Check whether Homebrew packages are already installed:
@@ -174,7 +336,7 @@ pnpm software:missing
 Open official download pages for selected apps:
 
 ```bash
-pnpm software:open microsoft-todo vscode neteasemusic qq wechat codex chrome raycast feishu
+pnpm software:open raycast feishu microsoft-todo ima
 ```
 
 ## Apply Changes
@@ -197,6 +359,12 @@ Apply chezmoi-managed files directly:
 workstation dotfiles chezmoi apply
 ```
 
+Apply Git `includeIf` identity routing after reviewing the dry-run:
+
+```bash
+wst init git.include-if --git-profile 'id=github;host=github.com;name=Your Name;email=you@example.com' --yes
+```
+
 Clone the recently active `YunYouJun` repositories after reviewing the dry-run:
 
 ```bash
@@ -215,6 +383,13 @@ Use the interactive sync flow when choosing direction and files by hand:
 
 ```bash
 workstation dotfiles sync -i
+```
+
+Use interactive init when choosing setup tasks and entering machine-local
+identity values by hand:
+
+```bash
+wst init -i
 ```
 
 Equivalent non-interactive restore flow:

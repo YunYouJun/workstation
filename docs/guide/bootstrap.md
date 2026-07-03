@@ -41,6 +41,13 @@ pnpm install
 pnpm build
 ```
 
+预览本机初始化任务，例如 Git `includeIf` 身份路由：
+
+```bash
+wst init --list
+wst init git.include-if --git-profile 'id=github;host=github.com;name=Your Name;email=you@example.com'
+```
+
 写入 `$HOME` 前先运行检查：
 
 ```bash

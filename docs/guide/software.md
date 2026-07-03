@@ -4,7 +4,7 @@ import SoftwareCatalog from '../.vitepress/theme/components/SoftwareCatalog.vue'
 
 # 软件
 
-此页列出常见的新机器应用。下载链接指向官方项目页面；可重复安装应优先使用 Homebrew 清单，或仓库中的轻量辅助脚本。
+此页列出常见的新机器应用。官网链接用于了解产品；下载页用于快速安装。可重复安装应优先使用 Homebrew 清单，或仓库中的轻量辅助脚本。
 
 ## 安装策略
 
@@ -17,6 +17,8 @@ import SoftwareCatalog from '../.vitepress/theme/components/SoftwareCatalog.vue'
 
 <SoftwareCatalog />
 
+在目录中搜索或切换分类后，可直接打开当前结果的下载页，也可以进入单个软件的官方站点。搜索支持空格或逗号分隔的多个关键词；下面的命令适合终端批量操作。
+
 ## 快速命令
 
 列出已知软件 id：
@@ -28,7 +30,16 @@ pnpm software list
 打开所选应用的官方下载页：
 
 ```bash
-pnpm software:open microsoft-todo vscode neteasemusic qq wechat codex chrome raycast feishu
+pnpm software:open raycast feishu microsoft-todo ima
+```
+
+快速安装 Raycast、飞书和微软待办；ima 暂时走官方下载页：
+
+```bash
+brew install --cask raycast feishu
+brew install mas
+mas install 1274495053
+pnpm software:open ima
 ```
 
 显示共享软件目录中的安装状态：

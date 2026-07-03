@@ -12,9 +12,6 @@ hero:
     - theme: alt
       text: Commands
       link: /en/guide/commands
-    - theme: alt
-      text: 简体中文
-      link: /
 
 features:
   - title: Setup Pipeline
