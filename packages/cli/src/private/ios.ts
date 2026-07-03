@@ -47,7 +47,7 @@ export function importIosSecrets(manifestPath: string, manifest: PrivateManifest
 }
 
 export function runIosCommand(manifestPath: string, manifest: PrivateManifest, options: PrivateOptions): void {
-  const command = commandFromOptions(options, 'wst private ios-run --manifest <path> -- <command> [args...]')
+  const command = commandFromOptions(options, 'wst private ios-run -- <command> [args...]')
   if (!command)
     return
 

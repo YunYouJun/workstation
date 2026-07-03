@@ -171,7 +171,7 @@ export function injectMcpTemplates(manifestPath: string, manifest: PrivateManife
 export function runMcpCommand(manifestPath: string, manifest: PrivateManifest, options: PrivateOptions): void {
   const command = options.passthrough.length > 0 ? options.passthrough : options.positionals
   if (command.length === 0) {
-    console.log('Usage: wst private mcp-run --manifest <path> -- <command> [args...]')
+    console.log('Usage: wst private mcp-run -- <command> [args...]')
     process.exitCode = 2
     return
   }

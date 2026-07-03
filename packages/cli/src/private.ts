@@ -10,7 +10,7 @@ import { generatePrivateInventory } from './private/inventory'
 import { importIosSecrets, materializeIosCommand, runIosCommand } from './private/ios'
 import { assertAllowedRead, privateMcpFragments, privateSecretEnvTemplates, privateSkillInstalls, privateTemplates, readPrivateManifest, validatePrivateManifest } from './private/manifest'
 import { checkMcpSecrets, importMcpSecrets, injectMcpTemplates, opReadinessState, runMcpCommand, tryLoadOpContext } from './private/op'
-import { defaultManifestPath, expandHome, repoRootFromManifest, resolvePathOption, resolveRepoPath } from './private/paths'
+import { defaultManifestPath, expandHome, rememberPrivateManifestPath, repoRootFromManifest, resolvePathOption, resolveRepoPath } from './private/paths'
 import { scanSecrets } from './private/scan'
 
 export { readSecretReferences } from './private/secret-refs'
@@ -19,23 +19,24 @@ const helpFlags = new Set(['--help', '-h'])
 
 export function privateUsage(): string {
   return `Usage:
-  wst private status --manifest <path>
-  wst private list --manifest <path>
-  wst private check --manifest <path>
-  wst private apply --manifest <path> [--dry-run|--yes]
+  wst private status [--manifest <path>]
+  wst private list [--manifest <path>]
+  wst private check [--manifest <path>]
+  wst private apply [--manifest <path>] [--dry-run|--yes]
   wst private connect [--repo <git-url> --target-dir <path>] [--dry-run|--yes]
-  wst private inventory --manifest <path> [--section all|skills|mcp]
-  wst private ios-secrets-import --manifest <path> [--dry-run|--yes]
-  wst private ios-run --manifest <path> -- <command...>
+  wst private inventory [--manifest <path>] [--section all|skills|mcp]
+  wst private ios-secrets-import [--manifest <path>] [--dry-run|--yes]
+  wst private ios-run [--manifest <path>] -- <command...>
   wst private ios-materialize -- <command...>
-  wst private secret-scan --manifest <path> [--all|--staged]
-  wst private secrets-check --manifest <path>
-  wst private secrets-import --manifest <path> [--dry-run|--yes]
-  wst private mcp-inject --manifest <path> [--dry-run|--yes]
-  wst private mcp-run --manifest <path> -- <command...>
+  wst private secret-scan [--manifest <path>] [--all|--staged]
+  wst private secrets-check [--manifest <path>]
+  wst private secrets-import [--manifest <path>] [--dry-run|--yes]
+  wst private mcp-inject [--manifest <path>] [--dry-run|--yes]
+  wst private mcp-run [--manifest <path>] -- <command...>
 
 Environment:
-  WORKSTATION_PRIVATE_MANIFEST  Default manifest path`
+  WORKSTATION_PRIVATE_MANIFEST  Default manifest path
+  WORKSTATION_PRIVATE_CONFIG    Default private CLI config file`
 }
 
 export async function runPrivateCommand(actionArg?: string, rawArgs: string[] = []): Promise<void> {
@@ -601,6 +602,9 @@ async function connect(options: PrivateOptions): Promise<void> {
     console.log('[warn] config/sync-manifest.json was not found after clone')
     return
   }
+
+  rememberPrivateManifestPath(manifestPath)
+  console.log(`[ok] default private manifest saved: ${manifestPath}`)
 
   const manifest = readPrivateManifest(manifestPath)
   status(manifestPath, manifest, false)

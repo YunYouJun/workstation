@@ -1,12 +1,121 @@
+import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
 import { getHomeDir } from '../config'
+
+interface PrivateCliConfig {
+  manifestPath?: string
+  updatedAt?: string
+}
 
 export function defaultManifestPath(): string {
   if (process.env.WORKSTATION_PRIVATE_MANIFEST)
     return path.resolve(expandHome(process.env.WORKSTATION_PRIVATE_MANIFEST))
 
-  return path.resolve(getHomeDir(), 'repos', 'dotfiles', 'config', 'sync-manifest.json')
+  const configured = readPrivateConfig().manifestPath
+  if (configured) {
+    const resolved = path.resolve(expandHome(configured))
+    if (fs.existsSync(resolved))
+      return resolved
+  }
+
+  const discovered = discoverPrivateManifestPath()
+  if (discovered)
+    return discovered
+
+  return path.resolve(getHomeDir(), 'repos', 'private', 'dotfiles', 'config', 'sync-manifest.json')
+}
+
+export function privateConfigPath(): string {
+  if (process.env.WORKSTATION_PRIVATE_CONFIG)
+    return path.resolve(expandHome(process.env.WORKSTATION_PRIVATE_CONFIG))
+
+  return path.join(getHomeDir(), '.config', 'workstation', 'private.json')
+}
+
+export function rememberPrivateManifestPath(manifestPath: string): void {
+  const configPath = privateConfigPath()
+  const config: PrivateCliConfig = {
+    ...readPrivateConfig(),
+    manifestPath: path.resolve(manifestPath),
+    updatedAt: new Date().toISOString(),
+  }
+
+  fs.mkdirSync(path.dirname(configPath), { recursive: true })
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 })
+  fs.chmodSync(configPath, 0o600)
+}
+
+function readPrivateConfig(): PrivateCliConfig {
+  const configPath = privateConfigPath()
+  if (!fs.existsSync(configPath))
+    return {}
+
+  try {
+    return JSON.parse(fs.readFileSync(configPath, 'utf8')) as PrivateCliConfig
+  }
+  catch {
+    return {}
+  }
+}
+
+function discoverPrivateManifestPath(): string | undefined {
+  for (const candidate of privateManifestCandidates()) {
+    if (fs.existsSync(candidate))
+      return candidate
+  }
+
+  const reposRoot = path.join(getHomeDir(), 'repos')
+  if (!fs.existsSync(reposRoot))
+    return undefined
+
+  const found = findDotfilesManifests(reposRoot, 4)
+  return found[0]
+}
+
+function privateManifestCandidates(): string[] {
+  const home = getHomeDir()
+  return [
+    path.join(home, 'repos', 'private', 'dotfiles', 'config', 'sync-manifest.json'),
+    path.join(home, 'repos', 'dotfiles', 'config', 'sync-manifest.json'),
+  ]
+}
+
+function findDotfilesManifests(root: string, maxDepth: number): string[] {
+  const found: string[] = []
+  const stack: Array<{ depth: number, directory: string }> = [{ depth: 0, directory: root }]
+
+  while (stack.length > 0) {
+    const current = stack.pop()
+    if (!current || current.depth > maxDepth)
+      continue
+
+    for (const entry of safeReadDir(current.directory)) {
+      if (!entry.isDirectory())
+        continue
+
+      if (entry.name === 'node_modules' || entry.name === '.git')
+        continue
+
+      const directory = path.join(current.directory, entry.name)
+      const manifest = path.join(directory, 'config', 'sync-manifest.json')
+      if (entry.name === 'dotfiles' && fs.existsSync(manifest))
+        found.push(manifest)
+
+      stack.push({ depth: current.depth + 1, directory })
+    }
+  }
+
+  return found.sort((a, b) => a.localeCompare(b))
+}
+
+function safeReadDir(directory: string): fs.Dirent[] {
+  try {
+    return fs.readdirSync(directory, { withFileTypes: true })
+  }
+  catch {
+    return []
+  }
 }
 
 export function expandHome(value: string): string {

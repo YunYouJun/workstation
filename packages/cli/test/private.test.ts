@@ -293,6 +293,44 @@ describe('private CLI', () => {
     ])
   })
 
+  it('remembers connected private manifests for later commands', () => {
+    const fixture = createPrivateFixture()
+    fs.mkdirSync(path.join(fixture.repoRoot, '.git'))
+
+    const connectResult = runCli([
+      'private',
+      'connect',
+      '--repo',
+      'git@example.com:user/dotfiles.git',
+      '--target-dir',
+      fixture.repoRoot,
+      '--yes',
+    ], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(connectResult.status, 0, `${connectResult.stdout}\n${connectResult.stderr}`)
+    assert.match(connectResult.stdout, /\[ok\] default private manifest saved/)
+
+    const configPath = path.join(fixture.homeRoot, '.config', 'workstation', 'private.json')
+    const config = readJsonFile(configPath)
+    assert.equal(config.manifestPath, fixture.manifestPath)
+    assert.equal(fs.statSync(configPath).mode & 0o777, 0o600)
+
+    const listResult = runCli(['private', 'list'], fixture.repoRoot, fixture.homeRoot)
+    assert.equal(listResult.status, 0, `${listResult.stdout}\n${listResult.stderr}`)
+    assert.match(listResult.stdout, new RegExp(escapeRegExp(`Manifest: ${fixture.manifestPath}`)))
+  })
+
+  it('discovers dotfiles manifests under ~/repos when no manifest is configured', () => {
+    const fixture = createPrivateFixture()
+    const discoveredRepo = path.join(fixture.homeRoot, 'repos', 'woa', 'demo', 'dotfiles')
+    fs.cpSync(fixture.repoRoot, discoveredRepo, { recursive: true })
+
+    const result = runCli(['private', 'list'], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(result.stdout, new RegExp(escapeRegExp(`Manifest: ${path.join(discoveredRepo, 'config', 'sync-manifest.json')}`)))
+  })
+
   it('runs iOS commands with materialized App Store Connect key files', () => {
     const fixture = createPrivateFixture()
     const outputPath = path.join(fixture.repoRoot, 'ios-run-output.json')
@@ -413,3 +451,7 @@ describe('private CLI', () => {
     assert.deepEqual(calls[1], ['protect', '--staged', '--verbose'])
   })
 })
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}

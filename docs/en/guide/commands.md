@@ -95,8 +95,8 @@ be generated:
 
 ```bash
 wst private connect
-wst private status --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
-wst private apply --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --dry-run
+wst private status
+wst private apply --dry-run
 ```
 
 Connect a private repository non-interactively:
@@ -108,7 +108,7 @@ wst private connect --repo git@example.com:user/dotfiles.git --target-dir ~/repo
 After confirming 1Password is signed in, apply it explicitly:
 
 ```bash
-wst private apply --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
+wst private apply --yes
 ```
 
 ## SSH And Remote Access

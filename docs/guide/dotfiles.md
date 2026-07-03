@@ -139,18 +139,23 @@ workstation dotfiles chezmoi apply
 wst private connect
 wst private connect --repo git@example.com:user/dotfiles.git --target-dir ~/repos/private/dotfiles --dry-run
 wst private connect --repo git@example.com:user/dotfiles.git --target-dir ~/repos/private/dotfiles --yes
-wst private list --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
-wst private status --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
-wst private check --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
-wst private apply --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --dry-run
-wst private apply --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
-wst private inventory --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --section skills
-wst private ios-secrets-import --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
-wst private ios-run --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json -- <command>
-wst private secrets-check --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
-wst private secret-scan --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
+wst private list
+wst private status
+wst private check
+wst private apply --dry-run
+wst private apply --yes
+wst private inventory --section skills
+wst private ios-secrets-import --yes
+wst private ios-run -- <command>
+wst private secrets-check
+wst private secret-scan
 ```
 
 `apply` 只能处理 manifest 声明的模板、MCP fragment、显式 installable skill 和本地 ignored 输出，不能把私有仓库里的任意文件复制到 `$HOME`。没有 `--yes` 时即使使用 `apply` 也只会 dry-run。
+
+`wst private connect --yes` 会把私有 manifest 路径记到
+`~/.config/workstation/private.json`，后续命令可省略 `--manifest`。如果没有
+这个配置，CLI 会从常见 `~/repos/**/dotfiles/config/sync-manifest.json` 路径自动发现。
+仍然可以传 `--manifest <path>` 覆盖默认路径。
 
 `wst private connect` 会在 TTY 中询问是否连接私有 Git dotfiles 仓库，并允许粘贴 Git URL。非交互环境必须传 `--repo`；没有 `--yes` 时只预览 `git clone`。

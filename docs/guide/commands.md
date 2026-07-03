@@ -92,8 +92,8 @@ pnpm mcp:install
 
 ```bash
 wst private connect
-wst private status --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
-wst private apply --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --dry-run
+wst private status
+wst private apply --dry-run
 ```
 
 非交互连接私有仓库：
@@ -105,7 +105,7 @@ wst private connect --repo git@example.com:user/dotfiles.git --target-dir ~/repo
 确认 1Password 已登录后，再显式应用：
 
 ```bash
-wst private apply --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
+wst private apply --yes
 ```
 
 ## SSH 与远端连接

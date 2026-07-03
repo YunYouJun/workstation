@@ -151,22 +151,28 @@ entrypoints:
 wst private connect
 wst private connect --repo git@example.com:user/dotfiles.git --target-dir ~/repos/private/dotfiles --dry-run
 wst private connect --repo git@example.com:user/dotfiles.git --target-dir ~/repos/private/dotfiles --yes
-wst private list --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
-wst private status --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
-wst private check --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
-wst private apply --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --dry-run
-wst private apply --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
-wst private inventory --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --section skills
-wst private ios-secrets-import --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
-wst private ios-run --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json -- <command>
-wst private secrets-check --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
-wst private secret-scan --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
+wst private list
+wst private status
+wst private check
+wst private apply --dry-run
+wst private apply --yes
+wst private inventory --section skills
+wst private ios-secrets-import --yes
+wst private ios-run -- <command>
+wst private secrets-check
+wst private secret-scan
 ```
 
 `apply` may only process templates, MCP fragments, explicit installable skills,
 and local ignored outputs declared in the manifest. It must not copy arbitrary
 files from the private repository into `$HOME`. Without `--yes`, `apply` still
 runs as a dry-run.
+
+`wst private connect --yes` stores the private manifest path in
+`~/.config/workstation/private.json`, so later commands can omit `--manifest`.
+Without that config, the CLI discovers common
+`~/repos/**/dotfiles/config/sync-manifest.json` paths automatically. Passing
+`--manifest <path>` still overrides the default.
 
 `wst private connect` asks in a TTY whether to connect a private Git dotfiles
 repository and lets the user paste the Git URL. Non-interactive environments
