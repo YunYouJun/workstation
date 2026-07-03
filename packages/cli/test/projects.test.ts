@@ -381,6 +381,24 @@ describe('projects CLI', () => {
     assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /git\.example\.com\/example\/common/)
   })
 
+  it('supports the connect manifest alias', () => {
+    const fixture = createProjectsFixture([])
+    const manifestPath = path.join(fixture.repoRoot, 'projects.local.yaml')
+    writeFile(manifestPath, [
+      'groups:',
+      '  common:',
+      '    host: git.example.com',
+      '    repositories:',
+      '      - example/service',
+      '',
+    ].join('\n'))
+
+    const result = runCli(['p', 'connect', '--file', manifestPath, '-g', 'common', '--root', fixture.projectsRoot], fixture.repoRoot, fixture.homeRoot, fixture.env)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /git\.example\.com\/example\/service/)
+  })
+
   it('filters manifest repositories by target name', () => {
     const fixture = createProjectsFixture([])
     const manifestPath = path.join(fixture.repoRoot, 'projects.local.yaml')
@@ -609,6 +627,18 @@ describe('projects CLI', () => {
 
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
     assert.match(`${result.stdout}\n${result.stderr}`, /Already exists/)
+  })
+
+  it('skips unsafe updates for existing non-git paths', () => {
+    const fixture = createProjectsFixture([makeRepo('YunYouJun/workstation')])
+    const targetPath = path.join(fixture.projectsRoot, 'github.com', 'YunYouJun', 'workstation')
+    fs.mkdirSync(targetPath, { recursive: true })
+
+    const result = runCli(['projects', 'clone-active', '--root', fixture.projectsRoot, '--update', '--yes'], fixture.repoRoot, fixture.homeRoot, fixture.env)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Needs attention before update/)
+    assert.match(`${result.stdout}\n${result.stderr}`, /existing path is not a git repository/)
   })
 
   it('uses ghq when the primary ghq root matches the requested root', () => {

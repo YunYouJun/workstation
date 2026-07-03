@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 import type { CodexSkill } from '../codex-skills.config'
+import type { PrivateManifest } from '../packages/cli/src/private/types'
 import { spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import process from 'node:process'
+import { assertAllowedRead, privateSkillInstalls, readPrivateManifest } from '../packages/cli/src/private/manifest'
+import { expandHome, repoRootFromManifest, resolveRepoPath } from '../packages/cli/src/private/paths'
 
 interface Options {
   dest: string
@@ -16,15 +19,6 @@ interface Options {
 }
 
 type Command = 'check' | 'install' | 'list' | 'status'
-
-interface PrivateManifest {
-  skills?: {
-    install?: CodexSkill[]
-  }
-  workstationOverlay?: {
-    allowedReadPaths?: string[]
-  }
-}
 
 const helpFlags = new Set(['--help', '-h'])
 const defaultRef = 'main'
@@ -58,19 +52,6 @@ function defaultPrivateManifestPath(): string | undefined {
   return process.env.WORKSTATION_PRIVATE_MANIFEST
     ? resolve(expandHome(process.env.WORKSTATION_PRIVATE_MANIFEST))
     : undefined
-}
-
-function expandHome(value: string): string {
-  if (value === '~')
-    return homedir()
-
-  if (value.startsWith('~/'))
-    return join(homedir(), value.slice(2))
-
-  if (value.startsWith('$HOME/'))
-    return join(homedir(), value.slice(6))
-
-  return value
 }
 
 function parseCommand(value: string | undefined): Command {
@@ -180,46 +161,6 @@ function selectedSkills(skills: CodexSkill[], options: Options): CodexSkill[] {
   return selected
 }
 
-function repoRootFromManifest(manifestPath: string): string {
-  const parent = dirname(manifestPath)
-  return parent.endsWith('/config') ? dirname(parent) : parent
-}
-
-function isSafeRelativePath(path: string): boolean {
-  return Boolean(path)
-    && !isAbsolute(path)
-    && !path.split('/').includes('..')
-}
-
-function globToRegExp(pattern: string): RegExp {
-  const escaped = pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*/g, '[^/]*')
-
-  return new RegExp(`^${escaped}$`)
-}
-
-function matchesAny(path: string, patterns: string[]): boolean {
-  return patterns.some(pattern => globToRegExp(pattern).test(path))
-}
-
-function assertAllowedRead(path: string, manifest: PrivateManifest): void {
-  if (!matchesAny(path, manifest.workstationOverlay?.allowedReadPaths || []))
-    throw new Error(`Path is not allowlisted for private overlay reads: ${path}`)
-}
-
-function resolveRepoPath(repoRoot: string, relativePath: string): string {
-  if (!isSafeRelativePath(relativePath))
-    throw new Error(`Unsafe relative path in private overlay manifest: ${relativePath}`)
-
-  const absolutePath = resolve(repoRoot, relativePath)
-  const rel = relative(repoRoot, absolutePath)
-  if (rel.startsWith('..') || isAbsolute(rel))
-    throw new Error(`Path escapes private overlay repository: ${relativePath}`)
-
-  return absolutePath
-}
-
 function readManifest(path: string): PrivateManifest {
   if (!existsSync(path))
     throw new Error(`Codex tools manifest not found: ${path}`)
@@ -228,21 +169,21 @@ function readManifest(path: string): PrivateManifest {
 }
 
 function publicSkills(manifestPath: string): CodexSkill[] {
-  return readManifest(manifestPath).skills?.install || []
+  return (readManifest(manifestPath).skills?.install || []) as CodexSkill[]
 }
 
 function privateSkills(manifestPath: string | undefined): CodexSkill[] {
   if (!manifestPath)
     return []
 
-  const manifest = readManifest(manifestPath)
+  const manifest = readPrivateManifest(manifestPath)
   const repoRoot = repoRootFromManifest(manifestPath)
 
-  return (manifest.skills?.install || []).map((skill) => {
+  return (privateSkillInstalls(manifest) as CodexSkill[]).map((skill) => {
     if (skill.source.type !== 'local')
       return skill
 
-    assertAllowedRead(skill.source.path, manifest)
+    assertAllowedRead(skill.source.path, manifest.workstationOverlay || {})
 
     return {
       ...skill,

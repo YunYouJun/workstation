@@ -165,6 +165,7 @@ private configuration repository:
 
 ```bash
 wst p manifest -i
+wst p connect -i
 wst p manifest --file projects.local.yaml
 wst p manifest --file projects.local.yaml --validate
 wst p manifest https://git.example.com/<user>/<config-repo> --group common
@@ -181,6 +182,11 @@ use `~/repos/<host>/<repo-path>` paths such as
 selection and organization; they do not become part of the target path. If a
 manifest entry intentionally maps a remote `path` to a different local `name`,
 the CLI falls back to explicit `git clone` instead of `ghq get`.
+Interactive manifest selection shows each repository's local state (`new`,
+`exists`, `will update`, or `needs attention`) before previewing operations.
+Repositories that would be skipped or need attention are not selected by default,
+and non-interactive `--update --yes` skips unsafe updates instead of pulling into
+dirty or invalid checkouts.
 
 Use `workstation projects status` before switching machines to scan local
 repositories under `~/repos`. It reports uncommitted files, unpushed commits,

@@ -183,8 +183,11 @@ workstation projects status --check
 
 ```bash
 wst p manifest -i
+wst p connect -i
 wst p m -i
 ```
+
+向导会在选择前显示精简的本地计划。每个仓库会标记为 `new`、`exists`、`exists clean, will update` 或 `needs attention`。本次会跳过或需要处理的仓库默认不会被选中，方便先聚焦可执行的 clone 和干净更新。
 
 ```bash
 wst p manifest --file projects.local.yaml
@@ -222,6 +225,8 @@ wst p manifest --repo https://git.example.com/<user>/<config-repo> --manifest wo
 ```
 
 私有配置仓库和远程 manifest 文件都会缓存到 `~/.cache/workstation/project-manifests/`。项目本身仍会 clone 到 `~/repos/<host>/<repo-path>` 这种接近 `ghq` 的路径；`group` 只用于筛选和组织清单，不进入目标路径。当主 `ghq.root` 与目标 root 一致，且目标路径与 clone URL 推导出的路径一致时使用 `ghq get`，否则回退到显式 `git clone`。
+
+非交互 `--update --yes` 使用同一套本地安全检查。脏工作区、未 push、stash、缺失 upstream、已消失 upstream，以及已存在但不是 Git 仓库的路径都会被跳过并说明原因，不会盲目更新。
 
 公开仓库只提交一个示例清单：
 

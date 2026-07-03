@@ -203,8 +203,14 @@ repository, groups, and repositories, then prints a reusable command:
 
 ```bash
 wst p manifest -i
+wst p connect -i
 wst p m -i
 ```
+
+The wizard shows a compact local plan before selection. Each repository is
+tagged as `new`, `exists`, `exists clean, will update`, or `needs attention`.
+Repositories that will be skipped or need attention are left unselected by
+default, so you can focus on actionable clones and clean updates first.
 
 ```bash
 wst p manifest --file projects.local.yaml
@@ -255,6 +261,11 @@ organization mechanism; it does not become part of the target path. When the
 primary `ghq.root` matches the target root and the target path matches the path
 inferred from the clone URL, the CLI uses `ghq get`; otherwise it falls back to
 explicit `git clone`.
+
+Non-interactive `--update --yes` uses the same local safety checks. Dirty
+repositories, repositories with unpushed work or stashes, missing upstreams,
+gone upstreams, and existing non-Git paths are skipped with a reason instead of
+being updated blindly.
 
 Commit only a sample manifest to the public repo:
 

@@ -5,6 +5,7 @@ import { version } from '../package.json'
 import { runChezmoi } from './chezmoi'
 import { doctor } from './doctor'
 import { runInit } from './init'
+import { runPrivateCommand } from './private'
 import { cloneActiveProjects, cloneManifestProjects, projectStatus } from './projects'
 import { diff, status, sync, syncInteractive } from './sync'
 
@@ -20,7 +21,7 @@ function parseProjectAction(action: string | undefined) {
   if (['clone-active', 'active', 'clone', 'ca'].includes(projectAction))
     return 'clone-active'
 
-  if (['manifest', 'clone-manifest', 'local', 'config', 'm'].includes(projectAction))
+  if (['manifest', 'clone-manifest', 'local', 'config', 'connect', 'm'].includes(projectAction))
     return 'manifest'
 
   if (['status', 'dirty', 'check'].includes(projectAction))
@@ -210,6 +211,13 @@ registerProjectsCommand('projects', 'Manage project checkouts')
 registerProjectsCommand('p', 'Alias for projects')
 registerDotfilesNamespace('dotfiles', 'Manage dotfiles')
 registerDotfilesNamespace('df', 'Alias for dotfiles')
+
+cli
+  .command('private [action]', 'Manage private dotfiles overlay manifests')
+  .allowUnknownOptions()
+  .action(async (action: string | undefined) => {
+    await runPrivateCommand(action, getArgsAfter('private', action))
+  })
 
 cli
   .command('init [task]', 'Initialize workstation setup tasks')

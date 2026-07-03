@@ -91,21 +91,21 @@ pnpm mcp:install
 读取私有 dotfiles overlay，并只预览会生成的本地 ignored 配置：
 
 ```bash
-pnpm private:connect
-pnpm private:status -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
-pnpm private:apply -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --dry-run
+wst private connect
+wst private status --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
+wst private apply --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --dry-run
 ```
 
 非交互连接私有仓库：
 
 ```bash
-pnpm private:connect -- --repo git@example.com:user/dotfiles.git --target-dir ~/repos/private/dotfiles --yes
+wst private connect --repo git@example.com:user/dotfiles.git --target-dir ~/repos/private/dotfiles --yes
 ```
 
 确认 1Password 已登录后，再显式应用：
 
 ```bash
-pnpm private:apply -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
+wst private apply --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
 ```
 
 ## SSH 与远端连接

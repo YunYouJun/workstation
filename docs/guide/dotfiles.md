@@ -133,27 +133,24 @@ workstation dotfiles chezmoi apply
 }
 ```
 
-当前仓库提供 repo-level 脚本读取 overlay manifest：
+发布版 CLI 提供 `wst private` 读取 overlay manifest；仓库内 `pnpm private:*` scripts 只是兼容入口：
 
 ```bash
-pnpm private:connect
-pnpm private:connect -- --repo git@example.com:user/dotfiles.git --target-dir ~/repos/private/dotfiles --dry-run
-pnpm private:connect -- --repo git@example.com:user/dotfiles.git --target-dir ~/repos/private/dotfiles --yes
-pnpm private:list -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
-pnpm private:status -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
-pnpm private:check -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
-pnpm private:apply -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --dry-run
-pnpm private:apply -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
+wst private connect
+wst private connect --repo git@example.com:user/dotfiles.git --target-dir ~/repos/private/dotfiles --dry-run
+wst private connect --repo git@example.com:user/dotfiles.git --target-dir ~/repos/private/dotfiles --yes
+wst private list --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
+wst private status --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
+wst private check --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
+wst private apply --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --dry-run
+wst private apply --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
+wst private inventory --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --section skills
+wst private ios-secrets-import --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
+wst private ios-run --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json -- <command>
+wst private secrets-check --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
+wst private secret-scan --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
 ```
 
 `apply` 只能处理 manifest 声明的模板、MCP fragment、显式 installable skill 和本地 ignored 输出，不能把私有仓库里的任意文件复制到 `$HOME`。没有 `--yes` 时即使使用 `apply` 也只会 dry-run。
 
-`private:connect` 会在 TTY 中询问是否连接私有 Git dotfiles 仓库，并允许粘贴 Git URL。非交互环境必须传 `--repo`；没有 `--yes` 时只预览 `git clone`。
-
-如果以后把 overlay 支持并入发布版 CLI，命令形态应保持同样显式：
-
-```bash
-workstation dotfiles overlay status --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
-workstation dotfiles overlay apply --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --dry-run
-workstation dotfiles overlay apply --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
-```
+`wst private connect` 会在 TTY 中询问是否连接私有 Git dotfiles 仓库，并允许粘贴 Git URL。非交互环境必须传 `--repo`；没有 `--yes` 时只预览 `git clone`。

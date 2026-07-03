@@ -1,9 +1,12 @@
 #!/usr/bin/env node
+import type { PrivateManifest } from '../packages/cli/src/private/types'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { copyFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import process from 'node:process'
+import { assertAllowedRead, privateMcpFragments, readPrivateManifest } from '../packages/cli/src/private/manifest'
+import { expandHome, repoRootFromManifest, resolveRepoPath } from '../packages/cli/src/private/paths'
 
 interface Options {
   dest: string
@@ -29,22 +32,6 @@ interface StrippedConfig {
 interface SourceFragment {
   content: string
   source: string
-}
-
-interface PrivateManifest {
-  mcp?: {
-    fragments?: PrivateMcpFragment[]
-  }
-  workstationOverlay?: {
-    allowedReadPaths?: string[]
-  }
-}
-
-interface PrivateMcpFragment {
-  format?: string
-  id: string
-  operation?: string
-  path: string
 }
 
 const helpFlags = new Set(['--help', '-h'])
@@ -84,19 +71,6 @@ function defaultPrivateManifestPath(): string | undefined {
   return process.env.WORKSTATION_PRIVATE_MANIFEST
     ? resolve(expandHome(process.env.WORKSTATION_PRIVATE_MANIFEST))
     : undefined
-}
-
-function expandHome(value: string): string {
-  if (value === '~')
-    return homedir()
-
-  if (value.startsWith('~/'))
-    return join(homedir(), value.slice(2))
-
-  if (value.startsWith('$HOME/'))
-    return join(homedir(), value.slice(6))
-
-  return value
 }
 
 function parseCommand(value: string | undefined): Command {
@@ -273,46 +247,6 @@ function readFragmentContent(source: string): string {
   return fragment
 }
 
-function repoRootFromManifest(manifestPath: string): string {
-  const parent = dirname(manifestPath)
-  return parent.endsWith('/config') ? dirname(parent) : parent
-}
-
-function isSafeRelativePath(path: string): boolean {
-  return Boolean(path)
-    && !isAbsolute(path)
-    && !path.split('/').includes('..')
-}
-
-function globToRegExp(pattern: string): RegExp {
-  const escaped = pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*/g, '[^/]*')
-
-  return new RegExp(`^${escaped}$`)
-}
-
-function matchesAny(path: string, patterns: string[]): boolean {
-  return patterns.some(pattern => globToRegExp(pattern).test(path))
-}
-
-function assertAllowedRead(path: string, manifest: PrivateManifest): void {
-  if (!matchesAny(path, manifest.workstationOverlay?.allowedReadPaths || []))
-    throw new Error(`Path is not allowlisted for private overlay reads: ${path}`)
-}
-
-function resolveRepoPath(repoRoot: string, relativePath: string): string {
-  if (!isSafeRelativePath(relativePath))
-    throw new Error(`Unsafe relative path in private overlay manifest: ${relativePath}`)
-
-  const absolutePath = resolve(repoRoot, relativePath)
-  const rel = relative(repoRoot, absolutePath)
-  if (rel.startsWith('..') || isAbsolute(rel))
-    throw new Error(`Path escapes private overlay repository: ${relativePath}`)
-
-  return absolutePath
-}
-
 function readManifest(path: string): PrivateManifest {
   if (!existsSync(path))
     throw new Error(`Codex tools manifest not found: ${path}`)
@@ -324,18 +258,17 @@ function manifestSourceFragments(manifestPath: string | undefined, requireAllowl
   if (!manifestPath)
     return []
 
-  const manifest = readManifest(manifestPath)
+  const manifest = requireAllowlist ? readPrivateManifest(manifestPath) : readManifest(manifestPath)
   const repoRoot = repoRootFromManifest(manifestPath)
-  const fragments = manifest.mcp?.fragments || []
+  const fragments = privateMcpFragments(manifest)
 
   return fragments
-    .filter(fragment => !fragment.operation || fragment.operation === 'managed-block-fragment' || fragment.operation === 'codex-mcp-fragment')
     .map((fragment) => {
       if (fragment.format && fragment.format !== 'toml-codex')
         throw new Error(`Unsupported MCP fragment format for ${fragment.id}: ${fragment.format}`)
 
       if (requireAllowlist)
-        assertAllowedRead(fragment.path, manifest)
+        assertAllowedRead(fragment.path, manifest.workstationOverlay || {})
 
       const source = resolveRepoPath(repoRoot, fragment.path)
 

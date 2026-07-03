@@ -216,6 +216,18 @@
           }
         }
       }
+    },
+    "secrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "envTemplates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/secretEnvTemplate"
+          }
+        }
+      }
     }
   },
   "$defs": {
@@ -232,6 +244,7 @@
         "op-run-env",
         "op-run-wrapper",
         "op-typescript-cli",
+        "secret-scan",
         "op-inject-template",
         "codex-skill-install",
         "codex-mcp-fragment",
@@ -398,6 +411,28 @@
           "$ref": "#/$defs/syncMode"
         },
         "managedBy": {
+          "type": "string"
+        }
+      }
+    },
+    "secretEnvTemplate": {
+      "type": "object",
+      "required": ["id", "path", "operation"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "operation": {
+          "enum": ["op-run-env"]
+        },
+        "materializer": {
+          "enum": ["app-store-connect-key"]
+        },
+        "usage": {
           "type": "string"
         }
       }

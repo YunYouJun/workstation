@@ -111,6 +111,12 @@ interface CloneResult {
   message: string
 }
 
+interface RepositoryPlan {
+  action: 'clone' | 'update' | 'skip'
+  attention: string | null
+  targetPath: string
+}
+
 interface ProjectInspection {
   path: string
   branch: string | null
@@ -360,20 +366,109 @@ function getRepositoryHint(repository: ProjectRepository): string {
   ].filter(Boolean).join(', ')
 }
 
-async function selectRepositories(repositories: ProjectRepository[], effectiveDryRun: boolean): Promise<ProjectRepository[]> {
+function getRepositoryPlan(repository: ProjectRepository, root: string, update: boolean): RepositoryPlan {
+  const targetPath = projectTargetPath(repository.root || root, repository.name)
+
+  if (!fs.existsSync(targetPath)) {
+    return {
+      action: 'clone',
+      attention: null,
+      targetPath,
+    }
+  }
+
+  if (!update) {
+    return {
+      action: 'skip',
+      attention: null,
+      targetPath,
+    }
+  }
+
+  if (!isGitRepository(targetPath)) {
+    return {
+      action: 'skip',
+      attention: 'existing path is not a git repository',
+      targetPath,
+    }
+  }
+
+  const inspection = inspectGitRepository(targetPath)
+  if (hasProjectAttention(inspection)) {
+    return {
+      action: 'skip',
+      attention: formatInspectionDetails(inspection),
+      targetPath,
+    }
+  }
+
+  return {
+    action: 'update',
+    attention: null,
+    targetPath,
+  }
+}
+
+function formatRepositoryPlanHint(repository: ProjectRepository, plan: RepositoryPlan, update: boolean): string {
+  const parts: string[] = []
+
+  if (plan.attention) {
+    parts.push(`needs attention: ${plan.attention}`)
+  }
+  else if (plan.action === 'clone') {
+    parts.push('new')
+  }
+  else if (plan.action === 'update') {
+    parts.push('exists clean, will update')
+  }
+  else {
+    parts.push(update ? 'skipped' : 'exists, skipped unless --update')
+  }
+
+  const hint = getRepositoryHint(repository)
+  if (hint)
+    parts.push(hint)
+
+  return parts.join(', ')
+}
+
+function getRepositoryPlans(repositories: ProjectRepository[], root: string, update: boolean): Map<ProjectRepository, RepositoryPlan> {
+  return new Map(repositories.map(repository => [repository, getRepositoryPlan(repository, root, update)]))
+}
+
+function printRepositoryPlanSummary(plans: Iterable<RepositoryPlan>): void {
+  const planList = [...plans]
+  const created = planList.filter(plan => plan.action === 'clone').length
+  const updated = planList.filter(plan => plan.action === 'update').length
+  const skipped = planList.filter(plan => plan.action === 'skip' && !plan.attention).length
+  const attention = planList.filter(plan => plan.attention).length
+
+  console.log(`Plan: ${created} new, ${updated} update, ${skipped} already present, ${attention} need attention`)
+}
+
+async function selectRepositories(
+  repositories: ProjectRepository[],
+  effectiveDryRun: boolean,
+  options: Pick<CloneProjectsOptions, 'root' | 'update'>,
+): Promise<ProjectRepository[]> {
+  const plans = getRepositoryPlans(repositories, options.root, options.update)
+  printRepositoryPlanSummary(plans.values())
+
   const selected = await p.multiselect({
     message: effectiveDryRun ? 'Select repositories to preview' : 'Select repositories to clone/update',
     options: repositories.map((repository) => {
+      const plan = plans.get(repository) as RepositoryPlan
       const option: { value: ProjectRepository, label: string, hint?: string } = {
         value: repository,
         label: repository.displayName || repository.name,
+        hint: formatRepositoryPlanHint(repository, plan, options.update),
       }
-      const hint = getRepositoryHint(repository)
-      if (hint)
-        option.hint = hint
       return option
     }),
-    initialValues: repositories,
+    initialValues: repositories.filter((repository) => {
+      const plan = plans.get(repository) as RepositoryPlan
+      return !plan.attention && plan.action !== 'skip'
+    }),
   })
 
   if (p.isCancel(selected)) {
@@ -434,12 +529,12 @@ async function chooseManifestSource(options: ResolvedCloneManifestProjectsOption
     },
     {
       type: 'repo',
-      label: 'Enter configuration repository URL',
+      label: 'Connect a manifest git repository',
       hint: 'repository containing projects.yaml',
     },
     {
       type: 'url',
-      label: 'Enter online manifest file URL',
+      label: 'Use an online manifest file URL',
       hint: 'raw/blob YAML URL',
     },
   ]
@@ -517,7 +612,7 @@ async function chooseManifestSource(options: ResolvedCloneManifestProjectsOption
   }
 
   const repo = unwrapPromptValue(await p.text({
-    message: 'Configuration repository URL',
+    message: 'Manifest git repository URL',
     placeholder: 'https://git.example.com/user/config-repo',
     validate(value) {
       if (!(value || '').trim())
@@ -730,11 +825,17 @@ function cloneWithGit(targetPath: string, repository: ProjectRepository): void {
 
 function cloneRepository(repository: ProjectRepository, options: CloneProjectsOptions, useGhq: boolean): CloneResult {
   const root = repository.root || options.root
-  const targetPath = projectTargetPath(root, repository.name)
-  const action = fs.existsSync(targetPath)
-    ? options.update ? 'update' : 'skip'
-    : 'clone'
+  const plan = getRepositoryPlan(repository, root, options.update)
+  const { action, targetPath } = plan
   const effectiveUseGhq = useGhq && repository.preferGhq !== false
+
+  if (plan.attention) {
+    return {
+      repository,
+      status: 'skipped',
+      message: `${options.dryRun || !options.yes ? '[dry-run] ' : ''}Needs attention before update: ${targetPath} (${plan.attention})`,
+    }
+  }
 
   if (options.dryRun || !options.yes) {
     const dryPrefix = '[dry-run]'
@@ -1698,7 +1799,7 @@ export async function cloneActiveProjects(rawOptions: Partial<CloneActiveProject
   }
 
   if (options.interactive) {
-    const selectedRepositories = await selectRepositories(repositories, effectiveDryRun)
+    const selectedRepositories = await selectRepositories(repositories, effectiveDryRun, options)
     if (selectedRepositories.length === 0) {
       p.outro('No repositories selected')
       return
@@ -1862,7 +1963,7 @@ export async function cloneManifestProjects(rawOptions: Partial<CloneManifestPro
   }
 
   if (options.interactive) {
-    const selectedRepositories = await selectRepositories(repositories, effectiveDryRun)
+    const selectedRepositories = await selectRepositories(repositories, effectiveDryRun, options)
     if (selectedRepositories.length === 0) {
       p.outro('No repositories selected')
       return

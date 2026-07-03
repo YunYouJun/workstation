@@ -143,18 +143,24 @@ A private repository can expose `config/sync-manifest.json`:
 }
 ```
 
-This repository currently provides repo-level scripts that read the overlay
-manifest:
+The published CLI provides `wst private` commands that read the overlay
+manifest. Repository-level `pnpm private:*` scripts remain compatibility
+entrypoints:
 
 ```bash
-pnpm private:connect
-pnpm private:connect -- --repo git@example.com:user/dotfiles.git --target-dir ~/repos/private/dotfiles --dry-run
-pnpm private:connect -- --repo git@example.com:user/dotfiles.git --target-dir ~/repos/private/dotfiles --yes
-pnpm private:list -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
-pnpm private:status -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
-pnpm private:check -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
-pnpm private:apply -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --dry-run
-pnpm private:apply -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
+wst private connect
+wst private connect --repo git@example.com:user/dotfiles.git --target-dir ~/repos/private/dotfiles --dry-run
+wst private connect --repo git@example.com:user/dotfiles.git --target-dir ~/repos/private/dotfiles --yes
+wst private list --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
+wst private status --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
+wst private check --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
+wst private apply --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --dry-run
+wst private apply --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
+wst private inventory --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --section skills
+wst private ios-secrets-import --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
+wst private ios-run --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json -- <command>
+wst private secrets-check --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
+wst private secret-scan --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
 ```
 
 `apply` may only process templates, MCP fragments, explicit installable skills,
@@ -162,15 +168,6 @@ and local ignored outputs declared in the manifest. It must not copy arbitrary
 files from the private repository into `$HOME`. Without `--yes`, `apply` still
 runs as a dry-run.
 
-`private:connect` asks in a TTY whether to connect a private Git dotfiles
+`wst private connect` asks in a TTY whether to connect a private Git dotfiles
 repository and lets the user paste the Git URL. Non-interactive environments
 must pass `--repo`; without `--yes`, it only previews `git clone`.
-
-If overlay support is later moved into the published CLI, keep the command shape
-equally explicit:
-
-```bash
-workstation dotfiles overlay status --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
-workstation dotfiles overlay apply --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --dry-run
-workstation dotfiles overlay apply --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
-```
