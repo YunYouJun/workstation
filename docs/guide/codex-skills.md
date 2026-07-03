@@ -117,6 +117,16 @@ MCP 片段只应包含 `[mcp_servers.*]`、插件 MCP 策略，以及少量 MCP 
 本机 MCP server 写进仓库。需要凭证时只提交环境变量名，例如
 `bearer_token_env_var = "FIGMA_OAUTH_TOKEN"`。
 
+## 与私有 dotfiles 的分工
+
+`workstation` 是可复现安装源：`codex-skills.config.ts` 决定要安装哪些个人 skills；
+`codex-mcp.toml` 只管理 `~/.codex/config.toml` 里的 workstation managed block。
+
+私有 `dotfiles` 可以记录本机已有 skills/MCP inventory、内部 server 名称和 1Password
+`op://...` 引用，但不应该直接复制或覆盖 `~/.codex/skills`、完整
+`~/.codex/config.toml`。当某项配置需要成为跨机器可复现的安装流程时，再提升到
+`workstation` 的清单或 managed block。
+
 ## Skills、插件与脚本
 
 | 需求 | 使用 |

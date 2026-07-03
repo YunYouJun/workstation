@@ -132,6 +132,18 @@ the small set of top-level MCP OAuth callback settings. Do not commit
 machine-generated MCP servers. When credentials are needed, commit only the
 environment variable name, such as `bearer_token_env_var = "FIGMA_OAUTH_TOKEN"`.
 
+## Relationship With Private Dotfiles
+
+`workstation` is the reproducible install source: `codex-skills.config.ts`
+decides which personal skills are installed, and `codex-mcp.toml` only manages
+the workstation managed block inside `~/.codex/config.toml`.
+
+A private `dotfiles` repository may record local skills/MCP inventory, internal
+server names, and 1Password `op://...` references, but it should not directly
+copy over or replace `~/.codex/skills` or the full `~/.codex/config.toml`. When
+a configuration should become reproducible across machines, promote it into the
+`workstation` manifest or managed block.
+
 ## Skills vs Plugins vs Scripts
 
 | Need | Use |

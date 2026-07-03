@@ -33,6 +33,7 @@ pnpm secrets:scan
 - Commit placeholders, not secret values.
 - Keep `.env.local` local to the machine.
 - Prefer a dedicated secret manager for long-lived credentials.
+- A private config repository may record 1Password `op://...` references, internal MCP server names, and machine inventory; do not promote those internal details into this public/shared repository.
 - Rotate any secret that was committed by mistake.
 - Use `.env.example` or docs when a project needs to describe required variables.
 
