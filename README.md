@@ -164,14 +164,18 @@ For private or internal common projects, keep a YAML manifest locally or in a
 private configuration repository:
 
 ```bash
+wst p manifest -i
 wst p manifest --file projects.local.yaml
 wst p manifest --file projects.local.yaml --validate
 wst p manifest https://git.example.com/<user>/<config-repo> --group common
 wst p manifest https://git.example.com/<user>/<config-repo> --group common --yes
+wst p manifest https://git.example.com/<user>/<config-repo>/raw/main/projects.yaml --group common
+wst p m https://git.example.com/<user>/<config-repo> -g common --yes
+wst p m --file projects.local.yaml -g common --repository git.example.com/example/service
 ```
 
 Manifest repositories are cached under `~/.cache/workstation/project-manifests/`,
-and project checkouts use `~/repos/<host>/<repo-path>` paths such as
+remote manifest files are downloaded to the same cache, and project checkouts use `~/repos/<host>/<repo-path>` paths such as
 `~/repos/git.example.com/example/service`. Manifest groups are only for
 selection and organization; they do not become part of the target path. If a
 manifest entry intentionally maps a remote `path` to a different local `name`,

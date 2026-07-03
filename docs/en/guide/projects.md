@@ -33,6 +33,39 @@ cd "$(ghq list -p github.com/YunYouJun/workstation)"
 This keeps the local path close to the remote URL and avoids private shorthand
 such as `~/repos/gh/yyj`.
 
+## Jump To Projects
+
+Let `ghq` own reproducible checkout paths, and let `zoxide` handle daily
+jumping.
+
+Enter an exact repository:
+
+```bash
+cd "$(ghq list -p github.com/YunYouJun/workstation)"
+```
+
+After the first visit, `zoxide` learns the directory and can jump by keyword:
+
+```bash
+z workstation
+z YunYouJun workstation
+```
+
+When a keyword matches multiple directories, use `zi` for interactive selection:
+
+```bash
+zi workstation
+```
+
+To choose from every checkout, combine `ghq` and `fzf`:
+
+```bash
+project="$(ghq list -p | fzf)" && cd "$project"
+```
+
+This split keeps project paths auditable and avoids committing private
+shorthands, machine-local paths, or temporary aliases to the public repository.
+
 ## Active GitHub Repositories
 
 Use the CLI to fetch and clone the most recently pushed repositories owned by
@@ -164,6 +197,15 @@ Manifest mode can clone common projects from any Git host, including GitHub,
 GitHub Enterprise, GitLab, `git.example.com`, or other internal sources. It also
 defaults to dry-run; add `--yes` after reviewing the target paths:
 
+When you do not want to remember manifest paths or group names, use the
+interactive wizard. It lets you choose a local manifest, private configuration
+repository, groups, and repositories, then prints a reusable command:
+
+```bash
+wst p manifest -i
+wst p m -i
+```
+
 ```bash
 wst p manifest --file projects.local.yaml
 wst p manifest --file projects.local.yaml --validate
@@ -176,6 +218,27 @@ clones that repository into a local cache, then reads `projects.yaml`:
 ```bash
 wst p manifest https://git.example.com/<user>/<config-repo>
 wst p manifest https://git.example.com/<user>/<config-repo> --group common --yes
+wst p m https://git.example.com/<user>/<config-repo> -g common --yes
+```
+
+You can also pass a remote YAML file URL directly. `raw` URLs are downloaded as
+is; `blob` page URLs are converted to the matching `raw` URL:
+
+```bash
+wst p manifest https://git.example.com/<user>/<config-repo>/raw/main/projects.yaml -g common
+wst p manifest https://git.example.com/<user>/<config-repo>/blob/main/projects.yaml -g common
+```
+
+Private raw/blob URLs must be directly accessible to `curl`; if the browser is
+signed in but the command line receives a login-page HTML response, use
+`--repo <git-url> --manifest <path>` instead.
+
+To handle only part of a group, pass target repository names with
+`--repository`. The interactive wizard also prints this copyable form after you
+choose a repository subset:
+
+```bash
+wst p m --file projects.local.yaml -g common --repository git.example.com/example/service
 ```
 
 If the manifest does not live at `projects.yaml` or `projects.yml` in the
@@ -185,7 +248,7 @@ configuration repository root, pass the internal path:
 wst p manifest --repo https://git.example.com/<user>/<config-repo> --manifest workstation/projects.yaml
 ```
 
-Private configuration repositories are cached under
+Private configuration repositories and remote manifest files are cached under
 `~/.cache/workstation/project-manifests/`. Projects still clone into the
 `~/repos/<host>/<repo-path>` layout. `group` is only a manifest selection and
 organization mechanism; it does not become part of the target path. When the

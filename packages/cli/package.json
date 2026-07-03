@@ -37,13 +37,13 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
-    "@clack/prompts": "^1.5.1",
+    "@clack/prompts": "^1.6.0",
     "cac": "^7.0.0",
     "consola": "^3.4.2",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@types/node": "^25.9.3",
+    "@types/node": "^25.9.4",
     "tsup": "^8.5.1",
     "tsx": "^4.22.4",
     "typescript": "^5.9.3",

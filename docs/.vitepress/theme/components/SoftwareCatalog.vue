@@ -72,8 +72,8 @@ const groupOptions = computed(() => [
     count: softwareGroups.reduce((total, group) => total + group.items.length, 0),
   },
   ...softwareGroups.map(group => ({
-    id: group.group,
-    label: group.group,
+    id: group.id,
+    label: displayGroupName(group),
     count: group.items.length,
   })),
 ])
@@ -85,7 +85,7 @@ const totalItems = computed(() => softwareGroups.reduce((total, group) => total 
 const visibleGroups = computed(() => {
   return softwareGroups
     .map((group) => {
-      const items = group.items.filter(item => matchesItem(item, group.group))
+      const items = group.items.filter(item => matchesItem(item, group))
       return {
         ...group,
         items,
@@ -97,7 +97,8 @@ const visibleGroups = computed(() => {
 const visibleItems = computed(() => visibleGroups.value.flatMap(group =>
   group.items.map(item => ({
     ...item,
-    group: group.group,
+    groupId: group.id,
+    groupLabel: group.label,
   })),
 ))
 
@@ -129,8 +130,8 @@ const installVisibleCommand = computed(() => {
   return commands.join('\n')
 })
 
-function matchesItem(item, groupName) {
-  if (selectedGroup.value !== 'all' && groupName !== selectedGroup.value)
+function matchesItem(item, group) {
+  if (selectedGroup.value !== 'all' && group.id !== selectedGroup.value)
     return false
 
   if (installableOnly.value && !installCommand(item))
@@ -141,8 +142,8 @@ function matchesItem(item, groupName) {
 
   const searchableValues = [
     item.id,
-    item.name,
-    item.nameZh,
+    item.name.en,
+    item.name.zh,
     item.url,
     item.downloadUrl,
     ...(item.aliases ?? []),
@@ -150,7 +151,9 @@ function matchesItem(item, groupName) {
     item.masId?.toString(),
     item.installCommand,
     item.note,
-    groupName,
+    group.id,
+    group.label.en,
+    group.label.zh,
   ]
     .filter(Boolean)
 
@@ -209,16 +212,24 @@ function hasSeparateDownloadUrl(item) {
   return Boolean(item.downloadUrl && item.downloadUrl !== item.url)
 }
 
-function displayName(item) {
-  if (activeLocale.value === 'zh' && item.nameZh)
-    return item.nameZh
+function displayText(text) {
+  if (activeLocale.value === 'zh' && text.zh)
+    return text.zh
 
-  return item.name
+  return text.en
+}
+
+function displayName(item) {
+  return displayText(item.name)
+}
+
+function displayGroupName(group) {
+  return displayText(group.label)
 }
 
 function secondaryName(item) {
   const primaryName = displayName(item)
-  return primaryName === item.name ? '' : item.name
+  return primaryName === item.name.en ? '' : item.name.en
 }
 
 function fallbackIconLabel(item) {
@@ -390,11 +401,11 @@ async function copyText(text, key) {
 
     <section
       v-for="group in visibleGroups"
-      :key="group.group"
+      :key="group.id"
       class="software-group"
     >
       <div class="software-group-header">
-        <h3>{{ group.group }}</h3>
+        <h3>{{ displayGroupName(group) }}</h3>
         <span>{{ group.items.length }}</span>
       </div>
 

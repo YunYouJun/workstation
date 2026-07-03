@@ -20,7 +20,7 @@ function parseProjectAction(action: string | undefined) {
   if (['clone-active', 'active', 'clone', 'ca'].includes(projectAction))
     return 'clone-active'
 
-  if (['manifest', 'clone-manifest', 'local', 'config'].includes(projectAction))
+  if (['manifest', 'clone-manifest', 'local', 'config', 'm'].includes(projectAction))
     return 'manifest'
 
   if (['status', 'dirty', 'check'].includes(projectAction))
@@ -57,6 +57,7 @@ async function runProjectsCommand(action: string | undefined, target: string | u
       repo: options.repo,
       manifest: options.manifest,
       groups: parseListOption(options.group),
+      repositories: parseListOption(options.repository),
       root: options.root,
       protocol: options.https ? 'https' : 'ssh',
       validate: options.validate,
@@ -103,7 +104,8 @@ function registerProjectsCommand(name: string, description: string) {
     .option('--file <path>', 'Project manifest YAML file')
     .option('--repo <url>', 'Git repository containing a project manifest')
     .option('--manifest <path>', 'Manifest path inside --repo (default: projects.yaml)')
-    .option('--group <names>', 'Comma-separated manifest group names')
+    .option('-g, --group <names>', 'Comma-separated manifest group names')
+    .option('--repository <names>', 'Comma-separated manifest repository target names')
     .option('--validate', 'Validate project manifest and exit without clone preview', { default: false })
     .option('--all', 'Show clean repositories in projects status output', { default: false })
     .option('--check', 'Exit non-zero when projects status finds repositories needing attention', { default: false })

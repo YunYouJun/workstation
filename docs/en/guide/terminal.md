@@ -19,6 +19,23 @@ Starship is cross-shell, configured with one TOML file, and easy to reinstall th
 
 Keep Oh My Zsh, but do not let it own the prompt. In this setup, Oh My Zsh provides plugins and completions, while Starship owns the prompt rendering.
 
+### Directory Jumping
+
+Use `zoxide` by default on new machines, and do not make `autojump` the default
+choice. `zoxide` is a modern `cd` replacement inspired by `z` and `autojump`;
+it supports major shells, ranks frequently used directories, jumps with `z`,
+and uses `zi` with `fzf` for interactive selection.
+
+Project paths are still owned by `ghq`, keeping the
+`~/repos/<host>/<owner>/<repo>` layout close to the remote URL. Use
+`ghq list -p` when entering a project for the first time or when an exact path
+matters. Use `z <keyword>` for frequent projects, `zi <keyword>` when the match
+is ambiguous, and `ghq list -p | fzf` when choosing from every checkout.
+
+Keep `autojump` only as compatibility for old machines. If an existing machine
+already has a stable setup, `.zshrc` may still load it conditionally; new
+machines should not install or extend it by default.
+
 ## Install
 
 Install Homebrew from the official installer:
@@ -93,6 +110,37 @@ The Homebrew-installed fzf integration enables:
 - `Ctrl-T`: fuzzy insert a file or directory into the current command.
 - `Alt-C`: fuzzy jump into a directory.
 
+## Project Jumping
+
+Enter an exact `ghq` project:
+
+```bash
+cd "$(ghq list -p github.com/YunYouJun/workstation)"
+```
+
+After visiting it once, let `zoxide` take over:
+
+```bash
+z workstation
+z YunYouJun workstation
+zi workstation
+```
+
+Pick from every `ghq` checkout and enter it:
+
+```bash
+project="$(ghq list -p | fzf)" && cd "$project"
+```
+
+If you want a short command, keep it in machine-local shell config:
+
+```zsh
+cdp() {
+  local project
+  project="$(ghq list -p | fzf --preview 'git -C {} status --short --branch 2>/dev/null | head -50')" && cd "$project"
+}
+```
+
 ## Tmux Sessions
 
 Tmux is useful for remote machines, long builds, deployment debugging, and log
@@ -163,6 +211,8 @@ Terminal Proxy now collapse into this page and `home/dot_zshrc`:
   Homebrew.
 - Starship is the default prompt; Powerlevel10k is only a fallback for existing
   machines.
+- Directory jumping defaults to `zoxide` + `fzf`; `autojump` remains only for
+  old-machine compatibility.
 - `zsh-autosuggestions` and `zsh-syntax-highlighting` prefer Homebrew packages;
   `.zshrc` still supports existing Oh My Zsh custom plugins.
 
@@ -172,4 +222,6 @@ References:
 - [Starship](https://starship.rs/guide/)
 - [fzf](https://github.com/junegunn/fzf)
 - [zoxide](https://github.com/ajeetdsouza/zoxide)
+- [ghq](https://github.com/x-motemen/ghq)
+- [autojump](https://github.com/wting/autojump)
 - [Powerlevel10k](https://github.com/romkatv/powerlevel10k)

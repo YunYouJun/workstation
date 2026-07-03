@@ -78,6 +78,16 @@ pnpm install
 pnpm build
 ```
 
+同步 Codex 个人 skills 与 MCP 片段：
+
+```bash
+pnpm skills:status
+pnpm skills:install
+pnpm mcp:status
+pnpm mcp:install --dry-run
+pnpm mcp:install
+```
+
 ## SSH 与远端连接
 
 生成新的 GitHub SSH key，并复制公钥：
@@ -247,6 +257,7 @@ wst p active --limit 20
 
 ```bash
 wst p active --limit 50 -i
+wst p manifest -i
 ```
 
 预览从本地项目清单 clone：
@@ -260,6 +271,9 @@ wst p manifest --file projects.local.yaml --validate
 
 ```bash
 wst p manifest https://git.example.com/<user>/<config-repo> --group common
+wst p manifest https://git.example.com/<user>/<config-repo>/raw/main/projects.yaml -g common
+wst p m https://git.example.com/<user>/<config-repo> -g common
+wst p m --file projects.local.yaml -g common --repository git.example.com/example/service
 ```
 
 用脚本入口和环境变量配置默认数量：
@@ -275,6 +289,25 @@ workstation projects status
 wst p status --check
 wst p status --max-depth 8
 pnpm projects:status
+```
+
+进入一个已知的 `ghq` 项目：
+
+```bash
+cd "$(ghq list -p github.com/YunYouJun/workstation)"
+```
+
+用 `zoxide` 跳转到访问过的项目：
+
+```bash
+z workstation
+zi workstation
+```
+
+从所有 `ghq` checkout 中模糊选择并进入：
+
+```bash
+project="$(ghq list -p | fzf)" && cd "$project"
 ```
 
 检查 Homebrew 包是否已安装：

@@ -80,6 +80,16 @@ pnpm install
 pnpm build
 ```
 
+Sync personal Codex skills and the MCP fragment:
+
+```bash
+pnpm skills:status
+pnpm skills:install
+pnpm mcp:status
+pnpm mcp:install --dry-run
+pnpm mcp:install
+```
+
 ## SSH And Remote Access
 
 Generate a new GitHub SSH key and print the public key:
@@ -252,6 +262,7 @@ Select repositories interactively:
 
 ```bash
 wst p active --limit 50 -i
+wst p manifest -i
 ```
 
 Preview cloning from a local project manifest:
@@ -265,6 +276,9 @@ Preview reading a project manifest from a private configuration repository:
 
 ```bash
 wst p manifest https://git.example.com/<user>/<config-repo> --group common
+wst p manifest https://git.example.com/<user>/<config-repo>/raw/main/projects.yaml -g common
+wst p m https://git.example.com/<user>/<config-repo> -g common
+wst p m --file projects.local.yaml -g common --repository git.example.com/example/service
 ```
 
 Configure the default count through the script entry:
@@ -280,6 +294,25 @@ workstation projects status
 wst p status --check
 wst p status --max-depth 8
 pnpm projects:status
+```
+
+Enter a known `ghq` project:
+
+```bash
+cd "$(ghq list -p github.com/YunYouJun/workstation)"
+```
+
+Jump to a project that `zoxide` has already learned:
+
+```bash
+z workstation
+zi workstation
+```
+
+Pick from every `ghq` checkout and enter it:
+
+```bash
+project="$(ghq list -p | fzf)" && cd "$project"
 ```
 
 Check whether Homebrew packages are already installed:

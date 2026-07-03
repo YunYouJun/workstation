@@ -31,6 +31,37 @@ cd "$(ghq list -p github.com/YunYouJun/workstation)"
 
 这样本地路径会接近远程 URL，也避免 `~/repos/gh/yyj` 这类私有简称。
 
+## 跳转到项目
+
+项目 checkout 的可复现路径由 `ghq` 管理，日常跳转交给 `zoxide`。
+
+精确进入某个仓库：
+
+```bash
+cd "$(ghq list -p github.com/YunYouJun/workstation)"
+```
+
+第一次进入后，`zoxide` 会学习这个目录，之后可以用关键词跳转：
+
+```bash
+z workstation
+z YunYouJun workstation
+```
+
+当关键词对应多个目录时，用 `zi` 交互选择：
+
+```bash
+zi workstation
+```
+
+需要从所有 checkout 中挑一个时，直接组合 `ghq` 和 `fzf`：
+
+```bash
+project="$(ghq list -p | fzf)" && cd "$project"
+```
+
+这套分工让项目路径保持可审计，也避免把私有简称、机器路径或临时 alias 写进公共仓库。
+
 ## 活跃 GitHub 仓库
 
 使用 CLI 拉取并 clone `YunYouJun` 最近 push 过的仓库：
@@ -148,6 +179,13 @@ workstation projects status --check
 
 清单模式可以 clone 任意 Git 源的常用项目，包括 GitHub、GitHub Enterprise、GitLab、`git.example.com` 等内部源。命令同样默认 dry-run，确认后再加 `--yes`：
 
+不想记 manifest 路径或 group 名称时，使用交互式向导。它会让你选择本地清单、私有配置仓库、group 和仓库，并打印可复用命令：
+
+```bash
+wst p manifest -i
+wst p m -i
+```
+
 ```bash
 wst p manifest --file projects.local.yaml
 wst p manifest --file projects.local.yaml --validate
@@ -159,6 +197,22 @@ wst p manifest --file projects.local.yaml --yes
 ```bash
 wst p manifest https://git.example.com/<user>/<config-repo>
 wst p manifest https://git.example.com/<user>/<config-repo> --group common --yes
+wst p m https://git.example.com/<user>/<config-repo> -g common --yes
+```
+
+也可以直接传远程 YAML 文件链接。`raw` 链接会直接下载；`blob` 页面链接会自动转换为对应的 `raw` 链接：
+
+```bash
+wst p manifest https://git.example.com/<user>/<config-repo>/raw/main/projects.yaml -g common
+wst p manifest https://git.example.com/<user>/<config-repo>/blob/main/projects.yaml -g common
+```
+
+私有 raw/blob 链接需要能被 `curl` 直接访问；如果浏览器已登录但命令行拿到的是登录页 HTML，请改用 `--repo <git-url> --manifest <path>`。
+
+只处理 group 里的部分仓库时，使用 `--repository` 指定目标仓库名。交互式向导在你选择仓库子集后，也会打印这种可复制命令：
+
+```bash
+wst p m --file projects.local.yaml -g common --repository git.example.com/example/service
 ```
 
 如果清单不在仓库根目录的 `projects.yaml` 或 `projects.yml`，指定内部路径：
@@ -167,7 +221,7 @@ wst p manifest https://git.example.com/<user>/<config-repo> --group common --yes
 wst p manifest --repo https://git.example.com/<user>/<config-repo> --manifest workstation/projects.yaml
 ```
 
-私有配置仓库会缓存到 `~/.cache/workstation/project-manifests/`。项目本身仍会 clone 到 `~/repos/<host>/<repo-path>` 这种接近 `ghq` 的路径；`group` 只用于筛选和组织清单，不进入目标路径。当主 `ghq.root` 与目标 root 一致，且目标路径与 clone URL 推导出的路径一致时使用 `ghq get`，否则回退到显式 `git clone`。
+私有配置仓库和远程 manifest 文件都会缓存到 `~/.cache/workstation/project-manifests/`。项目本身仍会 clone 到 `~/repos/<host>/<repo-path>` 这种接近 `ghq` 的路径；`group` 只用于筛选和组织清单，不进入目标路径。当主 `ghq.root` 与目标 root 一致，且目标路径与 clone URL 推导出的路径一致时使用 `ghq get`，否则回退到显式 `git clone`。
 
 公开仓库只提交一个示例清单：
 

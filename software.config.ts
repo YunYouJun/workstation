@@ -5,10 +5,14 @@ export const brewfiles = {
 
 export type BrewfileKind = keyof typeof brewfiles
 
+export interface LocalizedText {
+  en: string
+  zh?: string
+}
+
 export interface SoftwareItem {
   id: string
-  name: string
-  nameZh?: string
+  name: LocalizedText
   /**
    * Official product or project site. Use downloadUrl when the install page is separate.
    */
@@ -28,21 +32,29 @@ export interface SoftwareItem {
 }
 
 export interface SoftwareGroup {
-  group: string
+  id: string
+  label: LocalizedText
   items: SoftwareItem[]
 }
 
 export interface SoftwareCatalogItem extends SoftwareItem {
-  group: string
+  groupId: string
+  groupLabel: LocalizedText
 }
 
 export const softwareGroups: SoftwareGroup[] = [
   {
-    group: 'Foundation',
+    id: 'foundation',
+    label: {
+      en: 'Foundation',
+      zh: '基础环境',
+    },
     items: [
       {
         id: 'homebrew',
-        name: 'Homebrew',
+        name: {
+          en: 'Homebrew',
+        },
         url: 'https://brew.sh/',
         iconColor: '#fbb040',
         iconify: 'i-logos-homebrew',
@@ -51,11 +63,17 @@ export const softwareGroups: SoftwareGroup[] = [
     ],
   },
   {
-    group: 'Terminal and editor',
+    id: 'terminal-editor',
+    label: {
+      en: 'Terminal and editor',
+      zh: '终端与编辑器',
+    },
     items: [
       {
         id: 'iterm2',
-        name: 'iTerm2',
+        name: {
+          en: 'iTerm2',
+        },
         url: 'https://iterm2.com/',
         downloadUrl: 'https://iterm2.com/downloads.html',
         cask: 'iterm2',
@@ -65,7 +83,9 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'vscode',
-        name: 'Visual Studio Code',
+        name: {
+          en: 'Visual Studio Code',
+        },
         url: 'https://code.visualstudio.com/',
         downloadUrl: 'https://code.visualstudio.com/download',
         cask: 'visual-studio-code',
@@ -75,7 +95,9 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'cursor',
-        name: 'Cursor',
+        name: {
+          en: 'Cursor',
+        },
         url: 'https://cursor.com/',
         downloadUrl: 'https://cursor.com/downloads',
         cask: 'cursor',
@@ -85,7 +107,9 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'codex-cli',
-        name: 'Codex CLI',
+        name: {
+          en: 'Codex CLI',
+        },
         url: 'https://developers.openai.com/codex/cli',
         cask: 'codex',
         bin: 'codex',
@@ -96,11 +120,17 @@ export const softwareGroups: SoftwareGroup[] = [
     ],
   },
   {
-    group: 'AI coding',
+    id: 'ai-coding',
+    label: {
+      en: 'AI coding',
+      zh: 'AI 编程',
+    },
     items: [
       {
         id: 'codex',
-        name: 'Codex App',
+        name: {
+          en: 'Codex App',
+        },
         url: 'https://developers.openai.com/codex/app',
         cask: 'codex-app',
         app: 'Codex.app',
@@ -111,11 +141,17 @@ export const softwareGroups: SoftwareGroup[] = [
     ],
   },
   {
-    group: 'Launcher and browsers',
+    id: 'launcher-browsers',
+    label: {
+      en: 'Launcher and browsers',
+      zh: '启动器与浏览器',
+    },
     items: [
       {
         id: 'raycast',
-        name: 'Raycast',
+        name: {
+          en: 'Raycast',
+        },
         url: 'https://www.raycast.com/',
         downloadUrl: 'https://www.raycast.com/download',
         cask: 'raycast',
@@ -125,8 +161,10 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'chrome',
-        name: 'Google Chrome',
-        nameZh: '谷歌浏览器',
+        name: {
+          en: 'Google Chrome',
+          zh: '谷歌浏览器',
+        },
         url: 'https://www.google.com/chrome/',
         cask: 'google-chrome',
         app: 'Google Chrome.app',
@@ -135,8 +173,10 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'firefox-dev',
-        name: 'Firefox Developer Edition',
-        nameZh: 'Firefox 开发者版',
+        name: {
+          en: 'Firefox Developer Edition',
+          zh: 'Firefox 开发者版',
+        },
         url: 'https://www.mozilla.org/firefox/developer/',
         cask: 'firefox@developer-edition',
         app: 'Firefox Developer Edition.app',
@@ -146,12 +186,18 @@ export const softwareGroups: SoftwareGroup[] = [
     ],
   },
   {
-    group: 'Communication and media',
+    id: 'communication-media',
+    label: {
+      en: 'Communication and media',
+      zh: '沟通与媒体',
+    },
     items: [
       {
         id: 'neteasemusic',
-        name: 'NetEase Cloud Music',
-        nameZh: '网易云音乐',
+        name: {
+          en: 'NetEase Cloud Music',
+          zh: '网易云音乐',
+        },
         url: 'https://music.163.com/',
         cask: 'neteasemusic',
         app: 'NeteaseMusic.app',
@@ -160,7 +206,9 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'qq',
-        name: 'QQ',
+        name: {
+          en: 'QQ',
+        },
         url: 'https://im.qq.com/',
         downloadUrl: 'https://im.qq.com/index/#/macos',
         cask: 'qq',
@@ -169,8 +217,10 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'wechat',
-        name: 'WeChat',
-        nameZh: '微信',
+        name: {
+          en: 'WeChat',
+          zh: '微信',
+        },
         url: 'https://weixin.qq.com/',
         downloadUrl: 'https://mac.weixin.qq.com/',
         cask: 'wechat',
@@ -180,8 +230,10 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'feishu',
-        name: 'Feishu',
-        nameZh: '飞书',
+        name: {
+          en: 'Feishu',
+          zh: '飞书',
+        },
         url: 'https://www.feishu.cn/',
         downloadUrl: 'https://www.feishu.cn/download',
         cask: 'feishu',
@@ -191,11 +243,17 @@ export const softwareGroups: SoftwareGroup[] = [
     ],
   },
   {
-    group: 'Containers',
+    id: 'containers',
+    label: {
+      en: 'Containers',
+      zh: '容器',
+    },
     items: [
       {
         id: 'orbstack',
-        name: 'OrbStack',
+        name: {
+          en: 'OrbStack',
+        },
         url: 'https://orbstack.dev/',
         downloadUrl: 'https://orbstack.dev/download',
         cask: 'orbstack',
@@ -204,7 +262,9 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'docker',
-        name: 'Docker Desktop',
+        name: {
+          en: 'Docker Desktop',
+        },
         url: 'https://www.docker.com/',
         downloadUrl: 'https://www.docker.com/products/docker-desktop/',
         iconColor: '#2496ed',
@@ -214,11 +274,17 @@ export const softwareGroups: SoftwareGroup[] = [
     ],
   },
   {
-    group: 'Developer utilities',
+    id: 'developer-utilities',
+    label: {
+      en: 'Developer utilities',
+      zh: '开发者工具',
+    },
     items: [
       {
         id: 'termius',
-        name: 'Termius',
+        name: {
+          en: 'Termius',
+        },
         url: 'https://www.termius.com/',
         cask: 'termius',
         app: 'Termius.app',
@@ -228,7 +294,9 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'cyberduck',
-        name: 'Cyberduck',
+        name: {
+          en: 'Cyberduck',
+        },
         url: 'https://cyberduck.io/',
         downloadUrl: 'https://cyberduck.io/download/',
         cask: 'cyberduck',
@@ -239,7 +307,9 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'proxyman',
-        name: 'Proxyman',
+        name: {
+          en: 'Proxyman',
+        },
         url: 'https://proxyman.com/',
         downloadUrl: 'https://proxyman.com/download/',
         cask: 'proxyman',
@@ -250,7 +320,9 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'stats',
-        name: 'Stats',
+        name: {
+          en: 'Stats',
+        },
         url: 'https://github.com/exelban/stats',
         cask: 'stats',
         app: 'Stats.app',
@@ -260,7 +332,9 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'hiddenbar',
-        name: 'Hidden Bar',
+        name: {
+          en: 'Hidden Bar',
+        },
         url: 'https://github.com/dwarvesf/hidden',
         cask: 'hiddenbar',
         app: 'Hidden Bar.app',
@@ -270,7 +344,9 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'xbar',
-        name: 'xbar',
+        name: {
+          en: 'xbar',
+        },
         url: 'https://xbarapp.com/',
         cask: 'xbar',
         app: 'xbar.app',
@@ -281,12 +357,18 @@ export const softwareGroups: SoftwareGroup[] = [
     ],
   },
   {
-    group: 'Productivity',
+    id: 'productivity',
+    label: {
+      en: 'Productivity',
+      zh: '效率工具',
+    },
     items: [
       {
         id: 'microsoft-todo',
-        name: 'Microsoft To Do',
-        nameZh: '微软待办',
+        name: {
+          en: 'Microsoft To Do',
+          zh: '微软待办',
+        },
         aliases: ['微软todo', '微软 todo', 'todo'],
         url: 'https://www.microsoft.com/en-us/microsoft-365/microsoft-to-do-list-app',
         downloadUrl: 'https://apps.apple.com/us/app/microsoft-to-do/id1274495053?mt=12',
@@ -297,7 +379,9 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: '1password',
-        name: '1Password',
+        name: {
+          en: '1Password',
+        },
         url: 'https://1password.com/',
         downloadUrl: 'https://1password.com/downloads/mac/',
         cask: '1password',
@@ -307,7 +391,9 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'obsidian',
-        name: 'Obsidian',
+        name: {
+          en: 'Obsidian',
+        },
         url: 'https://obsidian.md/',
         downloadUrl: 'https://obsidian.md/download',
         cask: 'obsidian',
@@ -317,7 +403,9 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'notion',
-        name: 'Notion',
+        name: {
+          en: 'Notion',
+        },
         url: 'https://www.notion.com/',
         downloadUrl: 'https://www.notion.com/desktop',
         cask: 'notion',
@@ -327,8 +415,10 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'ima',
-        name: 'ima.copilot',
-        nameZh: '腾讯 ima',
+        name: {
+          en: 'ima.copilot',
+          zh: '腾讯 ima',
+        },
         aliases: ['腾讯ima'],
         url: 'https://ima.qq.com/',
         downloadUrl: 'https://ima.qq.com/download',
@@ -344,6 +434,7 @@ export const softwareGroups: SoftwareGroup[] = [
 export const softwareItems: SoftwareCatalogItem[] = softwareGroups.flatMap(group =>
   group.items.map(item => ({
     ...item,
-    group: group.group,
+    groupId: group.id,
+    groupLabel: group.label,
   })),
 )

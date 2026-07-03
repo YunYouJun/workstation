@@ -11,6 +11,7 @@
   },
   "include": [
     "software.config.ts",
+    "vscode.extensions.config.ts",
     "scripts/**/*.ts",
     "docs/.vitepress/**/*.ts"
   ]

@@ -156,13 +156,17 @@ WORKSTATION_ACTIVE_PROJECT_LIMIT=20 pnpm projects:clone-active
 对于私有或内部公共项目，可以把 YAML manifest 保存在本地或私有配置仓库中：
 
 ```bash
+wst p manifest -i
 wst p manifest --file projects.local.yaml
 wst p manifest --file projects.local.yaml --validate
 wst p manifest https://git.example.com/<user>/<config-repo> --group common
 wst p manifest https://git.example.com/<user>/<config-repo> --group common --yes
+wst p manifest https://git.example.com/<user>/<config-repo>/raw/main/projects.yaml --group common
+wst p m https://git.example.com/<user>/<config-repo> -g common --yes
+wst p m --file projects.local.yaml -g common --repository git.example.com/example/service
 ```
 
-Manifest 仓库会缓存到 `~/.cache/workstation/project-manifests/`，项目 checkout 使用 `~/repos/<host>/<repo-path>` 这样的路径，例如 `~/repos/git.example.com/example/service`。Manifest group 只用于筛选和组织，不会成为目标路径的一部分。如果某个 manifest entry 有意把远程 `path` 映射到不同的本地 `name`，CLI 会回退到显式 `git clone`，而不是使用 `ghq get`。
+Manifest 仓库会缓存到 `~/.cache/workstation/project-manifests/`，远程 manifest 文件也会下载到同一缓存目录；项目 checkout 使用 `~/repos/<host>/<repo-path>` 这样的路径，例如 `~/repos/git.example.com/example/service`。Manifest group 只用于筛选和组织，不会成为目标路径的一部分。如果某个 manifest entry 有意把远程 `path` 映射到不同的本地 `name`，CLI 会回退到显式 `git clone`，而不是使用 `ghq get`。
 
 切换机器前，使用 `workstation projects status` 扫描 `~/repos` 下的本地仓库。它会报告未提交文件、未 push commit、stash、缺失 upstream 和已消失 upstream。添加 `--all` 可包含干净仓库；添加 `--check` 可在任何仓库需要处理时返回非零退出码。默认最多向下扫描 6 层目录；当 checkout 布局更深或希望更浅扫描时，可以使用 `--max-depth <number>`。
 
