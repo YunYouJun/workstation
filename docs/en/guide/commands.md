@@ -90,6 +90,20 @@ pnpm mcp:install --dry-run
 pnpm mcp:install
 ```
 
+Read a private dotfiles overlay and preview the local ignored config that would
+be generated:
+
+```bash
+pnpm private:status -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
+pnpm private:apply -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --dry-run
+```
+
+After confirming 1Password is signed in, apply it explicitly:
+
+```bash
+pnpm private:apply -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
+```
+
 ## SSH And Remote Access
 
 Generate a new GitHub SSH key and print the public key:

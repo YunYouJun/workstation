@@ -102,12 +102,22 @@ workstation dotfiles chezmoi apply
 }
 ```
 
-如果后续给 CLI 增加 overlay 支持，命令形态应保持显式：
+当前仓库提供 repo-level 脚本读取 overlay manifest：
+
+```bash
+pnpm private:list -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
+pnpm private:status -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
+pnpm private:check -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
+pnpm private:apply -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --dry-run
+pnpm private:apply -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
+```
+
+`apply` 只能处理 manifest 声明的模板、片段和本地 ignored 输出，不能把私有仓库里的任意文件复制到 `$HOME`。没有 `--yes` 时即使使用 `apply` 也只会 dry-run。
+
+如果以后把 overlay 支持并入发布版 CLI，命令形态应保持同样显式：
 
 ```bash
 workstation dotfiles overlay status --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
 workstation dotfiles overlay apply --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --dry-run
 workstation dotfiles overlay apply --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
 ```
-
-`apply` 只能处理 manifest 声明的模板、片段和本地 ignored 输出，不能把私有仓库里的任意文件复制到 `$HOME`。

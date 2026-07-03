@@ -110,14 +110,26 @@ A private repository can expose `config/sync-manifest.json`:
 }
 ```
 
-If CLI overlay support is added later, keep the command shape explicit:
+This repository currently provides repo-level scripts that read the overlay
+manifest:
+
+```bash
+pnpm private:list -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
+pnpm private:status -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
+pnpm private:check -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
+pnpm private:apply -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --dry-run
+pnpm private:apply -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
+```
+
+`apply` may only process templates, fragments, and local ignored outputs
+declared in the manifest. It must not copy arbitrary files from the private
+repository into `$HOME`. Without `--yes`, `apply` still runs as a dry-run.
+
+If overlay support is later moved into the published CLI, keep the command shape
+equally explicit:
 
 ```bash
 workstation dotfiles overlay status --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
 workstation dotfiles overlay apply --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --dry-run
 workstation dotfiles overlay apply --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
 ```
-
-`apply` may only process templates, fragments, and local ignored outputs
-declared in the manifest. It must not copy arbitrary files from the private
-repository into `$HOME`.

@@ -88,6 +88,19 @@ pnpm mcp:install --dry-run
 pnpm mcp:install
 ```
 
+读取私有 dotfiles overlay，并只预览会生成的本地 ignored 配置：
+
+```bash
+pnpm private:status -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
+pnpm private:apply -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --dry-run
+```
+
+确认 1Password 已登录后，再显式应用：
+
+```bash
+pnpm private:apply -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --yes
+```
+
 ## SSH 与远端连接
 
 生成新的 GitHub SSH key，并复制公钥：
