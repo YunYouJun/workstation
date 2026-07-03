@@ -114,6 +114,9 @@ This repository currently provides repo-level scripts that read the overlay
 manifest:
 
 ```bash
+pnpm private:connect
+pnpm private:connect -- --repo git@example.com:user/dotfiles.git --target-dir ~/repos/private/dotfiles --dry-run
+pnpm private:connect -- --repo git@example.com:user/dotfiles.git --target-dir ~/repos/private/dotfiles --yes
 pnpm private:list -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
 pnpm private:status -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
 pnpm private:check -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
@@ -124,6 +127,10 @@ pnpm private:apply -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-mani
 `apply` may only process templates, fragments, and local ignored outputs
 declared in the manifest. It must not copy arbitrary files from the private
 repository into `$HOME`. Without `--yes`, `apply` still runs as a dry-run.
+
+`private:connect` asks in a TTY whether to connect a private Git dotfiles
+repository and lets the user paste the Git URL. Non-interactive environments
+must pass `--repo`; without `--yes`, it only previews `git clone`.
 
 If overlay support is later moved into the published CLI, keep the command shape
 equally explicit:

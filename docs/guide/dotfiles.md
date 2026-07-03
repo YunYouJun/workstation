@@ -105,6 +105,9 @@ workstation dotfiles chezmoi apply
 当前仓库提供 repo-level 脚本读取 overlay manifest：
 
 ```bash
+pnpm private:connect
+pnpm private:connect -- --repo git@example.com:user/dotfiles.git --target-dir ~/repos/private/dotfiles --dry-run
+pnpm private:connect -- --repo git@example.com:user/dotfiles.git --target-dir ~/repos/private/dotfiles --yes
 pnpm private:list -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
 pnpm private:status -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
 pnpm private:check -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
@@ -113,6 +116,8 @@ pnpm private:apply -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-mani
 ```
 
 `apply` 只能处理 manifest 声明的模板、片段和本地 ignored 输出，不能把私有仓库里的任意文件复制到 `$HOME`。没有 `--yes` 时即使使用 `apply` 也只会 dry-run。
+
+`private:connect` 会在 TTY 中询问是否连接私有 Git dotfiles 仓库，并允许粘贴 Git URL。非交互环境必须传 `--repo`；没有 `--yes` 时只预览 `git clone`。
 
 如果以后把 overlay 支持并入发布版 CLI，命令形态应保持同样显式：
 

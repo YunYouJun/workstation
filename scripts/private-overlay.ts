@@ -4,8 +4,9 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync } from 'no
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import process from 'node:process'
+import { createInterface } from 'node:readline/promises'
 
-type Command = 'apply' | 'check' | 'list' | 'status'
+type Command = 'apply' | 'check' | 'connect' | 'list' | 'status'
 
 interface Manifest {
   mcp?: {
@@ -46,6 +47,8 @@ interface LocalOutput {
 interface Options {
   dryRun: boolean
   manifest: string
+  repo?: string
+  targetDir?: string
   yes: boolean
 }
 
@@ -57,6 +60,9 @@ function usage(exitCode = 0): never {
   pnpm private:list -- --manifest <path>
   pnpm private:status -- --manifest <path>
   pnpm private:check -- --manifest <path>
+  pnpm private:connect
+  pnpm private:connect -- --repo <git-url> --target-dir <path> [--dry-run]
+  pnpm private:connect -- --repo <git-url> --target-dir <path> --yes
   pnpm private:apply -- --manifest <path> [--dry-run]
   pnpm private:apply -- --manifest <path> --yes
 
@@ -69,7 +75,7 @@ function parseCommand(value: string | undefined): Command {
   if (!value || value.startsWith('-'))
     return 'status'
 
-  if (['apply', 'check', 'list', 'status'].includes(value))
+  if (['apply', 'check', 'connect', 'list', 'status'].includes(value))
     return value as Command
 
   console.error(`Unknown private overlay command: ${value}`)
@@ -113,6 +119,24 @@ function parseOptions(args: string[]): Options {
         usage(1)
       }
       options.manifest = resolve(expandHome(value))
+      index += 1
+    }
+    else if (arg === '--repo') {
+      const value = args[index + 1]
+      if (!value) {
+        console.error('--repo requires a Git URL')
+        usage(1)
+      }
+      options.repo = value
+      index += 1
+    }
+    else if (arg === '--target-dir') {
+      const value = args[index + 1]
+      if (!value) {
+        console.error('--target-dir requires a path')
+        usage(1)
+      }
+      options.targetDir = resolve(expandHome(value))
       index += 1
     }
     else {
@@ -189,6 +213,20 @@ function validateManifest(manifest: Manifest): string[] {
 
 function commandExists(command: string): boolean {
   return spawnSync('which', [command], { stdio: 'ignore' }).status === 0
+}
+
+function commandOutput(command: string, args: string[], cwd?: string): { status: number | null, stdout: string, stderr: string } {
+  const result = spawnSync(command, args, {
+    cwd,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+
+  return {
+    status: result.status,
+    stdout: result.stdout.trim(),
+    stderr: result.stderr.trim(),
+  }
 }
 
 function opState(): 'available' | 'missing' | 'unavailable' {
@@ -396,12 +434,157 @@ function apply(manifestPath: string, manifest: Manifest, dryRun: boolean): void 
   }
 }
 
+function shouldPrompt(): boolean {
+  return !process.env.CI && process.stdin.isTTY && process.stdout.isTTY
+}
+
+function repoNameFromUrl(repo: string): string {
+  const cleaned = repo.trim().replace(/\/$/, '').replace(/\.git$/, '')
+  const match = cleaned.match(/[:/]([^/:]+)$/)
+  return match?.[1] || 'dotfiles'
+}
+
+function defaultTargetDir(repo?: string): string {
+  const name = repo ? repoNameFromUrl(repo) : 'dotfiles'
+  return join(homedir(), 'repos', 'private', name)
+}
+
+function normalizeYesNo(value: string): boolean | null {
+  const normalized = value.trim().toLowerCase()
+  if (['y', 'yes'].includes(normalized))
+    return true
+
+  if (['', 'n', 'no'].includes(normalized))
+    return false
+
+  return null
+}
+
+async function promptForConnectOptions(options: Options): Promise<Options | null> {
+  if (!shouldPrompt()) {
+    if (!options.repo)
+      throw new Error('Missing --repo in non-interactive private overlay connect')
+
+    return {
+      ...options,
+      targetDir: options.targetDir || defaultTargetDir(options.repo),
+    }
+  }
+
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  })
+
+  try {
+    const shouldConnectAnswer = await rl.question('Connect a private Git dotfiles repository? [y/N] ')
+    const shouldConnect = normalizeYesNo(shouldConnectAnswer)
+
+    if (shouldConnect !== true) {
+      console.log('[skip] private dotfiles repository was not connected')
+      return null
+    }
+
+    let repo = options.repo?.trim()
+    while (!repo) {
+      repo = (await rl.question('Paste private dotfiles Git URL: ')).trim()
+      if (!repo)
+        console.log('Git URL is required.')
+    }
+
+    const defaultDir = options.targetDir || defaultTargetDir(repo)
+    const targetDirAnswer = await rl.question(`Local checkout path [${defaultDir}]: `)
+    const targetDir = resolve(expandHome(targetDirAnswer.trim() || defaultDir))
+
+    return {
+      ...options,
+      repo,
+      targetDir,
+    }
+  }
+  finally {
+    rl.close()
+  }
+}
+
+function isGitRepository(path: string): boolean {
+  return existsSync(join(path, '.git'))
+}
+
+function printRemote(path: string): void {
+  const remote = commandOutput('git', ['remote', 'get-url', 'origin'], path)
+  if (remote.status === 0 && remote.stdout)
+    console.log(`[ok] existing repository origin: ${remote.stdout}`)
+}
+
+function clonePrivateRepo(repo: string, targetDir: string, dryRun: boolean): void {
+  if (!commandExists('git'))
+    throw new Error('git is required to connect a private dotfiles repository')
+
+  if (existsSync(targetDir)) {
+    if (!isGitRepository(targetDir))
+      throw new Error(`Target path exists but is not a Git repository: ${targetDir}`)
+
+    console.log(`[ok] private dotfiles repository already exists: ${targetDir}`)
+    printRemote(targetDir)
+    return
+  }
+
+  console.log(`${dryRun ? '[dry-run]' : '[clone]'} git clone ${repo} ${targetDir}`)
+
+  if (dryRun)
+    return
+
+  mkdirSync(dirname(targetDir), { recursive: true })
+  const result = spawnSync('git', ['clone', repo, targetDir], {
+    stdio: 'inherit',
+  })
+
+  if (result.status !== 0)
+    throw new Error(`git clone failed: ${repo}`)
+}
+
+async function connect(options: Options): Promise<void> {
+  const connectOptions = await promptForConnectOptions(options)
+  if (!connectOptions)
+    return
+
+  if (!connectOptions.repo)
+    throw new Error('Missing private dotfiles Git URL')
+
+  const targetDir = connectOptions.targetDir || defaultTargetDir(connectOptions.repo)
+  const dryRun = connectOptions.dryRun || !connectOptions.yes
+  clonePrivateRepo(connectOptions.repo, targetDir, dryRun)
+
+  const manifestPath = join(targetDir, 'config', 'sync-manifest.json')
+  console.log(`Manifest path: ${manifestPath}`)
+
+  if (dryRun) {
+    console.log('Dry-run mode: pass --yes to clone the repository.')
+    return
+  }
+
+  if (!existsSync(manifestPath)) {
+    console.log('[warn] config/sync-manifest.json was not found after clone')
+    return
+  }
+
+  const manifest = readManifest(manifestPath)
+  status(manifestPath, manifest, false)
+}
+
 async function main(): Promise<void> {
   const command = parseCommand(process.argv[2])
   const optionArgs = process.argv[2]?.startsWith('-')
     ? process.argv.slice(2)
     : process.argv.slice(3)
   const options = parseOptions(optionArgs)
+
+  if (command === 'connect') {
+    await connect(options)
+    return
+  }
+
   const manifest = readManifest(options.manifest)
 
   if (command === 'list') {

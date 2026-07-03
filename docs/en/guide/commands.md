@@ -94,8 +94,15 @@ Read a private dotfiles overlay and preview the local ignored config that would
 be generated:
 
 ```bash
+pnpm private:connect
 pnpm private:status -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json
 pnpm private:apply -- --manifest ~/repos/<host>/<user>/dotfiles/config/sync-manifest.json --dry-run
+```
+
+Connect a private repository non-interactively:
+
+```bash
+pnpm private:connect -- --repo git@example.com:user/dotfiles.git --target-dir ~/repos/private/dotfiles --yes
 ```
 
 After confirming 1Password is signed in, apply it explicitly:

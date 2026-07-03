@@ -36,6 +36,7 @@
     "private": "tsx scripts/private-overlay.ts",
     "private:apply": "tsx scripts/private-overlay.ts apply",
     "private:check": "tsx scripts/private-overlay.ts check",
+    "private:connect": "tsx scripts/private-overlay.ts connect",
     "private:list": "tsx scripts/private-overlay.ts list",
     "private:status": "tsx scripts/private-overlay.ts status",
     "sync": "pnpm --filter @yunyoujun/workstation exec tsx src/cli.ts df sync",
