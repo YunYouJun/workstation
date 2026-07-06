@@ -51,18 +51,11 @@ fi
 # git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions
 # git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting
 
-# autojump https://github.com/wting/autojump
-# macos: brew install autojump
-
 plugins=()
 
 for plugin in git node dotenv macos docker docker-compose; do
   [[ -d "$ZSH/plugins/$plugin" ]] && plugins+=("$plugin")
 done
-
-if [[ -d "$ZSH/plugins/autojump" ]] && { command -v autojump >/dev/null 2>&1 || [[ -r "${HOMEBREW_PREFIX:-/opt/homebrew}/etc/profile.d/autojump.sh" ]]; }; then
-  plugins+=(autojump)
-fi
 
 for plugin in zsh-autosuggestions zsh-syntax-highlighting; do
   [[ -d "$ZSH_CUSTOM/plugins/$plugin" ]] && plugins+=("$plugin")

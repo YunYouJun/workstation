@@ -32,9 +32,9 @@ Project paths are still owned by `ghq`, keeping the
 matters. Use `z <keyword>` for frequent projects, `zi <keyword>` when the match
 is ambiguous, and `ghq list -p | fzf` when choosing from every checkout.
 
-Keep `autojump` only as compatibility for old machines. If an existing machine
-already has a stable setup, `.zshrc` may still load it conditionally; new
-machines should not install or extend it by default.
+`autojump` is now archived as a legacy option. When migrating an old machine,
+remove the `autojump` plugin load and Homebrew package, and use `zoxide`
+instead.
 
 ## Install
 
@@ -211,8 +211,8 @@ Terminal Proxy now collapse into this page and `home/dot_zshrc`:
   Homebrew.
 - Starship is the default prompt; Powerlevel10k is only a fallback for existing
   machines.
-- Directory jumping defaults to `zoxide` + `fzf`; `autojump` remains only for
-  old-machine compatibility.
+- Directory jumping defaults to `zoxide` + `fzf`; do not install or load
+  `autojump`.
 - `zsh-autosuggestions` and `zsh-syntax-highlighting` prefer Homebrew packages;
   `.zshrc` still supports existing Oh My Zsh custom plugins.
 
@@ -223,5 +223,4 @@ References:
 - [fzf](https://github.com/junegunn/fzf)
 - [zoxide](https://github.com/ajeetdsouza/zoxide)
 - [ghq](https://github.com/x-motemen/ghq)
-- [autojump](https://github.com/wting/autojump)
 - [Powerlevel10k](https://github.com/romkatv/powerlevel10k)
