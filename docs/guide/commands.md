@@ -93,6 +93,7 @@ pnpm mcp:install
 ```bash
 wst private connect
 wst private status
+wst private mcp-export --server gongfeng,iwiki,knot --dry-run
 wst private apply --dry-run
 ```
 
@@ -106,6 +107,13 @@ wst private connect --repo git@example.com:user/dotfiles.git --target-dir ~/repo
 
 ```bash
 wst private apply --yes
+```
+
+从旧机器把已安装的 Codex MCP server 导出到私有 overlay，提交私有
+dotfiles 后，新机器只需要 `wst private apply --yes` 读取该 overlay：
+
+```bash
+wst private mcp-export --server gongfeng,iwiki,knot --yes
 ```
 
 ## SSH 与远端连接

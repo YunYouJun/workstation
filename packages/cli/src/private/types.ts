@@ -7,6 +7,7 @@ export type PrivateAction
     | 'ios-run'
     | 'ios-secrets-import'
     | 'list'
+    | 'mcp-export'
     | 'mcp-inject'
     | 'mcp-run'
     | 'secret-scan'
@@ -77,6 +78,7 @@ export interface McpFragment {
   id: string
   operation?: string
   path: string
+  syncMode?: string
 }
 
 export interface McpSource {
@@ -133,6 +135,8 @@ export interface PrivateOptions {
   repo?: string
   scanMode: SecretScanMode
   section: InventorySection
+  servers?: string[]
+  source?: string
   targetDir?: string
   template?: string
   yes: boolean

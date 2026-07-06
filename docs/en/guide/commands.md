@@ -96,6 +96,7 @@ be generated:
 ```bash
 wst private connect
 wst private status
+wst private mcp-export --server gongfeng,iwiki,knot --dry-run
 wst private apply --dry-run
 ```
 
@@ -109,6 +110,14 @@ After confirming 1Password is signed in, apply it explicitly:
 
 ```bash
 wst private apply --yes
+```
+
+Export installed Codex MCP servers from the old machine into the private
+overlay. After committing the private dotfiles, a new machine can read the same
+overlay with `wst private apply --yes`:
+
+```bash
+wst private mcp-export --server gongfeng,iwiki,knot --yes
 ```
 
 ## SSH And Remote Access

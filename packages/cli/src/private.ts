@@ -9,6 +9,7 @@ import { commandExists, commandOutput, formatCommand } from './private/exec'
 import { generatePrivateInventory } from './private/inventory'
 import { importIosSecrets, materializeIosCommand, runIosCommand } from './private/ios'
 import { assertAllowedRead, privateMcpFragments, privateSecretEnvTemplates, privateSkillInstalls, privateTemplates, readPrivateManifest, validatePrivateManifest } from './private/manifest'
+import { exportMcpServers } from './private/mcp-export'
 import { checkMcpSecrets, importMcpSecrets, injectMcpTemplates, opReadinessState, runMcpCommand, tryLoadOpContext } from './private/op'
 import { defaultManifestPath, expandHome, rememberPrivateManifestPath, repoRootFromManifest, resolvePathOption, resolveRepoPath } from './private/paths'
 import { scanSecrets } from './private/scan'
@@ -31,6 +32,7 @@ export function privateUsage(): string {
   wst private secret-scan [--manifest <path>] [--all|--staged]
   wst private secrets-check [--manifest <path>]
   wst private secrets-import [--manifest <path>] [--dry-run|--yes]
+  wst private mcp-export [--manifest <path>] --server <name[,name...]> [--source <path>] [--output <path>] [--dry-run|--yes]
   wst private mcp-inject [--manifest <path>] [--dry-run|--yes]
   wst private mcp-run [--manifest <path>] -- <command...>
 
@@ -96,6 +98,9 @@ async function runParsedPrivateCommand({ action, options }: ParsedCommand): Prom
   else if (action === 'secrets-import') {
     importMcpSecrets(options.manifest, manifest, options.envFile, options.dryRun || !options.yes)
   }
+  else if (action === 'mcp-export') {
+    exportMcpServers(options.manifest, manifest, options)
+  }
   else if (action === 'mcp-inject') {
     injectMcpTemplates(options.manifest, manifest, options)
   }
@@ -128,7 +133,7 @@ function parsePrivateAction(value: string | undefined): PrivateAction {
   if (!value)
     return 'status'
 
-  if (['apply', 'check', 'connect', 'inventory', 'ios-materialize', 'ios-run', 'ios-secrets-import', 'list', 'mcp-inject', 'mcp-run', 'status'].includes(value))
+  if (['apply', 'check', 'connect', 'inventory', 'ios-materialize', 'ios-run', 'ios-secrets-import', 'list', 'mcp-export', 'mcp-inject', 'mcp-run', 'status'].includes(value))
     return value as PrivateAction
 
   if (['op-import-ios', 'ios-import', 'ios-secrets'].includes(value))
@@ -148,6 +153,9 @@ function parsePrivateAction(value: string | undefined): PrivateAction {
 
   if (['op-inject'].includes(value))
     return 'mcp-inject'
+
+  if (['export-mcp', 'mcp-sync'].includes(value))
+    return 'mcp-export'
 
   if (['op-run'].includes(value))
     return 'mcp-run'
@@ -225,6 +233,26 @@ function parsePrivateOptions(args: string[]): PrivateOptions {
     else if (arg === '--template') {
       options.template = resolveRequiredOption(args, index, '--template')
       index += 1
+    }
+    else if (arg === '--source') {
+      options.source = resolveRequiredOption(args, index, '--source')
+      index += 1
+    }
+    else if (arg.startsWith('--source=')) {
+      options.source = resolvePathOption(arg.slice('--source='.length))
+    }
+    else if (arg === '--server' || arg === '--servers') {
+      options.servers ||= []
+      options.servers.push(requireOptionValue(args, index, arg))
+      index += 1
+    }
+    else if (arg.startsWith('--server=')) {
+      options.servers ||= []
+      options.servers.push(arg.slice('--server='.length))
+    }
+    else if (arg.startsWith('--servers=')) {
+      options.servers ||= []
+      options.servers.push(arg.slice('--servers='.length))
     }
     else if (arg === '--output') {
       options.output = resolveRequiredOption(args, index, '--output')
@@ -413,8 +441,11 @@ function printStatusError(error: unknown, check: boolean): void {
 
 function workstationRoot(manifest: PrivateManifest): string {
   const configured = manifest.policy?.relatedRepositories?.find(repo => repo.id === 'workstation')?.path
-  if (configured)
-    return path.resolve(expandHome(configured))
+  if (configured) {
+    const resolved = path.resolve(expandHome(configured))
+    if (fs.existsSync(path.join(resolved, 'scripts')))
+      return resolved
+  }
 
   return path.resolve(import.meta.dirname, '..', '..', '..')
 }

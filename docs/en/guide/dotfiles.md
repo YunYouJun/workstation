@@ -83,6 +83,7 @@ A private repository can expose `config/sync-manifest.json`:
     "secretSource": "1Password",
     "allowedOperations": [
       "inventory",
+      "mcp-export",
       "op-inject-template",
       "codex-skill-install",
       "codex-mcp-fragment",
@@ -154,6 +155,8 @@ wst private connect --repo git@example.com:user/dotfiles.git --target-dir ~/repo
 wst private list
 wst private status
 wst private check
+wst private mcp-export --server gongfeng,iwiki,knot --dry-run
+wst private mcp-export --server gongfeng,iwiki,knot --yes
 wst private apply --dry-run
 wst private apply --yes
 wst private inventory --section skills
@@ -167,6 +170,14 @@ wst private secret-scan
 and local ignored outputs declared in the manifest. It must not copy arbitrary
 files from the private repository into `$HOME`. Without `--yes`, `apply` still
 runs as a dry-run.
+
+`mcp-export` reads selected servers from the manifest's Codex TOML source
+(usually `~/.codex/config.toml`) and writes the declared
+`mcp/codex-mcp.overlay.toml`. It never exports the full Codex config; literal
+`env` values are converted to `${ENV_NAME}` references, and literal
+header/token values that cannot be safely inferred are refused. After exporting
+and committing private dotfiles on the old machine, a new machine can run
+`wst private apply --yes` to merge that overlay into the Codex managed block.
 
 `wst private connect --yes` stores the private manifest path in
 `~/.config/workstation/private.json`, so later commands can omit `--manifest`.

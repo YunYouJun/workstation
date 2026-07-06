@@ -6,6 +6,7 @@ export const privateAllowedOperations = [
   'codex-mcp-fragment',
   'codex-skill-install',
   'inventory',
+  'mcp-export',
   'managed-block-fragment',
   'op-account-select',
   'op-run-env',

@@ -73,6 +73,7 @@ workstation dotfiles chezmoi apply
     "secretSource": "1Password",
     "allowedOperations": [
       "inventory",
+      "mcp-export",
       "op-inject-template",
       "codex-skill-install",
       "codex-mcp-fragment",
@@ -142,6 +143,8 @@ wst private connect --repo git@example.com:user/dotfiles.git --target-dir ~/repo
 wst private list
 wst private status
 wst private check
+wst private mcp-export --server gongfeng,iwiki,knot --dry-run
+wst private mcp-export --server gongfeng,iwiki,knot --yes
 wst private apply --dry-run
 wst private apply --yes
 wst private inventory --section skills
@@ -152,6 +155,13 @@ wst private secret-scan
 ```
 
 `apply` 只能处理 manifest 声明的模板、MCP fragment、显式 installable skill 和本地 ignored 输出，不能把私有仓库里的任意文件复制到 `$HOME`。没有 `--yes` 时即使使用 `apply` 也只会 dry-run。
+
+`mcp-export` 从 manifest 中的 Codex TOML source（通常是
+`~/.codex/config.toml`）读取指定 server，并写入声明的
+`mcp/codex-mcp.overlay.toml`。它不会导出完整 Codex 配置；`env` 里的明文值
+会被转换成 `${ENV_NAME}` 引用，遇到 header/token 这类不能安全推断的明文
+secret 会拒绝写入。旧机器导出并提交私有 dotfiles 后，新机器运行
+`wst private apply --yes` 即可把 overlay 合并进 Codex managed block。
 
 `wst private connect --yes` 会把私有 manifest 路径记到
 `~/.config/workstation/private.json`，后续命令可省略 `--manifest`。如果没有

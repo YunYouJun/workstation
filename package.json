@@ -38,6 +38,7 @@
     "private:check": "pnpm --filter @yunyoujun/workstation exec tsx src/cli.ts private check",
     "private:connect": "pnpm --filter @yunyoujun/workstation exec tsx src/cli.ts private connect",
     "private:list": "pnpm --filter @yunyoujun/workstation exec tsx src/cli.ts private list",
+    "private:mcp-export": "pnpm --filter @yunyoujun/workstation exec tsx src/cli.ts private mcp-export",
     "private:status": "pnpm --filter @yunyoujun/workstation exec tsx src/cli.ts private status",
     "sync": "pnpm --filter @yunyoujun/workstation exec tsx src/cli.ts df sync",
     "test": "pnpm -r run test",

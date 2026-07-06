@@ -240,6 +240,7 @@
     "operation": {
       "enum": [
         "inventory",
+        "mcp-export",
         "op-account-select",
         "op-run-env",
         "op-run-wrapper",

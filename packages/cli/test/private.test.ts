@@ -52,16 +52,19 @@ function createPrivateFixture() {
       secretSource: '1Password',
       allowedOperations: [
         'inventory',
+        'mcp-export',
         'op-account-select',
         'op-run-env',
         'op-inject-template',
         'op-run-wrapper',
         'op-typescript-cli',
         'secret-scan',
+        'managed-block-fragment',
       ],
       allowedReadPaths: [
         'mcp/*.env.example',
         'mcp/*.op.example.json',
+        'mcp/codex-mcp.overlay.toml',
         'ios/*.env.example',
         'skills/install/*',
       ],
@@ -93,6 +96,15 @@ function createPrivateFixture() {
       install: [],
     },
     mcp: {
+      fragments: [
+        {
+          id: 'private-codex',
+          path: 'mcp/codex-mcp.overlay.toml',
+          format: 'toml-codex',
+          operation: 'managed-block-fragment',
+          syncMode: 'install',
+        },
+      ],
       templates: [
         {
           id: 'op-account',
@@ -159,6 +171,10 @@ function createPrivateFixture() {
     '',
   ].join('\n'))
   writeFile(path.join(repoRoot, 'mcp', 'mcp.op.example.json'), '{"token":"{{ op://Private/Gongfeng/token }}"}\n')
+  writeFile(path.join(repoRoot, 'mcp', 'codex-mcp.overlay.toml'), [
+    '# Private Codex MCP fragment loaded by workstation.',
+    '',
+  ].join('\n'))
 
   return {
     binDir,
@@ -331,6 +347,32 @@ describe('private CLI', () => {
     assert.match(result.stdout, new RegExp(escapeRegExp(`Manifest: ${path.join(discoveredRepo, 'config', 'sync-manifest.json')}`)))
   })
 
+  it('falls back to the current workstation checkout when private apply has a stale workstation path', () => {
+    const fixture = createPrivateFixture()
+    const manifest = readJsonFile(fixture.manifestPath)
+    manifest.policy.relatedRepositories[0].path = path.join(fixture.repoRoot, 'missing-workstation')
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    const callsPath = path.join(fixture.repoRoot, 'pnpm-calls.json')
+    writeExecutable(path.join(fixture.binDir, 'pnpm'), [
+      'const fs = require("node:fs")',
+      'const callsPath = process.env.FAKE_PNPM_CALLS',
+      'const calls = fs.existsSync(callsPath) ? JSON.parse(fs.readFileSync(callsPath, "utf-8")) : []',
+      'calls.push({ cwd: process.cwd(), args: process.argv.slice(2) })',
+      'fs.writeFileSync(callsPath, JSON.stringify(calls))',
+      'process.exit(0)',
+    ])
+
+    const result = runCli(['private', 'apply', '--manifest', fixture.manifestPath, '--dry-run'], fixture.repoRoot, fixture.homeRoot, {
+      FAKE_PNPM_CALLS: callsPath,
+      PATH: testPath(fixture.binDir),
+    })
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    const calls = readJsonFile(callsPath)
+    assert.equal(calls.length, 2)
+    assert.equal(calls[0].cwd, path.resolve(import.meta.dirname, '..', '..', '..'))
+  })
+
   it('runs iOS commands with materialized App Store Connect key files', () => {
     const fixture = createPrivateFixture()
     const outputPath = path.join(fixture.repoRoot, 'ios-run-output.json')
@@ -411,6 +453,85 @@ describe('private CLI', () => {
     assert.match(createCall.template.fields.find((field: { label: string }) => field.label === 'private_key')?.value, /BEGIN PRIVATE KEY/)
   })
 
+  it('imports MCP header secrets from Codex config using exported env names', () => {
+    const fixture = createPrivateFixture()
+    const callsPath = path.join(fixture.repoRoot, 'op-mcp-import-calls.json')
+    writeFile(path.join(fixture.repoRoot, 'mcp', 'mcp.env.example'), [
+      'KNOT_X_KNOT_API_TOKEN="op://Private/Knot/x_knot_api_token"',
+      '',
+    ].join('\n'))
+    writeFile(path.join(fixture.homeRoot, '.codex', 'config.toml'), [
+      '[mcp_servers.knot.http_headers]',
+      'x-knot-api-token = "knot-token-value"',
+      '',
+    ].join('\n'))
+    writeExecutable(path.join(fixture.binDir, 'op'), [
+      'const fs = require("node:fs")',
+      'const args = process.argv.slice(2)',
+      'const callsPath = process.env.FAKE_OP_CALLS',
+      'const calls = fs.existsSync(callsPath) ? JSON.parse(fs.readFileSync(callsPath, "utf-8")) : []',
+      'const templateIndex = args.indexOf("--template")',
+      'calls.push({ args, template: templateIndex === -1 ? undefined : JSON.parse(fs.readFileSync(args[templateIndex + 1], "utf-8")) })',
+      'fs.writeFileSync(callsPath, JSON.stringify(calls))',
+      'if (args[0] === "item" && args[1] === "get") process.exit(1)',
+      'process.exit(0)',
+    ])
+
+    const result = runCli(['private', 'secrets-import', '--yes', '--manifest', fixture.manifestPath], fixture.repoRoot, fixture.homeRoot, {
+      CODEX_CONFIG_FILE: path.join(fixture.homeRoot, '.codex', 'config.toml'),
+      FAKE_OP_CALLS: callsPath,
+      PATH: testPath(fixture.binDir),
+    })
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(result.stdout, /created: op:\/\/Private\/Knot\/x_knot_api_token/)
+    const calls = readJsonFile(callsPath)
+    const createCall = calls.find((call: { args: string[] }) => call.args[0] === 'item' && call.args[1] === 'create')
+    assert.ok(createCall)
+    assert.equal(createCall.template.title, 'Knot')
+    assert.equal(createCall.template.fields.find((field: { label: string }) => field.label === 'x_knot_api_token')?.value, 'knot-token-value')
+  })
+
+  it('imports bearer_token_env_var literal values from Codex config using exported env names', () => {
+    const fixture = createPrivateFixture()
+    const callsPath = path.join(fixture.repoRoot, 'op-mcp-bearer-import-calls.json')
+    writeFile(path.join(fixture.repoRoot, 'mcp', 'mcp.env.example'), [
+      'KM_TOKEN="op://Private/KM/token"',
+      '',
+    ].join('\n'))
+    writeFile(path.join(fixture.homeRoot, '.codex', 'config.toml'), [
+      '[mcp_servers.km]',
+      'url = "https://km.example.com/mcp"',
+      'bearer_token_env_var = "km-token-value"',
+      '',
+    ].join('\n'))
+    writeExecutable(path.join(fixture.binDir, 'op'), [
+      'const fs = require("node:fs")',
+      'const args = process.argv.slice(2)',
+      'const callsPath = process.env.FAKE_OP_CALLS',
+      'const calls = fs.existsSync(callsPath) ? JSON.parse(fs.readFileSync(callsPath, "utf-8")) : []',
+      'const templateIndex = args.indexOf("--template")',
+      'calls.push({ args, template: templateIndex === -1 ? undefined : JSON.parse(fs.readFileSync(args[templateIndex + 1], "utf-8")) })',
+      'fs.writeFileSync(callsPath, JSON.stringify(calls))',
+      'if (args[0] === "item" && args[1] === "get") process.exit(1)',
+      'process.exit(0)',
+    ])
+
+    const result = runCli(['private', 'secrets-import', '--yes', '--manifest', fixture.manifestPath], fixture.repoRoot, fixture.homeRoot, {
+      CODEX_CONFIG_FILE: path.join(fixture.homeRoot, '.codex', 'config.toml'),
+      FAKE_OP_CALLS: callsPath,
+      PATH: testPath(fixture.binDir),
+    })
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(result.stdout, /created: op:\/\/Private\/KM\/token/)
+    const calls = readJsonFile(callsPath)
+    const createCall = calls.find((call: { args: string[] }) => call.args[0] === 'item' && call.args[1] === 'create')
+    assert.ok(createCall)
+    assert.equal(createCall.template.title, 'KM')
+    assert.equal(createCall.template.fields.find((field: { label: string }) => field.label === 'token')?.value, 'km-token-value')
+  })
+
   it('previews MCP template injection by default', () => {
     const fixture = createPrivateFixture()
     const outputPath = path.join(fixture.repoRoot, 'mcp', 'mcp.local.json')
@@ -420,6 +541,170 @@ describe('private CLI', () => {
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
     assert.match(result.stdout, /\[dry-run\] op inject/)
     assert.equal(fs.existsSync(outputPath), false)
+  })
+
+  it('previews selected Codex MCP server export by default without leaking env values', () => {
+    const fixture = createPrivateFixture()
+    const overlayPath = path.join(fixture.repoRoot, 'mcp', 'codex-mcp.overlay.toml')
+    const originalOverlay = fs.readFileSync(overlayPath, 'utf-8')
+    writeFile(path.join(fixture.homeRoot, '.codex', 'config.toml'), [
+      '[mcp_servers.gongfeng]',
+      'command = "gongfeng-mcp"',
+      'args = ["serve"]',
+      'env = { GONGFENG_TOKEN = "real-token-value" }',
+      '',
+      '[mcp_servers.iwiki]',
+      'url = "https://iwiki.example.com/mcp"',
+      `http_headers = { Authorization = "$${'{IWIKI_AUTHORIZATION}'}" }`,
+      '',
+      '[mcp_servers.other]',
+      'command = "other-mcp"',
+      '',
+    ].join('\n'))
+
+    const result = runCli(['private', 'mcp-export', '--manifest', fixture.manifestPath, '--server', 'gongfeng,iwiki'], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(result.stdout, /\[dry-run\] export MCP servers gongfeng, iwiki/)
+    assert.match(result.stdout, /\[mcp_servers\.gongfeng\]/)
+    assert.match(result.stdout, /GONGFENG_TOKEN = "\$\{GONGFENG_TOKEN\}"/)
+    assert.doesNotMatch(result.stdout, /real-token-value/)
+    assert.doesNotMatch(result.stdout, /\[mcp_servers\.other\]/)
+    assert.equal(fs.readFileSync(overlayPath, 'utf-8'), originalOverlay)
+  })
+
+  it('writes selected Codex MCP servers to the private overlay when confirmed', () => {
+    const fixture = createPrivateFixture()
+    const overlayPath = path.join(fixture.repoRoot, 'mcp', 'codex-mcp.overlay.toml')
+    writeFile(path.join(fixture.homeRoot, '.codex', 'config.toml'), [
+      '[mcp_servers.gongfeng]',
+      'command = "gongfeng-mcp"',
+      'args = ["serve"]',
+      'env = { GONGFENG_TOKEN = "real-token-value" }',
+      '',
+      '[mcp_servers.knot]',
+      'command = "knot-mcp"',
+      'args = ["--stdio"]',
+      '',
+    ].join('\n'))
+
+    const result = runCli(['private', 'mcp-export', '--manifest', fixture.manifestPath, '--server', 'gongfeng,knot', '--yes'], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(result.stdout, /\[export\] wrote MCP overlay/)
+    const overlay = fs.readFileSync(overlayPath, 'utf-8')
+    assert.match(overlay, /# Exported by `wst private mcp-export`/)
+    assert.match(overlay, /\[mcp_servers\.gongfeng\]/)
+    assert.match(overlay, /GONGFENG_TOKEN = "\$\{GONGFENG_TOKEN\}"/)
+    assert.match(overlay, /\[mcp_servers\.knot\]/)
+    assert.doesNotMatch(overlay, /real-token-value/)
+  })
+
+  it('keeps non-secret env values and env_http_headers variable names while exporting', () => {
+    const fixture = createPrivateFixture()
+    const overlayPath = path.join(fixture.repoRoot, 'mcp', 'codex-mcp.overlay.toml')
+    writeFile(path.join(fixture.homeRoot, '.codex', 'config.toml'), [
+      '[mcp_servers.cloudbase]',
+      'command = "cloudbase-mcp"',
+      '',
+      '[mcp_servers.cloudbase.env]',
+      'INTEGRATION_IDE = "CodeX"',
+      'API_TOKEN = "real-token-value"',
+      '',
+      '[mcp_servers.tencent-docs]',
+      'url = "https://docs.qq.com/openapi/mcp"',
+      '',
+      '[mcp_servers.tencent-docs.env_http_headers]',
+      'Authorization = "TENCENT_DOCS_TOKEN"',
+      '',
+      '[mcp_servers.km]',
+      'url = "https://km.example.com/mcp"',
+      'bearer_token_env_var = "real-token-value"',
+      '',
+    ].join('\n'))
+
+    const result = runCli(['private', 'mcp-export', '--manifest', fixture.manifestPath, '--server', 'cloudbase,tencent-docs,km', '--yes'], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    const overlay = fs.readFileSync(overlayPath, 'utf-8')
+    assert.match(overlay, /INTEGRATION_IDE = "CodeX"/)
+    assert.match(overlay, /API_TOKEN = "\$\{CLOUDBASE_API_TOKEN\}"/)
+    assert.match(overlay, /Authorization = "TENCENT_DOCS_TOKEN"/)
+    assert.match(overlay, /bearer_token_env_var = "KM_TOKEN"/)
+    assert.doesNotMatch(overlay, /real-token-value/)
+  })
+
+  it('fails MCP export when a requested Codex server is missing', () => {
+    const fixture = createPrivateFixture()
+    writeFile(path.join(fixture.homeRoot, '.codex', 'config.toml'), [
+      '[mcp_servers.gongfeng]',
+      'command = "gongfeng-mcp"',
+      '',
+    ].join('\n'))
+
+    const result = runCli(['private', 'mcp-export', '--manifest', fixture.manifestPath, '--server', 'iwiki'], fixture.repoRoot, fixture.homeRoot)
+
+    assert.notEqual(result.status, 0)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Requested MCP server was not found: iwiki/)
+  })
+
+  it('sanitizes literal header secrets when exporting selected servers', () => {
+    const fixture = createPrivateFixture()
+    const overlayPath = path.join(fixture.repoRoot, 'mcp', 'codex-mcp.overlay.toml')
+    writeFile(path.join(fixture.homeRoot, '.codex', 'config.toml'), [
+      '[mcp_servers.iwiki]',
+      'url = "https://iwiki.example.com/mcp"',
+      'http_headers = { Authorization = "Bearer real-token-value" }',
+      '',
+    ].join('\n'))
+
+    const result = runCli(['private', 'mcp-export', '--manifest', fixture.manifestPath, '--server', 'iwiki', '--yes'], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    const overlay = fs.readFileSync(overlayPath, 'utf-8')
+    assert.match(overlay, /Authorization = "Bearer \$\{IWIKI_TOKEN\}"/)
+    assert.doesNotMatch(overlay, /real-token-value/)
+  })
+
+  it('refuses MCP export when selected servers pass literal secrets through args', () => {
+    const fixture = createPrivateFixture()
+    writeFile(path.join(fixture.homeRoot, '.codex', 'config.toml'), [
+      '[mcp_servers.gongfeng]',
+      'command = "gongfeng-mcp"',
+      'args = ["--token", "real-token-value"]',
+      '',
+    ].join('\n'))
+
+    const result = runCli(['private', 'mcp-export', '--manifest', fixture.manifestPath, '--server', 'gongfeng'], fixture.repoRoot, fixture.homeRoot)
+
+    assert.notEqual(result.status, 0)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Refusing to export literal secret-like value/)
+  })
+
+  it('refuses MCP export output paths that are not declared fragments', () => {
+    const fixture = createPrivateFixture()
+    const unexpectedOutput = path.join(fixture.repoRoot, 'mcp', 'other.toml')
+    writeFile(path.join(fixture.homeRoot, '.codex', 'config.toml'), [
+      '[mcp_servers.gongfeng]',
+      'command = "gongfeng-mcp"',
+      '',
+    ].join('\n'))
+
+    const result = runCli([
+      'private',
+      'mcp-export',
+      '--manifest',
+      fixture.manifestPath,
+      '--server',
+      'gongfeng',
+      '--output',
+      'mcp/other.toml',
+      '--yes',
+    ], fixture.repoRoot, fixture.homeRoot)
+
+    assert.notEqual(result.status, 0)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Output path is not a declared MCP fragment/)
+    assert.equal(fs.existsSync(unexpectedOutput), false)
   })
 
   it('selects the expected gitleaks mode for secret scans', () => {

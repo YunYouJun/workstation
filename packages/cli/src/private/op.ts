@@ -378,16 +378,54 @@ function readCodexTomlValue(file: string, ref: SecretReference): TokenCandidate 
       return { source: `${file}:${section}.${ref.envName}`, value }
   }
 
-  if (ref.envName === 'GONGFENG_TOKEN') {
-    const value = sections.get('mcp_servers.gongfeng.http_headers')?.get('Authorization')
-    if (!value)
-      return undefined
+  return readCodexTomlHeaderValue(file, sections, ref)
+    || readCodexTomlBearerTokenValue(file, sections, ref)
+}
 
-    const credential = bearerCredential(value) ?? value
+function readCodexTomlHeaderValue(file: string, sections: Map<string, Map<string, string>>, ref: SecretReference): TokenCandidate | undefined {
+  for (const [section, values] of sections) {
+    const match = section.match(/^mcp_servers\.([^.]+)\.(?:headers|http_headers)$/)
+    if (!match)
+      continue
+
+    const server = match[1]
+    for (const [key, value] of values) {
+      const credential = bearerCredential(value)
+      const envName = credential && key.toLowerCase() === 'authorization'
+        ? envNameFromKey(`${server}_token`)
+        : envNameFromKey(`${server}_${key}`)
+
+      if (envName !== ref.envName)
+        continue
+
+      return {
+        source: `${file}:${section}.${key}`,
+        value: credential ?? value,
+      }
+    }
+  }
+
+  return undefined
+}
+
+function readCodexTomlBearerTokenValue(file: string, sections: Map<string, Map<string, string>>, ref: SecretReference): TokenCandidate | undefined {
+  for (const [section, values] of sections) {
+    const match = section.match(/^mcp_servers\.([^.]+)$/)
+    if (!match)
+      continue
+
+    const server = match[1]
+    const value = values.get('bearer_token_env_var')
+    if (!value || isEnvVarName(value))
+      continue
+
+    const envName = envNameFromKey(`${server}_token`)
+    if (envName !== ref.envName)
+      continue
 
     return {
-      source: `${file}:mcp_servers.gongfeng.http_headers.Authorization`,
-      value: credential,
+      source: `${file}:${section}.bearer_token_env_var`,
+      value,
     }
   }
 
@@ -460,6 +498,17 @@ function isTomlKey(value: string): boolean {
   }
 
   return true
+}
+
+function envNameFromKey(key: string): string {
+  return key
+    .replace(/[^a-z0-9]+/gi, '_')
+    .replace(/^_+|_+$/g, '')
+    .toUpperCase()
+}
+
+function isEnvVarName(value: string): boolean {
+  return /^[A-Z_][A-Z0-9_]*$/.test(value)
 }
 
 export function createTempWorkspace(): string {
