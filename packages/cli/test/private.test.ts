@@ -9,9 +9,12 @@ import { createTempDir, removePath, runCli, writeFile } from './utils'
 let tempDir: string | undefined
 
 function writeExecutable(filePath: string, lines: string[]) {
+  const nodePath = process.execPath.replace(/'/g, `'\\''`)
   writeFile(filePath, [
-    `#!${process.execPath}`,
+    '#!/bin/sh',
+    `exec '${nodePath}' - "$@" <<'__WORKSTATION_FAKE_NODE__'`,
     ...lines,
+    '__WORKSTATION_FAKE_NODE__',
     '',
   ].join('\n'))
   fs.chmodSync(filePath, 0o755)

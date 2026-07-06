@@ -31,6 +31,57 @@ cd "$(ghq list -p github.com/YunYouJun/workstation)"
 
 这样本地路径会接近远程 URL，也避免 `~/repos/gh/yyj` 这类私有简称。
 
+## 旧布局迁移
+
+旧机器上可能已经存在 `~/repos/gh/<owner>/<repo>`、`~/repos/play/<repo>`
+或其他按个人习惯组织的目录。迁移时把这些目录当成历史别名，新 checkout
+统一落到接近远程 URL 的路径：
+
+```text
+~/repos/<host>/<owner-or-group>/<repo>
+```
+
+迁移前先做只读巡检。目录嵌套较深时提高扫描深度：
+
+```bash
+wst p status --max-depth 8
+```
+
+也可以直接预览从旧路径到标准路径的迁移计划。该命令根据仓库 `origin`
+remote 推导目标路径，默认只预览，不移动文件：
+
+```bash
+wst p migrate-layout --max-depth 8
+```
+
+如果仓库有未提交文件、未 push commit、stash、无 upstream 或 upstream 已消失，
+先留在旧目录处理，不要批量移动。对于没有本地状态的常用 GitHub 仓库，优先用
+`ghq` 在标准路径重新 checkout：
+
+```bash
+ghq get git@github.com:YunYouJun/workstation.git
+```
+
+如果需要保留本地分支、worktree 配置或其他只存在于旧目录的状态，可以在确认目标
+路径不存在后单独移动一个仓库：
+
+```bash
+old=~/repos/gh/<owner>/<repo>
+new=~/repos/github.com/<owner>/<repo>
+git -C "$old" status --short --branch
+mkdir -p "$(dirname "$new")"
+mv "$old" "$new"
+```
+
+移动后用 `ghq list` 和 `wst p status --max-depth 8` 复查。私有或机器特定的迁移
+清单只放在 `projects.local.yaml` 或私有配置仓库，不提交到公开仓库。
+
+确认迁移计划后，才显式应用：
+
+```bash
+wst p migrate-layout --max-depth 8 --yes
+```
+
 ## 跳转到项目
 
 项目 checkout 的可复现路径由 `ghq` 管理，日常跳转交给 `zoxide`。

@@ -33,6 +33,63 @@ cd "$(ghq list -p github.com/YunYouJun/workstation)"
 This keeps the local path close to the remote URL and avoids private shorthand
 such as `~/repos/gh/yyj`.
 
+## Legacy Layout Migration
+
+Older machines may already have directories such as
+`~/repos/gh/<owner>/<repo>`, `~/repos/play/<repo>`, or other personal grouping
+schemes. Treat those paths as historical aliases. New checkouts should use a
+path derived from the remote URL:
+
+```text
+~/repos/<host>/<owner-or-group>/<repo>
+```
+
+Start with a read-only audit. Increase the scan depth when checkouts are nested
+deeply:
+
+```bash
+wst p status --max-depth 8
+```
+
+You can also preview a migration plan from legacy paths to canonical paths. The
+command derives targets from each repository's `origin` remote and does not move
+files by default:
+
+```bash
+wst p migrate-layout --max-depth 8
+```
+
+If a repository has uncommitted files, unpushed commits, stashes, no upstream,
+or a gone upstream, keep it in the old path until the local state is handled.
+For common GitHub repositories without local-only state, prefer checking out a
+fresh canonical copy through `ghq`:
+
+```bash
+ghq get git@github.com:YunYouJun/workstation.git
+```
+
+If you need to preserve local branches, worktree configuration, or other state
+that only exists in the old checkout, move one repository at a time after
+confirming the target path is free:
+
+```bash
+old=~/repos/gh/<owner>/<repo>
+new=~/repos/github.com/<owner>/<repo>
+git -C "$old" status --short --branch
+mkdir -p "$(dirname "$new")"
+mv "$old" "$new"
+```
+
+After moving, verify with `ghq list` and `wst p status --max-depth 8`. Keep
+private or machine-specific migration manifests in `projects.local.yaml` or a
+private config repository; do not commit them to the public repo.
+
+Apply the migration only after reviewing the plan:
+
+```bash
+wst p migrate-layout --max-depth 8 --yes
+```
+
 ## Jump To Projects
 
 Let `ghq` own reproducible checkout paths, and let `zoxide` handle daily

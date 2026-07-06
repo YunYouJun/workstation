@@ -125,6 +125,62 @@ describe('init CLI', () => {
     assert.equal(countOccurrences(globalConfig, 'useConfigOnly = true'), 1)
   })
 
+  it('removes default global git identity when includeIf routing is applied', () => {
+    const fixture = createInitFixture()
+    writeFile(gitConfigPath(fixture.homeRoot), [
+      '[user]',
+      '\tname = Old Default',
+      '\temail = old@example.com',
+      '',
+    ].join('\n'))
+
+    const result = runCli([
+      'init',
+      'git.include-if',
+      '--git-profile',
+      'id=github;host=github.com;name=YunYouJun;email=me@yunyoujun.cn',
+      '--yes',
+    ], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+
+    const globalConfig = fs.readFileSync(gitConfigPath(fixture.homeRoot), 'utf-8')
+    assert.match(globalConfig, /\[user\]\n\tuseConfigOnly = true/)
+    assert.doesNotMatch(globalConfig, /name = Old Default/)
+    assert.doesNotMatch(globalConfig, /email = old@example\.com/)
+    assert.equal(fs.readFileSync(githubConfigPath(fixture.homeRoot), 'utf-8'), [
+      '[user]',
+      '\tname = YunYouJun',
+      '\temail = me@yunyoujun.cn',
+      '',
+    ].join('\n'))
+  })
+
+  it('allows multiple includeIf routes to share one identity file', () => {
+    const fixture = createInitFixture()
+    const githubConfig = githubConfigPath(fixture.homeRoot)
+    const result = runCli([
+      'init',
+      'git.include-if',
+      '--git-profile',
+      `id=github;gitdir=~/repos/github.com;configPath=${githubConfig};name=YunYouJun;email=me@yunyoujun.cn`,
+      '--git-profile',
+      `id=github-legacy;gitdir=~/repos/gh;configPath=${githubConfig};name=YunYouJun;email=me@yunyoujun.cn`,
+      '--yes',
+    ], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+
+    const globalConfig = fs.readFileSync(gitConfigPath(fixture.homeRoot), 'utf-8')
+    assert.equal(countOccurrences(globalConfig, '[includeIf "gitdir:'), 2)
+    assert.equal(fs.readFileSync(githubConfig, 'utf-8'), [
+      '[user]',
+      '\tname = YunYouJun',
+      '\temail = me@yunyoujun.cn',
+      '',
+    ].join('\n'))
+  })
+
   it('infers the default github profile from an existing identity file', () => {
     const fixture = createInitFixture()
     writeFile(githubConfigPath(fixture.homeRoot), [

@@ -6,7 +6,7 @@ import { runChezmoi } from './chezmoi'
 import { doctor } from './doctor'
 import { runInit } from './init'
 import { runPrivateCommand } from './private'
-import { cloneActiveProjects, cloneManifestProjects, projectStatus } from './projects'
+import { cloneActiveProjects, cloneManifestProjects, projectMigrateLayout, projectStatus } from './projects'
 import { diff, status, sync, syncInteractive } from './sync'
 
 function getCliName() {
@@ -26,6 +26,9 @@ function parseProjectAction(action: string | undefined) {
 
   if (['status', 'dirty', 'check'].includes(projectAction))
     return 'status'
+
+  if (['migrate-layout', 'migrate', 'layout'].includes(projectAction))
+    return 'migrate-layout'
 
   return undefined
 }
@@ -75,6 +78,17 @@ async function runProjectsCommand(action: string | undefined, target: string | u
       root: options.root,
       all: options.all,
       check: options.check,
+      maxDepth: options.maxDepth === undefined ? undefined : Number(options.maxDepth),
+    })
+    return
+  }
+
+  if (projectAction === 'migrate-layout') {
+    await projectMigrateLayout({
+      root: options.root,
+      all: options.all,
+      yes: options.yes,
+      dryRun: options.dryRun,
       maxDepth: options.maxDepth === undefined ? undefined : Number(options.maxDepth),
     })
     return

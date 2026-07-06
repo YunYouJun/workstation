@@ -94,6 +94,14 @@ export interface ProjectStatusOptions {
   maxDepth: number
 }
 
+export interface ProjectMigrateLayoutOptions {
+  root: string
+  all: boolean
+  dryRun: boolean
+  yes: boolean
+  maxDepth: number
+}
+
 interface ResolvedCloneManifestProjectsOptions extends CloneManifestProjectsOptions {
   rootOverride?: string
 }
@@ -131,6 +139,19 @@ interface ProjectInspection {
   detached: boolean
   upstreamGone: boolean
   error: string | null
+}
+
+interface ProjectMigrationPlan {
+  action: 'move' | 'skip'
+  sourcePath: string
+  targetPath?: string
+  reason?: string
+}
+
+interface ProjectMigrationResult {
+  status: 'moved' | 'skipped' | 'error'
+  plan: ProjectMigrationPlan
+  message: string
 }
 
 interface ManifestGroup {
@@ -927,7 +948,11 @@ function pushManifestIssue(issues: ManifestValidationIssue[], path: string, mess
 }
 
 function isGitRepository(repositoryPath: string): boolean {
-  return fs.existsSync(path.join(repositoryPath, '.git'))
+  if (!fs.existsSync(path.join(repositoryPath, '.git')))
+    return false
+
+  const result = runCommand('git', ['-C', repositoryPath, 'rev-parse', '--is-inside-work-tree'])
+  return result.status === 0 && result.stdout.trim() === 'true'
 }
 
 function discoverGitRepositories(root: string, maxDepth: number): string[] {
@@ -1190,6 +1215,179 @@ function printProjectStatusResults(root: string, inspections: ProjectInspection[
     visible: visibleInspections.length,
     attention: inspections.filter(hasProjectAttention).length,
     errors: inspections.filter(inspection => inspection.error).length,
+  }
+}
+
+function getOriginRemoteUrl(repositoryPath: string): string | null {
+  const result = runCommand('git', ['-C', repositoryPath, 'remote', 'get-url', 'origin'])
+  if (result.error || result.status !== 0)
+    return null
+
+  return result.stdout.trim() || null
+}
+
+function isSamePath(firstPath: string, secondPath: string): boolean {
+  return path.resolve(firstPath) === path.resolve(secondPath)
+}
+
+function getMigrationPlan(root: string, repositoryPath: string): ProjectMigrationPlan {
+  const originUrl = getOriginRemoteUrl(repositoryPath)
+  if (!originUrl) {
+    return {
+      action: 'skip',
+      sourcePath: repositoryPath,
+      reason: 'missing origin remote',
+    }
+  }
+
+  const projectName = inferProjectNameFromUrl(originUrl)
+  if (!projectName) {
+    return {
+      action: 'skip',
+      sourcePath: repositoryPath,
+      reason: 'could not infer target path from origin remote',
+    }
+  }
+
+  const targetPath = projectTargetPath(root, projectName)
+  if (isSamePath(repositoryPath, targetPath)) {
+    return {
+      action: 'skip',
+      sourcePath: repositoryPath,
+      targetPath,
+      reason: 'already canonical',
+    }
+  }
+
+  if (fs.existsSync(targetPath)) {
+    return {
+      action: 'skip',
+      sourcePath: repositoryPath,
+      targetPath,
+      reason: 'target path already exists',
+    }
+  }
+
+  const inspection = inspectGitRepository(repositoryPath)
+  if (hasProjectAttention(inspection)) {
+    return {
+      action: 'skip',
+      sourcePath: repositoryPath,
+      targetPath,
+      reason: `needs attention: ${formatInspectionDetails(inspection)}`,
+    }
+  }
+
+  return {
+    action: 'move',
+    sourcePath: repositoryPath,
+    targetPath,
+  }
+}
+
+function shouldShowMigrationResult(result: ProjectMigrationResult, showAll: boolean): boolean {
+  return showAll
+    || result.status !== 'skipped'
+    || result.plan.reason !== 'already canonical'
+}
+
+function formatMigrationPath(root: string, repositoryPath: string | undefined): string {
+  return repositoryPath ? formatInspectionPath(root, repositoryPath) : ''
+}
+
+function migrateRepository(plan: ProjectMigrationPlan, dryRun: boolean): ProjectMigrationResult {
+  if (plan.action === 'skip') {
+    return {
+      status: 'skipped',
+      plan,
+      message: plan.reason || 'skipped',
+    }
+  }
+
+  if (!plan.targetPath) {
+    return {
+      status: 'error',
+      plan,
+      message: 'missing target path',
+    }
+  }
+
+  if (dryRun) {
+    return {
+      status: 'moved',
+      plan,
+      message: '[dry-run] Would move',
+    }
+  }
+
+  try {
+    fs.mkdirSync(path.dirname(plan.targetPath), { recursive: true })
+    fs.renameSync(plan.sourcePath, plan.targetPath)
+    return {
+      status: 'moved',
+      plan,
+      message: 'Moved',
+    }
+  }
+  catch (error) {
+    return {
+      status: 'error',
+      plan,
+      message: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
+
+function markDuplicateMigrationTargets(plans: ProjectMigrationPlan[]): ProjectMigrationPlan[] {
+  const targetSources = new Map<string, string[]>()
+
+  for (const plan of plans) {
+    if (plan.action !== 'move' || !plan.targetPath)
+      continue
+
+    const targetKey = path.resolve(plan.targetPath)
+    targetSources.set(targetKey, [
+      ...(targetSources.get(targetKey) || []),
+      plan.sourcePath,
+    ])
+  }
+
+  return plans.map((plan) => {
+    if (plan.action !== 'move' || !plan.targetPath)
+      return plan
+
+    const sources = targetSources.get(path.resolve(plan.targetPath)) || []
+    if (sources.length <= 1)
+      return plan
+
+    return {
+      ...plan,
+      action: 'skip',
+      reason: 'duplicate target path in migration plan',
+    }
+  })
+}
+
+function printMigrationResults(root: string, results: ProjectMigrationResult[], showAll: boolean) {
+  for (const result of results) {
+    if (!shouldShowMigrationResult(result, showAll))
+      continue
+
+    const icon = result.status === 'moved'
+      ? '+'
+      : result.status === 'error'
+        ? 'x'
+        : '!'
+    const source = formatMigrationPath(root, result.plan.sourcePath)
+    const target = formatMigrationPath(root, result.plan.targetPath)
+    const pathLabel = target ? `${source} -> ${target}` : source
+    console.log(`  ${icon} ${pathLabel}: ${result.message}`)
+  }
+
+  return {
+    moved: results.filter(result => result.status === 'moved').length,
+    skipped: results.filter(result => result.status === 'skipped').length,
+    errors: results.filter(result => result.status === 'error').length,
   }
 }
 
@@ -1883,6 +2081,67 @@ export async function projectStatus(rawOptions: Partial<ProjectStatusOptions> = 
   p.outro(`Done! ${repositories.length} repositories, ${attention} need attention, ${errors} errors`)
 
   if (errors > 0 || (options.check && attention > 0))
+    process.exitCode = 1
+}
+
+export async function projectMigrateLayout(rawOptions: Partial<ProjectMigrateLayoutOptions> = {}) {
+  let options: ProjectMigrateLayoutOptions
+  try {
+    options = {
+      root: rawOptions.root || DEFAULT_ROOT,
+      all: rawOptions.all ?? false,
+      dryRun: rawOptions.dryRun ?? false,
+      yes: rawOptions.yes ?? false,
+      maxDepth: parseMaxDepth(rawOptions.maxDepth ?? DEFAULT_STATUS_MAX_DEPTH),
+    }
+  }
+  catch (error) {
+    console.error(error instanceof Error ? error.message : String(error))
+    process.exitCode = 1
+    return
+  }
+
+  const resolvedRoot = resolveProjectRoot(options.root)
+  const effectiveDryRun = options.dryRun || !options.yes
+
+  p.intro(`Migrate project layout under ${resolvedRoot}`)
+  if (effectiveDryRun)
+    console.log('Dry-run mode: pass --yes to move clean repositories into canonical paths')
+
+  if (!fs.existsSync(resolvedRoot)) {
+    console.error(`Project root does not exist: ${resolvedRoot}`)
+    p.outro('No repositories migrated')
+    process.exitCode = 1
+    return
+  }
+
+  if (!commandExists('git')) {
+    console.error('git is not installed or is not available in PATH')
+    p.outro('No repositories migrated')
+    process.exitCode = 1
+    return
+  }
+
+  const s = p.spinner()
+  s.start('Scanning local repositories...')
+  const repositories = discoverGitRepositories(resolvedRoot, options.maxDepth)
+  s.stop(`Found ${repositories.length} repositories`)
+
+  if (repositories.length === 0) {
+    p.outro('No git repositories found')
+    return
+  }
+
+  const plans = markDuplicateMigrationTargets(repositories
+    .map(repository => getMigrationPlan(options.root, repository)))
+  const results = plans
+    .map(plan => migrateRepository(plan, effectiveDryRun))
+
+  const { moved, skipped, errors } = printMigrationResults(resolvedRoot, results, options.all)
+  const movedLabel = effectiveDryRun ? 'would move' : 'moved'
+  p.outro(`Done! ${moved} ${movedLabel}, ${skipped} skipped, ${errors} errors`)
+
+  if (errors > 0)
     process.exitCode = 1
 }
 

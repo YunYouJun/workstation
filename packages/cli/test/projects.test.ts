@@ -29,9 +29,12 @@ function makeRepo(nameWithOwner: string): FakeRepo {
 }
 
 function writeExecutable(filePath: string, lines: string[]) {
+  const nodePath = process.execPath.replace(/'/g, `'\\''`)
   writeFile(filePath, [
-    `#!${process.execPath}`,
+    '#!/bin/sh',
+    `exec '${nodePath}' - "$@" <<'__WORKSTATION_FAKE_NODE__'`,
     ...lines,
+    '__WORKSTATION_FAKE_NODE__',
     '',
   ].join('\n'))
   fs.chmodSync(filePath, 0o755)
@@ -694,5 +697,78 @@ describe('projects CLI', () => {
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
     assert.match(`${result.stdout}\n${result.stderr}`, /github\.com\/YunYouJun\/workstation/)
     assert.match(`${result.stdout}\n${result.stderr}`, /clean/)
+  })
+
+  it('keeps scanning when a parent directory has an invalid git marker', () => {
+    const fixture = createStatusFixture()
+    fs.mkdirSync(path.join(fixture.projectsRoot, '.git', 'broken'), { recursive: true })
+    createLocalGitRepo(fixture.projectsRoot, 'github.com/YunYouJun/workstation')
+
+    const result = runCli(['p', 'status', '--root', fixture.projectsRoot, '--all'], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Found 1 repositories/)
+    assert.match(`${result.stdout}\n${result.stderr}`, /github\.com\/YunYouJun\/workstation/)
+    assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /fatal: not a git repository/)
+  })
+
+  it('previews canonical layout migrations by default', () => {
+    const fixture = createStatusFixture()
+    const sourcePath = createLocalGitRepo(fixture.projectsRoot, 'gh/yyj/workstation')
+    runGit(['remote', 'add', 'origin', 'git@github.com:YunYouJun/workstation.git'], sourcePath)
+
+    const result = runCli(['p', 'migrate-layout', '--root', fixture.projectsRoot], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /\[dry-run\] Would move/)
+    assert.match(`${result.stdout}\n${result.stderr}`, /gh\/yyj\/workstation -> github\.com\/YunYouJun\/workstation/)
+    assert.equal(fs.existsSync(sourcePath), true)
+    assert.equal(fs.existsSync(path.join(fixture.projectsRoot, 'github.com', 'YunYouJun', 'workstation')), false)
+  })
+
+  it('moves clean repositories into canonical layout when confirmed', () => {
+    const fixture = createStatusFixture()
+    const sourcePath = createLocalGitRepo(fixture.projectsRoot, 'gh/yyj/workstation')
+    const targetPath = path.join(fixture.projectsRoot, 'github.com', 'YunYouJun', 'workstation')
+    runGit(['remote', 'add', 'origin', 'git@github.com:YunYouJun/workstation.git'], sourcePath)
+
+    const result = runCli(['p', 'migrate-layout', '--root', fixture.projectsRoot, '--yes'], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Moved/)
+    assert.equal(fs.existsSync(sourcePath), false)
+    assert.equal(fs.existsSync(path.join(targetPath, '.git')), true)
+  })
+
+  it('skips layout migrations for repositories that need attention', () => {
+    const fixture = createStatusFixture()
+    const sourcePath = createLocalGitRepo(fixture.projectsRoot, 'gh/yyj/workstation')
+    const targetPath = path.join(fixture.projectsRoot, 'github.com', 'YunYouJun', 'workstation')
+    runGit(['remote', 'add', 'origin', 'git@github.com:YunYouJun/workstation.git'], sourcePath)
+    writeFile(path.join(sourcePath, 'notes.md'), 'draft\n')
+
+    const result = runCli(['p', 'migrate-layout', '--root', fixture.projectsRoot, '--yes'], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /needs attention: 1 untracked/)
+    assert.equal(fs.existsSync(sourcePath), true)
+    assert.equal(fs.existsSync(targetPath), false)
+  })
+
+  it('skips duplicate canonical migration targets', () => {
+    const fixture = createStatusFixture()
+    const firstPath = createLocalGitRepo(fixture.projectsRoot, 'gh/yyj/workstation')
+    const secondPath = createLocalGitRepo(fixture.projectsRoot, 'play/workstation')
+    const targetPath = path.join(fixture.projectsRoot, 'github.com', 'YunYouJun', 'workstation')
+    runGit(['remote', 'add', 'origin', 'git@github.com:YunYouJun/workstation.git'], firstPath)
+    runGit(['remote', 'add', 'origin', 'git@github.com:YunYouJun/workstation.git'], secondPath)
+
+    const result = runCli(['p', 'migrate-layout', '--root', fixture.projectsRoot, '--yes'], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /duplicate target path in migration plan/)
+    assert.equal(fs.existsSync(firstPath), true)
+    assert.equal(fs.existsSync(secondPath), true)
+    assert.equal(fs.existsSync(targetPath), false)
   })
 })

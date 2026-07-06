@@ -257,6 +257,8 @@ function createGitIncludeIfPlan(options: ResolvedInitOptions): InitTaskPlan {
   const globalGitConfigPath = path.join(getHomeDir(), '.gitconfig')
   const globalOriginal = readTextFile(globalGitConfigPath)
   let globalNext = setGitConfigValue(globalOriginal, '[user]', 'useConfigOnly', 'true')
+  globalNext = removeGitConfigValue(globalNext, '[user]', 'name')
+  globalNext = removeGitConfigValue(globalNext, '[user]', 'email')
 
   for (const profile of profiles) {
     globalNext = setGitConfigValue(
@@ -272,20 +274,34 @@ function createGitIncludeIfPlan(options: ResolvedInitOptions): InitTaskPlan {
       globalGitConfigPath,
       globalOriginal,
       globalNext,
-      `enable user.useConfigOnly and route ${profiles.length} Git source${profiles.length === 1 ? '' : 's'}`,
+      `enable user.useConfigOnly, remove default identity, and route ${profiles.length} Git source${profiles.length === 1 ? '' : 's'}`,
     ),
   ]
 
-  for (const profile of profiles) {
-    const profileOriginal = readTextFile(profile.configPath)
+  const identityFiles = new Map<string, GitIdentityProfile[]>()
+  for (const profile of profiles)
+    identityFiles.set(profile.configPath, [...(identityFiles.get(profile.configPath) || []), profile])
+
+  for (const [configPath, configProfiles] of identityFiles) {
+    const [profile] = configProfiles
+    const conflictingProfile = configProfiles.find(candidate =>
+      candidate.name !== profile.name || candidate.email !== profile.email,
+    )
+    if (conflictingProfile) {
+      throw new Error(
+        `Git profiles "${profile.id}" and "${conflictingProfile.id}" use the same config path with different identities: ${displayPath(configPath)}`,
+      )
+    }
+
+    const profileOriginal = readTextFile(configPath)
     let profileNext = setGitConfigValue(profileOriginal, '[user]', 'name', profile.name)
     profileNext = setGitConfigValue(profileNext, '[user]', 'email', profile.email)
-
+    const profileIds = configProfiles.map(candidate => candidate.id).join(', ')
     changes.push(makeFileChange(
-      profile.configPath,
+      configPath,
       profileOriginal,
       profileNext,
-      `${profile.id} identity ${profile.name} <${profile.email}>`,
+      `${profileIds} identity ${profile.name} <${profile.email}>`,
     ))
   }
 
@@ -530,6 +546,28 @@ function setGitConfigValue(content: string, section: string, key: string, value:
     lines[valueLineIndex] = `${getIndent(lines[valueLineIndex])}${key} = ${value}`
   }
 
+  return `${lines.join('\n')}\n`
+}
+
+function removeGitConfigValue(content: string, section: string, key: string) {
+  const normalizedContent = content ? ensureTrailingNewline(content) : ''
+  if (!normalizedContent)
+    return ''
+
+  const lines = normalizedContent.split('\n')
+  if (lines.at(-1) === '')
+    lines.pop()
+
+  const sectionIndex = lines.findIndex(line => line.trim() === section)
+  if (sectionIndex === -1)
+    return normalizedContent
+
+  const nextSectionIndex = findNextSectionIndex(lines, sectionIndex + 1)
+  const valueLineIndex = findKeyIndex(lines, sectionIndex + 1, nextSectionIndex, key)
+  if (valueLineIndex === -1)
+    return normalizedContent
+
+  lines.splice(valueLineIndex, 1)
   return `${lines.join('\n')}\n`
 }
 
