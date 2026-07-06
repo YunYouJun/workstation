@@ -16,6 +16,12 @@ _is_interactive_tty() {
   [[ -o interactive && -t 0 && -t 1 ]]
 }
 
+# Codex Desktop currently exposes TERM=dumb to some interactive shells, which
+# makes prompts like Starship disable themselves. Keep this scoped to Codex.
+if [[ -o interactive && "${TERM:-}" == "dumb" && ( "${CODEX_SHELL:-}" == "1" || "${__CFBundleIdentifier:-}" == "com.openai.codex" ) ]]; then
+  export TERM="xterm-256color"
+fi
+
 # Homebrew initialization
 if [[ -x /opt/homebrew/bin/brew ]]; then
   eval "$(/opt/homebrew/bin/brew shellenv)"

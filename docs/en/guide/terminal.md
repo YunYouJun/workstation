@@ -19,6 +19,63 @@ Starship is cross-shell, configured with one TOML file, and easy to reinstall th
 
 Keep Oh My Zsh, but do not let it own the prompt. In this setup, Oh My Zsh provides plugins and completions, while Starship owns the prompt rendering.
 
+### Starship Prompt
+
+`home/dot_config/starship.toml` renders the prompt with Starship's built-in
+modules instead of custom shell commands that parse `git status` again. This
+keeps the setup cross-shell, maintainable, and guarded by `command_timeout`.
+
+The default prompt stays on two lines: the first line shows the directory, Git,
+runtime, package version, command duration, and failed exit status; the second
+line only shows the input symbol. Git context appears only inside repositories:
+
+- `git:<branch>`: current branch.
+- `~N`: modified files.
+- `+N`: staged files.
+- `?N`: untracked files.
+- `-N`: deleted files.
+- `>N`: renamed files.
+- `=N`: conflicted files.
+- `ahead N` / `behind N`: upstream commit difference.
+- ` +A -D` (`nf-oct-diff`): added and deleted lines in the current diff.
+
+`git_state` shows merge, rebase, cherry-pick, bisect, and similar in-progress
+operations; `status` shows `exit <code>` only when the previous command failed.
+If a very large repository or a Windows-mounted WSL directory makes the prompt
+slow, disable `git_metrics` first, then tune `git_status` for that machine if
+needed.
+
+The visual style is based on Starship's Tokyo Night preset, with workstation's
+Git counts, diff metrics, failed exit status, and package-version behavior kept
+on top. The directory segment uses a higher-contrast Tokyo blue variant so the
+path stays readable instead of placing light text on a medium-bright blue.
+`Brewfile` installs `font-hack-nerd-font`; terminal apps need to use a `Hack
+Nerd Font Mono` font to render powerline, Git branch, Node, Bun, Deno, and
+package icons correctly. The VS Code integrated-terminal font is set through the
+global settings template as `Hack Nerd Font Mono, Source Code Pro, monospace`;
+iTerm2 or Terminal profiles need to select a Nerd Font in their own profile
+settings. File states still use short text symbols like `~N`, `+N`, and `?N`,
+while diff metrics use the `nf-oct-diff` icon, so the prompt remains quick to
+scan.
+
+macOS Terminal stores its font in the Terminal profile, independent of shell
+configuration. Check and fix the current default profile with:
+
+```bash
+osascript -e 'tell application "Terminal" to get name of default settings'
+osascript -e 'tell application "Terminal" to get font name of default settings'
+osascript -e 'tell application "Terminal" to set font name of default settings to "HackNFM-Regular"'
+```
+
+Codex Desktop's embedded terminal may expose `TERM=dumb` to interactive shells,
+which makes Starship disable the prompt. `home/dot_zshrc` fixes interactive
+`TERM=dumb` only inside Codex by exporting `xterm-256color`, so normal terminal
+apps keep their own environment. Codex's terminal font comes from the Codex
+appearance setting `fonts.code`; on a local machine, set that code font in
+`~/.codex/config.toml` to `Hack Nerd Font Mono`. Do not sync the whole Codex
+config through workstation because it may contain auth state, MCP settings, or
+other machine-local data.
+
 ### Directory Jumping
 
 Use `zoxide` by default on new machines, and do not make `autojump` the default
@@ -220,6 +277,7 @@ References:
 
 - [Homebrew](https://brew.sh/)
 - [Starship](https://starship.rs/guide/)
+- [Starship configuration](https://starship.rs/config/)
 - [fzf](https://github.com/junegunn/fzf)
 - [zoxide](https://github.com/ajeetdsouza/zoxide)
 - [ghq](https://github.com/x-motemen/ghq)
