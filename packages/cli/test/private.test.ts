@@ -543,6 +543,53 @@ describe('private CLI', () => {
     assert.equal(fs.existsSync(outputPath), false)
   })
 
+  it('omits MCP JSON servers with missing optional 1Password references during injection', () => {
+    const fixture = createPrivateFixture()
+    const outputPath = path.join(fixture.repoRoot, 'mcp', 'mcp.local.json')
+    writeFile(path.join(fixture.repoRoot, 'mcp', 'mcp.op.example.json'), JSON.stringify({
+      mcpServers: {
+        gongfeng: {
+          command: 'gongfeng-mcp',
+          env: {
+            GONGFENG_TOKEN: '{{ op://Private/Gongfeng/token }}',
+          },
+        },
+        github: {
+          command: 'npx',
+          args: ['-y', '@modelcontextprotocol/server-github'],
+          env: {
+            GITHUB_PERSONAL_ACCESS_TOKEN: '{{ op://Private/GitHub/personal_access_token }}',
+          },
+        },
+      },
+    }, null, 2))
+    writeExecutable(path.join(fixture.binDir, 'op'), [
+      'const fs = require("node:fs")',
+      'const args = process.argv.slice(2)',
+      'if (args[0] === "read" && args[1].includes("GitHub")) process.exit(1)',
+      'if (args[0] === "read") { process.stdout.write("secret"); process.exit(0) }',
+      'if (args[0] === "inject") {',
+      '  const input = args[args.indexOf("--in-file") + 1]',
+      '  const output = args[args.indexOf("--out-file") + 1]',
+      '  const template = fs.readFileSync(input, "utf8")',
+      '  if (template.includes("GitHub")) process.exit(2)',
+      '  fs.writeFileSync(output, template.replace(/\\{\\{ op:\\/\\/Private\\/Gongfeng\\/token \\}\\}/g, "gongfeng-secret"))',
+      '  process.exit(0)',
+      '}',
+      'process.exit(0)',
+    ])
+
+    const result = runCli(['private', 'mcp-inject', '--yes', '--manifest', fixture.manifestPath], fixture.repoRoot, fixture.homeRoot, {
+      PATH: testPath(fixture.binDir),
+    })
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(result.stdout, /omitted 1 optional MCP server/)
+    const output = readJsonFile(outputPath)
+    assert.deepEqual(Object.keys(output.mcpServers), ['gongfeng'])
+    assert.equal(output.mcpServers.gongfeng.env.GONGFENG_TOKEN, 'gongfeng-secret')
+  })
+
   it('previews selected Codex MCP server export by default without leaking env values', () => {
     const fixture = createPrivateFixture()
     const overlayPath = path.join(fixture.repoRoot, 'mcp', 'codex-mcp.overlay.toml')

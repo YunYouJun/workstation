@@ -164,8 +164,23 @@ export function injectMcpTemplates(manifestPath: string, manifest: PrivateManife
   if (!dryRun && !commandExists('op'))
     throw new Error('1Password CLI must be installed before injecting MCP templates')
 
-  for (const template of templates)
-    runOpInject(template.source, template.output, dryRun, context)
+  const tempDir = dryRun ? undefined : createTempWorkspace()
+  try {
+    const optionalMissingRefs = !dryRun && context
+      ? missingOptionalSecretReferences(manifestPath, manifest, context)
+      : new Set<string>()
+
+    for (const template of templates) {
+      const source = tempDir
+        ? pruneOptionalMcpJsonTemplate(template.source, optionalMissingRefs, tempDir)
+        : template.source
+      runOpInject(source, template.output, dryRun, context)
+    }
+  }
+  finally {
+    if (tempDir)
+      removeTempWorkspace(tempDir)
+  }
 }
 
 export function runMcpCommand(manifestPath: string, manifest: PrivateManifest, options: PrivateOptions): void {
@@ -227,6 +242,68 @@ function checkSecretReference(context: OpContext, ref: SecretReference): { ok: b
     ok: result.status === 0 && result.stdout.length > 0,
     ref,
   }
+}
+
+function missingOptionalSecretReferences(manifestPath: string, manifest: PrivateManifest, context: OpContext): Set<string> {
+  const refs = readSecretReferences(secretEnvFilePath(manifestPath, manifest))
+  const missing = new Set<string>()
+
+  for (const ref of refs) {
+    if (ref.optional && !checkSecretReference(context, ref).ok)
+      missing.add(ref.ref)
+  }
+
+  return missing
+}
+
+function pruneOptionalMcpJsonTemplate(source: string, optionalMissingRefs: Set<string>, tempDir: string): string {
+  if (optionalMissingRefs.size === 0 || path.extname(source) !== '.json')
+    return source
+
+  const data = JSON.parse(fs.readFileSync(source, 'utf8')) as { mcpServers?: Record<string, unknown> }
+  if (!data.mcpServers || typeof data.mcpServers !== 'object' || Array.isArray(data.mcpServers))
+    return source
+
+  let removed = 0
+  const servers: Record<string, unknown> = {}
+  for (const [name, config] of Object.entries(data.mcpServers)) {
+    if (containsAnySecretReference(config, optionalMissingRefs)) {
+      removed += 1
+      continue
+    }
+
+    servers[name] = config
+  }
+
+  if (removed === 0)
+    return source
+
+  const output = path.join(tempDir, `${path.basename(source, '.json')}.optional-pruned.json`)
+  writePrivateJson(output, {
+    ...data,
+    mcpServers: servers,
+  })
+  console.log(`[skip] omitted ${removed} optional MCP server${removed === 1 ? '' : 's'} with missing 1Password references from ${source}`)
+  return output
+}
+
+function containsAnySecretReference(value: unknown, refs: Set<string>): boolean {
+  if (typeof value === 'string') {
+    for (const ref of refs) {
+      if (value.includes(ref))
+        return true
+    }
+
+    return false
+  }
+
+  if (Array.isArray(value))
+    return value.some(item => containsAnySecretReference(item, refs))
+
+  if (value && typeof value === 'object')
+    return Object.values(value).some(item => containsAnySecretReference(item, refs))
+
+  return false
 }
 
 export function loadOpContext(manifestPath: string, manifest: PrivateManifest): OpContext {
