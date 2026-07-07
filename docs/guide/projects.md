@@ -226,6 +226,22 @@ workstation projects status --max-depth 8
 workstation projects status --check
 ```
 
+需要给脚本、AI 或其他工具消费时，输出 JSON：
+
+```bash
+workstation projects status --json
+workstation projects status --all --json
+```
+
+默认状态检查不访问网络，只读取本地 Git 状态。需要在检查前刷新远端
+tracking refs 时，显式加 `--fetch`。该选项不会改工作区文件，但会更新 `.git`
+中的远端引用；离线或认证失败会作为对应仓库的 fetch error 汇总：
+
+```bash
+workstation projects status --fetch
+workstation projects status --fetch --json
+```
+
 ## 清单模式
 
 清单模式可以 clone 任意 Git 源的常用项目，包括 GitHub、GitHub Enterprise、GitLab、`git.example.com` 等内部源。命令同样默认 dry-run，确认后再加 `--yes`：

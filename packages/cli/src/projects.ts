@@ -91,6 +91,8 @@ export interface ProjectStatusOptions {
   root: string
   all: boolean
   check: boolean
+  json: boolean
+  fetch: boolean
   maxDepth: number
 }
 
@@ -111,6 +113,10 @@ interface CommandResult {
   stdout: string
   stderr: string
   error?: NodeJS.ErrnoException
+}
+
+interface CommandOptions {
+  timeout?: number
 }
 
 interface CloneResult {
@@ -138,6 +144,8 @@ interface ProjectInspection {
   hasHead: boolean
   detached: boolean
   upstreamGone: boolean
+  fetchStatus: 'not-requested' | 'skipped' | 'ok' | 'error'
+  fetchError: string | null
   error: string | null
 }
 
@@ -267,13 +275,14 @@ function getDefaultLimit(): number {
   return envLimit ? parseLimit(envLimit) : DEFAULT_LIMIT
 }
 
-function runCommand(command: string, args: string[], env: NodeJS.ProcessEnv = {}): CommandResult {
+function runCommand(command: string, args: string[], env: NodeJS.ProcessEnv = {}, options: CommandOptions = {}): CommandResult {
   const result = spawnSync(command, args, {
     encoding: 'utf-8',
     env: {
       ...process.env,
       ...env,
     },
+    timeout: options.timeout,
   })
 
   return {
@@ -1093,7 +1102,50 @@ function getCommandErrorMessage(command: string, args: string[], result: Command
   return `${command} ${args.join(' ')} failed${details ? `: ${details}` : ''}`
 }
 
-function inspectGitRepository(repositoryPath: string): ProjectInspection {
+function fetchGitRepository(repositoryPath: string): Pick<ProjectInspection, 'fetchStatus' | 'fetchError'> {
+  const remoteArgs = ['-C', repositoryPath, 'remote']
+  const remoteResult = runCommand('git', remoteArgs)
+  if (remoteResult.error || remoteResult.status !== 0) {
+    return {
+      fetchStatus: 'error',
+      fetchError: getCommandErrorMessage('git', remoteArgs, remoteResult),
+    }
+  }
+
+  if (!remoteResult.stdout.split('\n').some(Boolean)) {
+    return {
+      fetchStatus: 'skipped',
+      fetchError: null,
+    }
+  }
+
+  const fetchArgs = ['-C', repositoryPath, 'fetch', '--all', '--prune', '--quiet']
+  const fetchResult = runCommand('git', fetchArgs, {
+    GIT_TERMINAL_PROMPT: '0',
+  }, {
+    timeout: 30_000,
+  })
+
+  if (fetchResult.error || fetchResult.status !== 0) {
+    return {
+      fetchStatus: 'error',
+      fetchError: getCommandErrorMessage('git', fetchArgs, fetchResult),
+    }
+  }
+
+  return {
+    fetchStatus: 'ok',
+    fetchError: null,
+  }
+}
+
+function inspectGitRepository(repositoryPath: string, fetch = false): ProjectInspection {
+  const fetchInspection = fetch
+    ? fetchGitRepository(repositoryPath)
+    : {
+        fetchStatus: 'not-requested' as const,
+        fetchError: null,
+      }
   const statusArgs = ['-C', repositoryPath, 'status', '--porcelain=v1', '--branch', '--untracked-files=all']
   const statusResult = runCommand('git', statusArgs)
   if (statusResult.error || statusResult.status !== 0) {
@@ -1110,6 +1162,7 @@ function inspectGitRepository(repositoryPath: string): ProjectInspection {
       hasHead: false,
       detached: false,
       upstreamGone: false,
+      ...fetchInspection,
       error: getCommandErrorMessage('git', statusArgs, statusResult),
     }
   }
@@ -1133,15 +1186,20 @@ function inspectGitRepository(repositoryPath: string): ProjectInspection {
     hasHead: headResult.status === 0,
     detached: parsedStatus.detached,
     upstreamGone: parsedStatus.upstreamGone,
+    ...fetchInspection,
     error: stashResult.error || stashResult.status !== 0
       ? getCommandErrorMessage('git', ['-C', repositoryPath, 'stash', 'list'], stashResult)
       : null,
   }
 }
 
+function hasProjectError(inspection: ProjectInspection): boolean {
+  return Boolean(inspection.error || inspection.fetchError)
+}
+
 function hasProjectAttention(inspection: ProjectInspection): boolean {
   return Boolean(
-    inspection.error
+    hasProjectError(inspection)
     || inspection.staged > 0
     || inspection.unstaged > 0
     || inspection.untracked > 0
@@ -1152,9 +1210,14 @@ function hasProjectAttention(inspection: ProjectInspection): boolean {
   )
 }
 
-function formatInspectionPath(root: string, repositoryPath: string): string {
+function getProjectRelativePath(root: string, repositoryPath: string): string {
   const relativePath = path.relative(root, repositoryPath)
-  return relativePath || repositoryPath
+  return relativePath || '.'
+}
+
+function formatInspectionPath(root: string, repositoryPath: string): string {
+  const relativePath = getProjectRelativePath(root, repositoryPath)
+  return relativePath === '.' ? repositoryPath : relativePath
 }
 
 function formatBranchLabel(inspection: ProjectInspection): string {
@@ -1170,6 +1233,9 @@ function formatInspectionDetails(inspection: ProjectInspection): string {
 
   if (inspection.error)
     details.push(`error: ${inspection.error}`)
+
+  if (inspection.fetchError)
+    details.push(`fetch error: ${inspection.fetchError}`)
 
   if (inspection.staged > 0)
     details.push(`${inspection.staged} staged`)
@@ -1200,10 +1266,23 @@ function formatInspectionDetails(inspection: ProjectInspection): string {
   return details.join(', ')
 }
 
-function printProjectStatusResults(root: string, inspections: ProjectInspection[], showAll: boolean) {
-  const visibleInspections = showAll
+function getVisibleProjectInspections(inspections: ProjectInspection[], showAll: boolean) {
+  return showAll
     ? inspections
     : inspections.filter(hasProjectAttention)
+}
+
+function getProjectStatusSummary(inspections: ProjectInspection[], visible: number) {
+  return {
+    repositories: inspections.length,
+    visible,
+    attention: inspections.filter(hasProjectAttention).length,
+    errors: inspections.filter(hasProjectError).length,
+  }
+}
+
+function printProjectStatusResults(root: string, inspections: ProjectInspection[], showAll: boolean) {
+  const visibleInspections = getVisibleProjectInspections(inspections, showAll)
 
   for (const inspection of visibleInspections) {
     const icon = hasProjectAttention(inspection) ? '!' : '-'
@@ -1211,11 +1290,63 @@ function printProjectStatusResults(root: string, inspections: ProjectInspection[
     console.log(`  ${icon} ${label}${formatBranchLabel(inspection)}: ${formatInspectionDetails(inspection)}`)
   }
 
+  return getProjectStatusSummary(inspections, visibleInspections.length)
+}
+
+function formatProjectStatusJson(root: string, inspections: ProjectInspection[], options: ProjectStatusOptions) {
+  const visibleInspections = getVisibleProjectInspections(inspections, options.all)
   return {
-    visible: visibleInspections.length,
-    attention: inspections.filter(hasProjectAttention).length,
-    errors: inspections.filter(inspection => inspection.error).length,
+    root,
+    maxDepth: options.maxDepth,
+    all: options.all,
+    check: options.check,
+    fetch: options.fetch,
+    summary: getProjectStatusSummary(inspections, visibleInspections.length),
+    repositories: visibleInspections.map(inspection => ({
+      path: inspection.path,
+      relativePath: getProjectRelativePath(root, inspection.path),
+      branch: inspection.branch,
+      upstream: inspection.upstream,
+      ahead: inspection.ahead,
+      behind: inspection.behind,
+      staged: inspection.staged,
+      unstaged: inspection.unstaged,
+      untracked: inspection.untracked,
+      stashes: inspection.stashes,
+      hasHead: inspection.hasHead,
+      detached: inspection.detached,
+      upstreamGone: inspection.upstreamGone,
+      fetchStatus: inspection.fetchStatus,
+      fetchError: inspection.fetchError,
+      error: inspection.error,
+      needsAttention: hasProjectAttention(inspection),
+      details: formatInspectionDetails(inspection),
+    })),
   }
+}
+
+function printProjectStatusJson(root: string, inspections: ProjectInspection[], options: ProjectStatusOptions) {
+  const payload = formatProjectStatusJson(root, inspections, options)
+  console.log(JSON.stringify(payload, null, 2))
+  return payload.summary
+}
+
+function printProjectStatusJsonError(root: string, rawOptions: Partial<ProjectStatusOptions>, message: string) {
+  console.log(JSON.stringify({
+    root,
+    maxDepth: rawOptions.maxDepth ?? DEFAULT_STATUS_MAX_DEPTH,
+    all: rawOptions.all ?? false,
+    check: rawOptions.check ?? false,
+    fetch: rawOptions.fetch ?? false,
+    error: message,
+    summary: {
+      repositories: 0,
+      visible: 0,
+      attention: 0,
+      errors: 1,
+    },
+    repositories: [],
+  }, null, 2))
 }
 
 function getOriginRemoteUrl(repositoryPath: string): string | null {
@@ -2035,50 +2166,77 @@ export async function projectStatus(rawOptions: Partial<ProjectStatusOptions> = 
       root: rawOptions.root || DEFAULT_ROOT,
       all: rawOptions.all ?? false,
       check: rawOptions.check ?? false,
+      json: rawOptions.json ?? false,
+      fetch: rawOptions.fetch ?? false,
       maxDepth: parseMaxDepth(rawOptions.maxDepth ?? DEFAULT_STATUS_MAX_DEPTH),
     }
   }
   catch (error) {
-    console.error(error instanceof Error ? error.message : String(error))
+    const message = error instanceof Error ? error.message : String(error)
+    if (rawOptions.json)
+      printProjectStatusJsonError(resolveProjectRoot(rawOptions.root || DEFAULT_ROOT), rawOptions, message)
+    else
+      console.error(message)
     process.exitCode = 1
     return
   }
 
   const resolvedRoot = resolveProjectRoot(options.root)
 
-  p.intro(`Inspect local projects under ${resolvedRoot}`)
+  if (!options.json)
+    p.intro(`Inspect local projects under ${resolvedRoot}`)
 
   if (!fs.existsSync(resolvedRoot)) {
-    console.error(`Project root does not exist: ${resolvedRoot}`)
-    p.outro('No repositories inspected')
+    const message = `Project root does not exist: ${resolvedRoot}`
+    if (options.json) {
+      printProjectStatusJsonError(resolvedRoot, options, message)
+    }
+    else {
+      console.error(message)
+      p.outro('No repositories inspected')
+    }
     process.exitCode = 1
     return
   }
 
   if (!commandExists('git')) {
-    console.error('git is not installed or is not available in PATH')
-    p.outro('No repositories inspected')
+    const message = 'git is not installed or is not available in PATH'
+    if (options.json) {
+      printProjectStatusJsonError(resolvedRoot, options, message)
+    }
+    else {
+      console.error(message)
+      p.outro('No repositories inspected')
+    }
     process.exitCode = 1
     return
   }
 
-  const s = p.spinner()
-  s.start('Scanning local repositories...')
+  const s = options.json ? null : p.spinner()
+  s?.start('Scanning local repositories...')
   const repositories = discoverGitRepositories(resolvedRoot, options.maxDepth)
-  s.stop(`Found ${repositories.length} repositories`)
+  s?.stop(`Found ${repositories.length} repositories`)
 
   if (repositories.length === 0) {
-    p.outro('No git repositories found')
+    if (options.json) {
+      printProjectStatusJson(resolvedRoot, [], options)
+    }
+    else {
+      p.outro('No git repositories found')
+    }
     return
   }
 
-  const inspections = repositories.map(inspectGitRepository)
-  const { visible, attention, errors } = printProjectStatusResults(resolvedRoot, inspections, options.all)
+  const inspections = repositories.map(repository => inspectGitRepository(repository, options.fetch))
+  const { visible, attention, errors } = options.json
+    ? printProjectStatusJson(resolvedRoot, inspections, options)
+    : printProjectStatusResults(resolvedRoot, inspections, options.all)
 
-  if (!options.all && visible === 0)
+  if (!options.json && !options.all && visible === 0)
     console.log('  - No repositories need attention')
 
-  p.outro(`Done! ${repositories.length} repositories, ${attention} need attention, ${errors} errors`)
+  if (!options.json)
+    p.outro(`Done! ${repositories.length} repositories, ${attention} need attention, ${errors} errors`)
 
   if (errors > 0 || (options.check && attention > 0))
     process.exitCode = 1

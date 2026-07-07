@@ -78,6 +78,8 @@ async function runProjectsCommand(action: string | undefined, target: string | u
       root: options.root,
       all: options.all,
       check: options.check,
+      json: options.json,
+      fetch: options.fetch,
       maxDepth: options.maxDepth === undefined ? undefined : Number(options.maxDepth),
     })
     return
@@ -124,6 +126,8 @@ function registerProjectsCommand(name: string, description: string) {
     .option('--validate', 'Validate project manifest and exit without clone preview', { default: false })
     .option('--all', 'Show clean repositories in projects status output', { default: false })
     .option('--check', 'Exit non-zero when projects status finds repositories needing attention', { default: false })
+    .option('--json', 'Print projects status output as JSON', { default: false })
+    .option('--fetch', 'Fetch remote refs before projects status inspection', { default: false })
     .option('--max-depth <number>', 'Maximum directory depth for projects status scan (default: 6)')
     .option('--update', 'Update repositories that already exist', { default: false })
     .option('--yes', 'Apply clone/update operations (defaults to dry-run)', { default: false })

@@ -248,6 +248,24 @@ repository needs attention:
 workstation projects status --check
 ```
 
+For scripts, AI workflows, or other tooling, print JSON:
+
+```bash
+workstation projects status --json
+workstation projects status --all --json
+```
+
+By default, status inspection does not access the network and only reads local
+Git state. Add `--fetch` when you explicitly want to refresh remote tracking
+refs before inspection. This does not change working tree files, but it does
+update remote refs under `.git`; offline or authentication failures are
+reported as fetch errors for the affected repositories:
+
+```bash
+workstation projects status --fetch
+workstation projects status --fetch --json
+```
+
 ## Manifest Pattern
 
 Manifest mode can clone common projects from any Git host, including GitHub,

@@ -677,6 +677,45 @@ describe('projects CLI', () => {
     assert.match(`${result.stdout}\n${result.stderr}`, /1 untracked/)
   })
 
+  it('prints local repository status as json', () => {
+    const fixture = createStatusFixture()
+    const repositoryPath = createLocalGitRepo(fixture.projectsRoot, 'github.com/YunYouJun/workstation')
+    writeFile(path.join(repositoryPath, 'notes.md'), 'draft\n')
+
+    const result = runCli(['p', 'status', '--root', fixture.projectsRoot, '--json'], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    const payload = JSON.parse(result.stdout)
+    assert.equal(payload.root, fixture.projectsRoot)
+    assert.equal(payload.summary.repositories, 1)
+    assert.equal(payload.summary.visible, 1)
+    assert.equal(payload.summary.attention, 1)
+    assert.equal(payload.summary.errors, 0)
+    assert.equal(payload.repositories[0].relativePath, 'github.com/YunYouJun/workstation')
+    assert.equal(payload.repositories[0].untracked, 1)
+    assert.equal(payload.repositories[0].fetchStatus, 'not-requested')
+    assert.equal(payload.repositories[0].needsAttention, true)
+  })
+
+  it('reports fetch errors when remote refresh is requested', () => {
+    const fixture = createStatusFixture()
+    const repositoryPath = createLocalGitRepo(fixture.projectsRoot, 'github.com/YunYouJun/workstation')
+    runGit(['remote', 'add', 'origin', path.join(fixture.tempDir, 'missing.git')], repositoryPath)
+
+    const result = runCli(['p', 'status', '--root', fixture.projectsRoot, '--fetch', '--json'], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`)
+    const payload = JSON.parse(result.stdout)
+    assert.equal(payload.fetch, true)
+    assert.equal(payload.summary.repositories, 1)
+    assert.equal(payload.summary.visible, 1)
+    assert.equal(payload.summary.attention, 1)
+    assert.equal(payload.summary.errors, 1)
+    assert.equal(payload.repositories[0].fetchStatus, 'error')
+    assert.match(payload.repositories[0].fetchError, /fetch --all --prune --quiet failed/)
+    assert.equal(payload.repositories[0].needsAttention, true)
+  })
+
   it('exits non-zero in check mode when repositories need attention', () => {
     const fixture = createStatusFixture()
     const repositoryPath = createLocalGitRepo(fixture.projectsRoot, 'github.com/YunYouJun/workstation')
