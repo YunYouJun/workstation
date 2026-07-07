@@ -27,6 +27,7 @@ export interface SoftwareItem {
   iconColor?: string
   iconify?: string
   installCommand?: string
+  inputMethod?: string
   masId?: number
   note?: string
 }
@@ -239,6 +240,29 @@ export const softwareGroups: SoftwareGroup[] = [
         cask: 'feishu',
         app: 'Feishu.app',
         iconColor: '#3370ff',
+      },
+    ],
+  },
+  {
+    id: 'input-methods',
+    label: {
+      en: 'Input methods',
+      zh: '输入法',
+    },
+    items: [
+      {
+        id: 'wetype',
+        name: {
+          en: 'WeType',
+          zh: '微信输入法',
+        },
+        aliases: ['微信输入法', 'wechat input method'],
+        url: 'https://z.weixin.qq.com/',
+        cask: 'wetype',
+        inputMethod: 'WeType.app',
+        iconColor: '#07c160',
+        iconify: 'i-simple-icons-wechat',
+        note: 'Input method from the WeChat team. Enable it from macOS Keyboard settings after installation.',
       },
     ],
   },

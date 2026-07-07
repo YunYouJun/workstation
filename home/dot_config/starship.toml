@@ -1,7 +1,6 @@
 "$schema" = "https://starship.rs/config-schema.json"
 add_newline = true
 command_timeout = 1000
-
 format = """
 [░▒▓](#a3aed2)\
 $os\
@@ -20,10 +19,12 @@ $rust\
 $golang\
 $php\
 $package\
+[ ](bg:#212736)\
 [](fg:#212736 bg:#1d2230)\
 $cmd_duration\
 $time\
 $status\
+[ ](bg:#1d2230)\
 [ ](fg:#1d2230)\
 \n$character"""
 
@@ -76,11 +77,11 @@ style = "bg:#394260"
 symbol = ""
 
 [git_state]
-format = "[[ $state( $progress_current/$progress_total) ](fg:#e0af68 bg:#394260)]($style)"
+format = "[[$state( $progress_current/$progress_total) ](fg:#e0af68 bg:#394260)]($style)"
 style = "bg:#394260"
 
 [git_status]
-format = "[[ $all_status$ahead_behind](fg:#e0af68 bg:#394260)]($style)"
+format = "[[$all_status$ahead_behind](fg:#e0af68 bg:#394260)]($style)"
 style = "bg:#394260"
 conflicted = "[=$count](fg:#f7768e bg:#394260) "
 deleted = "[-$count](fg:#f7768e bg:#394260) "
@@ -90,65 +91,65 @@ staged = "[+$count](fg:#9ece6a bg:#394260) "
 stashed = "[stash $count](fg:#bb9af7 bg:#394260) "
 typechanged = "[T$count](fg:#e0af68 bg:#394260) "
 untracked = "[?$count](fg:#7aa2f7 bg:#394260) "
-ahead = "[ahead $count](fg:#9ece6a bg:#394260) "
-behind = "[behind $count](fg:#f7768e bg:#394260) "
-diverged = "[ahead $ahead_count behind $behind_count](fg:#bb9af7 bg:#394260) "
+ahead = "[ $count](fg:#9ece6a bg:#394260) "
+behind = "[ $count](fg:#f7768e bg:#394260) "
+diverged = "[  $ahead_count  $behind_count](fg:#bb9af7 bg:#394260) "
 
 [git_metrics]
 disabled = false
-format = "([ ](fg:#7aa2f7 bg:#394260)([ +$added]($added_style))([ -$deleted]($deleted_style))[ ](bg:#394260))"
+format = "([](fg:#7aa2f7 bg:#394260)([ +$added]($added_style))([ -$deleted]($deleted_style))[ ](bg:#394260))"
 only_nonzero_diffs = true
 added_style = "fg:#9ece6a bg:#394260"
 deleted_style = "fg:#f7768e bg:#394260"
 
 [nodejs]
-format = "[[ $symbol $version ](fg:#769ff0 bg:#212736)]($style)"
+format = "[[ $symbol $version](fg:#769ff0 bg:#212736)]($style)"
 style = "bg:#212736"
 symbol = ""
 
 [bun]
-format = "[[ $symbol $version ](fg:#769ff0 bg:#212736)]($style)"
+format = "[[ $symbol $version](fg:#769ff0 bg:#212736)]($style)"
 style = "bg:#212736"
 symbol = ""
 
 [deno]
-format = "[[ $symbol $version ](fg:#769ff0 bg:#212736)]($style)"
+format = "[[ $symbol $version](fg:#769ff0 bg:#212736)]($style)"
 style = "bg:#212736"
 symbol = ""
 
 [rust]
-format = "[[ $symbol $version ](fg:#769ff0 bg:#212736)]($style)"
+format = "[[ $symbol $version](fg:#769ff0 bg:#212736)]($style)"
 style = "bg:#212736"
 symbol = ""
 
 [golang]
-format = "[[ $symbol $version ](fg:#769ff0 bg:#212736)]($style)"
+format = "[[ $symbol $version](fg:#769ff0 bg:#212736)]($style)"
 style = "bg:#212736"
 symbol = ""
 
 [php]
-format = "[[ $symbol $version ](fg:#769ff0 bg:#212736)]($style)"
+format = "[[ $symbol $version](fg:#769ff0 bg:#212736)]($style)"
 style = "bg:#212736"
 symbol = ""
 
 [package]
-format = "[[ $symbol $version ](fg:#7aa2f7 bg:#212736)]($style)"
+format = "[[ $symbol $version](fg:#7aa2f7 bg:#212736)]($style)"
 style = "bg:#212736"
 symbol = "󰏗"
 display_private = true
 
 [cmd_duration]
 min_time = 1000
-format = "[[ took $duration ](fg:#e0af68 bg:#1d2230)]($style)"
+format = "[[ took $duration](fg:#e0af68 bg:#1d2230)]($style)"
 style = "bg:#1d2230"
 
 [time]
 disabled = false
-format = "[[  $time ](fg:#a0a9cb bg:#1d2230)]($style)"
+format = "[[  $time](fg:#a0a9cb bg:#1d2230)]($style)"
 style = "bg:#1d2230"
 time_format = "%R"
 
 [status]
 disabled = false
-format = "[[ exit $status ](fg:#f7768e bg:#1d2230)]($style)"
+format = "[[ exit $status](fg:#f7768e bg:#1d2230)]($style)"
 style = "bg:#1d2230"

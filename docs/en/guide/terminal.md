@@ -36,7 +36,7 @@ line only shows the input symbol. Git context appears only inside repositories:
 - `-N`: deleted files.
 - `>N`: renamed files.
 - `=N`: conflicted files.
-- `ahead N` / `behind N`: upstream commit difference.
+- ` N` / ` N` / `  A  B`: upstream commit difference for ahead, behind, and diverged branches.
 - ` +A -D` (`nf-oct-diff`): added and deleted lines in the current diff.
 
 `git_state` shows merge, rebase, cherry-pick, bisect, and similar in-progress
@@ -49,14 +49,30 @@ The visual style is based on Starship's Tokyo Night preset, with workstation's
 Git counts, diff metrics, failed exit status, and package-version behavior kept
 on top. The directory segment uses a higher-contrast Tokyo blue variant so the
 path stays readable instead of placing light text on a medium-bright blue.
-`Brewfile` installs `font-hack-nerd-font`; terminal apps need to use a `Hack
-Nerd Font Mono` font to render powerline, Git branch, Node, Bun, Deno, and
-package icons correctly. The VS Code integrated-terminal font is set through the
-global settings template as `Hack Nerd Font Mono, Source Code Pro, monospace`;
-iTerm2 or Terminal profiles need to select a Nerd Font in their own profile
-settings. File states still use short text symbols like `~N`, `+N`, and `?N`,
-while diff metrics use the `nf-oct-diff` icon, so the prompt remains quick to
-scan.
+Spacing follows the original preset's color-block rhythm: keep breathing room at
+the outer edges of a segment, but keep only one space between consecutive
+submodules so their padding does not stack into double spaces. `Brewfile`
+installs `font-hack-nerd-font`; terminal apps need to use a `Hack Nerd Font
+Mono` font to render powerline, Git branch, Node, Bun, Deno, and package icons
+correctly. The VS Code integrated-terminal font is set through the global
+settings template as `Hack Nerd Font Mono, Source Code Pro, monospace`; iTerm2
+or Terminal profiles need to select a Nerd Font in their own profile settings.
+File states still use short text symbols like `~N`, `+N`, and `?N`, while diff
+metrics use the `nf-oct-diff` icon, so the prompt remains quick to scan.
+
+`home/dot_zshrc` provides a `starship-theme` function and the shorter `stheme`
+alias for quick prompt-theme switching. `default` first saves the current live
+config to `~/.local/state/workstation/starship/current.toml`, then restores the
+workstation-managed default theme; `current` restores that saved live theme;
+`preset <name>` temporarily applies an official Starship preset:
+
+```bash
+stheme status
+stheme default
+stheme current
+stheme preset gruvbox-rainbow
+stheme list
+```
 
 macOS Terminal stores its font in the Terminal profile, independent of shell
 configuration. Check and fix the current default profile with:

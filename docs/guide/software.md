@@ -30,13 +30,13 @@ pnpm software list
 打开所选应用的官方下载页：
 
 ```bash
-pnpm software:open raycast feishu microsoft-todo ima
+pnpm software:open raycast feishu wetype microsoft-todo ima
 ```
 
-快速安装 Raycast、飞书和微软待办；ima 暂时走官方下载页：
+快速安装 Raycast、飞书、微信输入法和微软待办；ima 暂时走官方下载页：
 
 ```bash
-brew install --cask raycast feishu
+brew install --cask raycast feishu wetype
 brew install mas
 mas install 1274495053
 pnpm software:open ima

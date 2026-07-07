@@ -37,14 +37,14 @@ pnpm software list
 Open selected official download pages:
 
 ```bash
-pnpm software:open raycast feishu microsoft-todo ima
+pnpm software:open raycast feishu wetype microsoft-todo ima
 ```
 
-Fast-install Raycast, Feishu, and Microsoft To Do; keep ima on the official
-download page until it has a stable package-manager path:
+Fast-install Raycast, Feishu, WeType, and Microsoft To Do; keep ima on the
+official download page until it has a stable package-manager path:
 
 ```bash
-brew install --cask raycast feishu
+brew install --cask raycast feishu wetype
 brew install mas
 mas install 1274495053
 pnpm software:open ima

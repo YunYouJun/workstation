@@ -154,6 +154,79 @@ else
   [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 fi
 
+starship-theme() {
+  local action="${1:-status}"
+  local config="${STARSHIP_CONFIG:-$HOME/.config/starship.toml}"
+  local state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/workstation/starship"
+  local saved_current="$state_dir/current.toml"
+  local backup_dir="$state_dir/backups"
+  local repo_default="${WORKSTATION_STARSHIP_DEFAULT:-}"
+
+  if [[ -z "$repo_default" ]]; then
+    if command -v ghq >/dev/null 2>&1; then
+      local repo_root
+      repo_root="$(ghq list -p github.com/YunYouJun/workstation 2>/dev/null | head -n 1)"
+      [[ -n "$repo_root" ]] && repo_default="$repo_root/home/dot_config/starship.toml"
+    fi
+    repo_default="${repo_default:-$HOME/repos/github.com/YunYouJun/workstation/home/dot_config/starship.toml}"
+  fi
+
+  case "$action" in
+    default)
+      [[ -r "$repo_default" ]] || { echo "Missing workstation Starship default: $repo_default" >&2; return 1; }
+      mkdir -p "$(dirname "$config")" "$state_dir" "$backup_dir" || return
+      [[ -r "$config" ]] && cp "$config" "$saved_current"
+      [[ -r "$config" ]] && cp "$config" "$backup_dir/starship.$(date +%Y%m%d%H%M%S).toml"
+      cp "$repo_default" "$config"
+      echo "Starship theme: default -> $config"
+      ;;
+    current|restore)
+      [[ -r "$saved_current" ]] || { echo "No saved Starship current theme: $saved_current" >&2; return 1; }
+      mkdir -p "$(dirname "$config")" "$backup_dir" || return
+      [[ -r "$config" ]] && cp "$config" "$backup_dir/starship.$(date +%Y%m%d%H%M%S).toml"
+      cp "$saved_current" "$config"
+      echo "Starship theme: current -> $config"
+      ;;
+    save|save-current)
+      [[ -r "$config" ]] || { echo "Missing Starship config: $config" >&2; return 1; }
+      mkdir -p "$state_dir" || return
+      cp "$config" "$saved_current"
+      echo "Starship current theme saved: $saved_current"
+      ;;
+    preset)
+      local preset_name="$2"
+      [[ -n "$preset_name" ]] || { echo "Usage: starship-theme preset <name>" >&2; return 1; }
+      command -v starship >/dev/null 2>&1 || { echo "starship is not installed" >&2; return 1; }
+      mkdir -p "$(dirname "$config")" "$state_dir" "$backup_dir" || return
+      [[ -r "$config" ]] && cp "$config" "$saved_current"
+      [[ -r "$config" ]] && cp "$config" "$backup_dir/starship.$(date +%Y%m%d%H%M%S).toml"
+      starship preset "$preset_name" -o "$config" --force
+      ;;
+    list)
+      command -v starship >/dev/null 2>&1 && starship preset --list
+      ;;
+    status)
+      echo "config: $config"
+      echo "default: $repo_default"
+      echo "current: $saved_current"
+      if [[ -r "$config" && -r "$repo_default" ]] && cmp -s "$config" "$repo_default"; then
+        echo "active: default"
+      elif [[ -r "$config" && -r "$saved_current" ]] && cmp -s "$config" "$saved_current"; then
+        echo "active: current"
+      elif [[ -r "$config" ]]; then
+        echo "active: custom"
+      else
+        echo "active: missing"
+      fi
+      ;;
+    *)
+      echo "Usage: starship-theme {status|default|current|save-current|preset <name>|list}" >&2
+      return 1
+      ;;
+  esac
+}
+alias stheme="starship-theme"
+
 # ---- Aliases ----
 
 # dev shortcuts (using ni toolchain)

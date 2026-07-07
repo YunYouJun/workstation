@@ -130,6 +130,16 @@ function appExists(appName?: string): boolean {
   ].some(path => existsSync(path))
 }
 
+function inputMethodExists(inputMethodName?: string): boolean {
+  if (!inputMethodName)
+    return false
+
+  return [
+    join('/Library/Input Methods', inputMethodName),
+    join(homedir(), 'Library/Input Methods', inputMethodName),
+  ].some(path => existsSync(path))
+}
+
 function readMasState(): MasState {
   if (!commandExists('mas')) {
     return {
@@ -172,6 +182,9 @@ function inspectItem(item: SoftwareItem, masState: MasState): ItemStatus {
 
     if (appExists(item.app))
       return { state: 'installed', via: 'app bundle' }
+
+    if (inputMethodExists(item.inputMethod))
+      return { state: 'installed', via: 'input method' }
 
     if (item.bin && commandExists(item.bin))
       return { state: 'installed', via: 'PATH' }
