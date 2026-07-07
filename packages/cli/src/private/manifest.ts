@@ -1,4 +1,4 @@
-import type { McpFragment, McpTemplate, OverlayContract, PrivateManifest, PrivateSkill, SecretEnvTemplate } from './types'
+import type { McpFragment, McpTemplate, OverlayContract, PrivateManifest, PrivateSkill, SecretEnvTemplate, SecretFileBundle } from './types'
 import fs from 'node:fs'
 import { matchesAny } from './paths'
 
@@ -11,6 +11,7 @@ export const privateAllowedOperations = [
   'op-account-select',
   'op-run-env',
   'op-inject-template',
+  'op-file-restore',
   'op-run-wrapper',
   'op-typescript-cli',
   'secret-scan',
@@ -69,6 +70,31 @@ export function validatePrivateManifest(manifest: PrivateManifest): string[] {
 
     if (template.materializer && template.materializer !== 'app-store-connect-key')
       errors.push(`unsupported secret env template materializer for ${template.id}: ${template.materializer}`)
+  }
+
+  for (const bundle of manifest.secrets?.fileBundles || []) {
+    if (bundle.operation && bundle.operation !== 'op-file-restore')
+      errors.push(`unsupported secret file bundle operation for ${bundle.id}: ${bundle.operation}`)
+
+    if (!bundle.files?.length)
+      errors.push(`secret file bundle has no files: ${bundle.id}`)
+
+    for (const file of bundle.files || []) {
+      if (!file.ref?.startsWith('op://'))
+        errors.push(`secret file bundle ${bundle.id} uses a non-1Password ref: ${file.ref || '<missing ref>'}`)
+
+      if (!isHomeOutputPath(file.path))
+        errors.push(`secret file bundle ${bundle.id} output must be under $HOME: ${file.path || '<missing path>'}`)
+
+      if (file.mode && !isOctalMode(file.mode))
+        errors.push(`secret file bundle ${bundle.id} has invalid file mode for ${file.path}: ${file.mode}`)
+
+      if (file.directoryMode && !isOctalMode(file.directoryMode))
+        errors.push(`secret file bundle ${bundle.id} has invalid directory mode for ${file.path}: ${file.directoryMode}`)
+    }
+
+    if (bundle.directoryMode && !isOctalMode(bundle.directoryMode))
+      errors.push(`secret file bundle ${bundle.id} has invalid directory mode: ${bundle.directoryMode}`)
   }
 
   for (const fragment of manifest.mcp?.fragments || []) {
@@ -137,6 +163,11 @@ export function privateSecretEnvTemplates(manifest: PrivateManifest): SecretEnvT
   return manifest.secrets?.envTemplates || []
 }
 
+export function privateSecretFileBundles(manifest: PrivateManifest): SecretFileBundle[] {
+  return (manifest.secrets?.fileBundles || [])
+    .filter(bundle => !bundle.operation || bundle.operation === 'op-file-restore')
+}
+
 export function privateMcpFragments(manifest: PrivateManifest): McpFragment[] {
   return (manifest.mcp?.fragments || [])
     .filter(fragment => !fragment.operation || fragment.operation === 'managed-block-fragment' || fragment.operation === 'codex-mcp-fragment')
@@ -144,4 +175,12 @@ export function privateMcpFragments(manifest: PrivateManifest): McpFragment[] {
 
 export function privateSkillInstalls(manifest: PrivateManifest): PrivateSkill[] {
   return manifest.skills?.install || []
+}
+
+function isHomeOutputPath(value: string | undefined): boolean {
+  return Boolean(value && (value.startsWith('~/') || value.startsWith('$HOME/')))
+}
+
+function isOctalMode(value: string): boolean {
+  return /^[0-7]{3,4}$/.test(value)
 }

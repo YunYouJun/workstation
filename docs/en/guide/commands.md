@@ -96,6 +96,7 @@ be generated:
 ```bash
 wst private connect
 wst private status
+wst private file-restore --bundle wecom-cli --dry-run
 wst private mcp-export --server gongfeng,iwiki,knot --dry-run
 wst private apply --dry-run
 ```
@@ -110,6 +111,7 @@ After confirming 1Password is signed in, apply it explicitly:
 
 ```bash
 wst private apply --yes
+wst private file-restore --bundle wecom-cli --yes
 ```
 
 Export installed Codex MCP servers from the old machine into the private

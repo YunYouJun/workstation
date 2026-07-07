@@ -37,6 +37,7 @@
     "private:apply": "pnpm --filter @yunyoujun/workstation exec tsx src/cli.ts private apply",
     "private:check": "pnpm --filter @yunyoujun/workstation exec tsx src/cli.ts private check",
     "private:connect": "pnpm --filter @yunyoujun/workstation exec tsx src/cli.ts private connect",
+    "private:file-restore": "pnpm --filter @yunyoujun/workstation exec tsx src/cli.ts private file-restore",
     "private:list": "pnpm --filter @yunyoujun/workstation exec tsx src/cli.ts private list",
     "private:mcp-export": "pnpm --filter @yunyoujun/workstation exec tsx src/cli.ts private mcp-export",
     "private:status": "pnpm --filter @yunyoujun/workstation exec tsx src/cli.ts private status",

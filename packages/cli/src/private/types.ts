@@ -2,6 +2,7 @@ export type PrivateAction
   = | 'apply'
     | 'check'
     | 'connect'
+    | 'file-restore'
     | 'inventory'
     | 'ios-materialize'
     | 'ios-run'
@@ -34,6 +35,7 @@ export interface PrivateManifest {
   }
   secrets?: {
     envTemplates?: SecretEnvTemplate[]
+    fileBundles?: SecretFileBundle[]
   }
   skills?: {
     install?: PrivateSkill[]
@@ -108,6 +110,22 @@ export interface SecretEnvTemplate {
   usage?: string
 }
 
+export interface SecretFileBundle {
+  description?: string
+  directoryMode?: string
+  files: SecretFileBundleFile[]
+  id: string
+  operation?: 'op-file-restore'
+  usage?: string
+}
+
+export interface SecretFileBundleFile {
+  directoryMode?: string
+  mode?: string
+  path: string
+  ref: string
+}
+
 export interface SkillRoot {
   label?: string
   path: string
@@ -128,6 +146,7 @@ export interface PrivateSkill {
 export interface PrivateOptions {
   dryRun: boolean
   envFile?: string
+  bundle?: string
   manifest: string
   output?: string
   passthrough: string[]

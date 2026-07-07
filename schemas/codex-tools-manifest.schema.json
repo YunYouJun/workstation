@@ -226,6 +226,12 @@
           "items": {
             "$ref": "#/$defs/secretEnvTemplate"
           }
+        },
+        "fileBundles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/secretFileBundle"
+          }
         }
       }
     }
@@ -242,6 +248,7 @@
         "inventory",
         "mcp-export",
         "op-account-select",
+        "op-file-restore",
         "op-run-env",
         "op-run-wrapper",
         "op-typescript-cli",
@@ -437,6 +444,60 @@
           "type": "string"
         }
       }
+    },
+    "secretFileBundle": {
+      "type": "object",
+      "required": ["id", "operation", "files"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "operation": {
+          "enum": ["op-file-restore"]
+        },
+        "directoryMode": {
+          "$ref": "#/$defs/fileMode"
+        },
+        "usage": {
+          "type": "string"
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/secretFile"
+          }
+        }
+      }
+    },
+    "secretFile": {
+      "type": "object",
+      "required": ["ref", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "type": "string",
+          "pattern": "^op://"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^(~|\\$HOME)/"
+        },
+        "mode": {
+          "$ref": "#/$defs/fileMode"
+        },
+        "directoryMode": {
+          "$ref": "#/$defs/fileMode"
+        }
+      }
+    },
+    "fileMode": {
+      "type": "string",
+      "pattern": "^[0-7]{3,4}$"
     }
   }
 }

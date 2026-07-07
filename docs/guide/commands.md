@@ -93,6 +93,7 @@ pnpm mcp:install
 ```bash
 wst private connect
 wst private status
+wst private file-restore --bundle wecom-cli --dry-run
 wst private mcp-export --server gongfeng,iwiki,knot --dry-run
 wst private apply --dry-run
 ```
@@ -107,6 +108,7 @@ wst private connect --repo git@example.com:user/dotfiles.git --target-dir ~/repo
 
 ```bash
 wst private apply --yes
+wst private file-restore --bundle wecom-cli --yes
 ```
 
 从旧机器把已安装的 Codex MCP server 导出到私有 overlay，提交私有

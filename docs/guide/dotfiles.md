@@ -148,13 +148,14 @@ wst private mcp-export --server gongfeng,iwiki,knot --yes
 wst private apply --dry-run
 wst private apply --yes
 wst private inventory --section skills
+wst private file-restore --bundle <id> --yes
 wst private ios-secrets-import --yes
 wst private ios-run -- <command>
 wst private secrets-check
 wst private secret-scan
 ```
 
-`apply` 只能处理 manifest 声明的模板、MCP fragment、显式 installable skill 和本地 ignored 输出，不能把私有仓库里的任意文件复制到 `$HOME`。没有 `--yes` 时即使使用 `apply` 也只会 dry-run。
+`apply` 只能处理 manifest 声明的模板、MCP fragment、显式 installable skill、本地 ignored 输出和 `op-file-restore` 文件包，不能把私有仓库里的任意文件复制到 `$HOME`。没有 `--yes` 时即使使用 `apply` 也只会 dry-run。
 
 `mcp-export` 从 manifest 中的 Codex TOML source（通常是
 `~/.codex/config.toml`）读取指定 server，并写入声明的

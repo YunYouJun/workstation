@@ -160,6 +160,7 @@ wst private mcp-export --server gongfeng,iwiki,knot --yes
 wst private apply --dry-run
 wst private apply --yes
 wst private inventory --section skills
+wst private file-restore --bundle <id> --yes
 wst private ios-secrets-import --yes
 wst private ios-run -- <command>
 wst private secrets-check
@@ -167,9 +168,9 @@ wst private secret-scan
 ```
 
 `apply` may only process templates, MCP fragments, explicit installable skills,
-and local ignored outputs declared in the manifest. It must not copy arbitrary
-files from the private repository into `$HOME`. Without `--yes`, `apply` still
-runs as a dry-run.
+local ignored outputs, and `op-file-restore` file bundles declared in the
+manifest. It must not copy arbitrary files from the private repository into
+`$HOME`. Without `--yes`, `apply` still runs as a dry-run.
 
 `mcp-export` reads selected servers from the manifest's Codex TOML source
 (usually `~/.codex/config.toml`) and writes the declared

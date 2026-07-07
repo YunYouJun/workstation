@@ -6,9 +6,10 @@ import process from 'node:process'
 import { createInterface } from 'node:readline/promises'
 import { getHomeDir } from './config'
 import { commandExists, commandOutput, formatCommand } from './private/exec'
+import { restoreSecretFileBundles } from './private/files'
 import { generatePrivateInventory } from './private/inventory'
 import { importIosSecrets, materializeIosCommand, runIosCommand } from './private/ios'
-import { assertAllowedRead, privateMcpFragments, privateSecretEnvTemplates, privateSkillInstalls, privateTemplates, readPrivateManifest, validatePrivateManifest } from './private/manifest'
+import { assertAllowedRead, privateMcpFragments, privateSecretEnvTemplates, privateSecretFileBundles, privateSkillInstalls, privateTemplates, readPrivateManifest, validatePrivateManifest } from './private/manifest'
 import { exportMcpServers } from './private/mcp-export'
 import { checkMcpSecrets, importMcpSecrets, injectMcpTemplates, opReadinessState, runMcpCommand, tryLoadOpContext } from './private/op'
 import { defaultManifestPath, expandHome, rememberPrivateManifestPath, repoRootFromManifest, resolvePathOption, resolveRepoPath } from './private/paths'
@@ -26,6 +27,7 @@ export function privateUsage(): string {
   wst private apply [--manifest <path>] [--dry-run|--yes]
   wst private connect [--repo <git-url> --target-dir <path>] [--dry-run|--yes]
   wst private inventory [--manifest <path>] [--section all|skills|mcp]
+  wst private file-restore [--manifest <path>] [--bundle <id>] [--dry-run|--yes]
   wst private ios-secrets-import [--manifest <path>] [--dry-run|--yes]
   wst private ios-run [--manifest <path>] -- <command...>
   wst private ios-materialize -- <command...>
@@ -86,6 +88,9 @@ async function runParsedPrivateCommand({ action, options }: ParsedCommand): Prom
   else if (action === 'inventory') {
     process.stdout.write(generatePrivateInventory(options.manifest, manifest, options.section))
   }
+  else if (action === 'file-restore') {
+    restoreSecretFileBundles(options.manifest, manifest, options)
+  }
   else if (action === 'ios-secrets-import') {
     importIosSecrets(options.manifest, manifest, options)
   }
@@ -133,8 +138,11 @@ function parsePrivateAction(value: string | undefined): PrivateAction {
   if (!value)
     return 'status'
 
-  if (['apply', 'check', 'connect', 'inventory', 'ios-materialize', 'ios-run', 'ios-secrets-import', 'list', 'mcp-export', 'mcp-inject', 'mcp-run', 'status'].includes(value))
+  if (['apply', 'check', 'connect', 'file-restore', 'inventory', 'ios-materialize', 'ios-run', 'ios-secrets-import', 'list', 'mcp-export', 'mcp-inject', 'mcp-run', 'status'].includes(value))
     return value as PrivateAction
+
+  if (['files-restore', 'restore-files'].includes(value))
+    return 'file-restore'
 
   if (['op-import-ios', 'ios-import', 'ios-secrets'].includes(value))
     return 'ios-secrets-import'
@@ -262,6 +270,13 @@ function parsePrivateOptions(args: string[]): PrivateOptions {
       options.envFile = resolveRequiredOption(args, index, '--env-file')
       index += 1
     }
+    else if (arg === '--bundle') {
+      options.bundle = requireOptionValue(args, index, '--bundle')
+      index += 1
+    }
+    else if (arg.startsWith('--bundle=')) {
+      options.bundle = arg.slice('--bundle='.length)
+    }
     else if (arg.startsWith('-')) {
       throw new Error(`Unknown private option: ${arg}\n\n${privateUsage()}`)
     }
@@ -325,6 +340,10 @@ function list(manifestPath: string, manifest: PrivateManifest): void {
     const materializer = template.materializer ? ` (${template.materializer})` : ''
     console.log(`  - ${template.id}: ${template.path}${materializer}`)
   }
+
+  console.log('\nSecret file bundles:')
+  for (const bundle of privateSecretFileBundles(manifest))
+    console.log(`  - ${bundle.id}: ${bundle.files.length} file${bundle.files.length === 1 ? '' : 's'}`)
 
   console.log('\nMCP fragments:')
   for (const fragment of privateMcpFragments(manifest))
@@ -391,6 +410,16 @@ function status(manifestPath: string, manifest: PrivateManifest, check: boolean)
     }
     catch (error) {
       printStatusError(error, check)
+    }
+  }
+
+  for (const bundle of privateSecretFileBundles(manifest)) {
+    for (const file of bundle.files) {
+      const target = path.resolve(expandHome(file.path))
+      const targetState = fs.existsSync(target) ? 'ok' : 'missing'
+      console.log(`[${targetState}] secret file ${bundle.id}: ${file.path}`)
+      if (targetState === 'missing' && check)
+        process.exitCode = 1
     }
   }
 
@@ -488,6 +517,15 @@ function apply(manifestPath: string, manifest: PrivateManifest, dryRun: boolean)
     throw new Error(`Invalid private overlay manifest:\n${errors.map(error => `- ${error}`).join('\n')}`)
 
   injectMcpTemplates(manifestPath, manifest, {
+    dryRun,
+    manifest: manifestPath,
+    passthrough: [],
+    positionals: [],
+    scanMode: 'all',
+    section: 'all',
+    yes: !dryRun,
+  })
+  restoreSecretFileBundles(manifestPath, manifest, {
     dryRun,
     manifest: manifestPath,
     passthrough: [],

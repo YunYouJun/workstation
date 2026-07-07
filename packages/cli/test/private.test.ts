@@ -312,6 +312,69 @@ describe('private CLI', () => {
     ])
   })
 
+  it('restores declared secret file bundles from 1Password attachments', () => {
+    const fixture = createPrivateFixture()
+    const manifest = readJsonFile(fixture.manifestPath)
+    manifest.workstationOverlay.allowedOperations.push('op-file-restore')
+    manifest.secrets.fileBundles = [
+      {
+        id: 'wecom-cli',
+        operation: 'op-file-restore',
+        directoryMode: '0700',
+        files: [
+          {
+            ref: 'op://Private/WeCom CLI/wecom_encryption_key',
+            path: '$HOME/.config/wecom/.encryption_key',
+            mode: '0600',
+          },
+          {
+            ref: 'op://Private/WeCom CLI/wecom_bot_enc',
+            path: '$HOME/.config/wecom/bot.enc',
+            mode: '0600',
+          },
+        ],
+      },
+    ]
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    writeFile(path.join(fixture.homeRoot, '.config', 'wecom', 'bot.enc'), 'old-bot')
+
+    const callsPath = path.join(fixture.repoRoot, 'op-file-restore-calls.json')
+    writeExecutable(path.join(fixture.binDir, 'op'), [
+      'const fs = require("node:fs")',
+      'const args = process.argv.slice(2)',
+      'const callsPath = process.env.FAKE_OP_CALLS',
+      'const calls = fs.existsSync(callsPath) ? JSON.parse(fs.readFileSync(callsPath, "utf-8")) : []',
+      'calls.push(args)',
+      'fs.writeFileSync(callsPath, JSON.stringify(calls))',
+      'if (args[0] === "read") {',
+      '  const outIndex = args.indexOf("--out-file")',
+      '  const ref = args[args.length - 1]',
+      '  fs.writeFileSync(args[outIndex + 1], "restored:" + ref)',
+      '  process.exit(0)',
+      '}',
+      'process.exit(0)',
+    ])
+
+    const result = runCli(['private', 'file-restore', '--manifest', fixture.manifestPath, '--bundle', 'wecom-cli', '--yes'], fixture.repoRoot, fixture.homeRoot, {
+      FAKE_OP_CALLS: callsPath,
+      PATH: testPath(fixture.binDir),
+    })
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(result.stdout, /\[apply\] secret file bundle wecom-cli/)
+    assert.match(result.stdout, /\[backup\].*bot\.enc\.backup\./)
+
+    const configDir = path.join(fixture.homeRoot, '.config', 'wecom')
+    assert.equal(fs.statSync(configDir).mode & 0o777, 0o700)
+    assert.equal(fs.statSync(path.join(configDir, '.encryption_key')).mode & 0o777, 0o600)
+    assert.equal(fs.statSync(path.join(configDir, 'bot.enc')).mode & 0o777, 0o600)
+    assert.equal(fs.readFileSync(path.join(configDir, 'bot.enc'), 'utf8'), 'restored:op://Private/WeCom CLI/wecom_bot_enc')
+    assert.ok(fs.readdirSync(configDir).some(entry => entry.startsWith('bot.enc.backup.')))
+
+    const calls = readJsonFile(callsPath)
+    assert.equal(calls.filter((call: string[]) => call[0] === 'read').length, 2)
+  })
+
   it('remembers connected private manifests for later commands', () => {
     const fixture = createPrivateFixture()
     fs.mkdirSync(path.join(fixture.repoRoot, '.git'))
