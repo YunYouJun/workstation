@@ -319,7 +319,7 @@ async function copyText(text, key) {
 <template>
   <section class="software-catalog" :aria-label="t.catalogLabel">
     <span
-      class="software-icon-preset-safelist i-logos-homebrew i-simple-icons-iterm2 i-logos-visual-studio-code i-simple-icons-cursor i-logos-openai i-simple-icons-raycast i-logos-chrome i-logos-firefox i-simple-icons-neteasecloudmusic i-simple-icons-wechat i-logos-docker-icon i-simple-icons-1password i-logos-obsidian i-logos-notion"
+      class="software-icon-preset-safelist i-logos-homebrew i-simple-icons-iterm2 i-logos-visual-studio-code i-logos-openai i-simple-icons-raycast i-logos-chrome i-simple-icons-neteasecloudmusic i-simple-icons-wechat i-logos-docker-icon i-simple-icons-1password i-logos-obsidian i-logos-notion"
       aria-hidden="true"
     />
 

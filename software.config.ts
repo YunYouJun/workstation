@@ -95,18 +95,6 @@ export const softwareGroups: SoftwareGroup[] = [
         iconify: 'i-logos-visual-studio-code',
       },
       {
-        id: 'cursor',
-        name: {
-          en: 'Cursor',
-        },
-        url: 'https://cursor.com/',
-        downloadUrl: 'https://cursor.com/downloads',
-        cask: 'cursor',
-        app: 'Cursor.app',
-        iconColor: '#111827',
-        iconify: 'i-simple-icons-cursor',
-      },
-      {
         id: 'codex-cli',
         name: {
           en: 'Codex CLI',
@@ -171,18 +159,6 @@ export const softwareGroups: SoftwareGroup[] = [
         app: 'Google Chrome.app',
         iconColor: '#4285f4',
         iconify: 'i-logos-chrome',
-      },
-      {
-        id: 'firefox-dev',
-        name: {
-          en: 'Firefox Developer Edition',
-          zh: 'Firefox 开发者版',
-        },
-        url: 'https://www.mozilla.org/firefox/developer/',
-        cask: 'firefox@developer-edition',
-        app: 'Firefox Developer Edition.app',
-        iconColor: '#ff7139',
-        iconify: 'i-logos-firefox',
       },
     ],
   },

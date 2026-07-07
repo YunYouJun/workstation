@@ -1,7 +1,6 @@
 # Terminal and editor apps
 cask "iterm2"
 cask "visual-studio-code"
-cask "cursor"
 
 # AI coding
 cask "codex-app"
@@ -10,7 +9,6 @@ cask "codex"
 # Launcher and browsers
 cask "raycast"
 cask "google-chrome"
-cask "firefox@developer-edition"
 
 # Container runtime
 cask "orbstack"
