@@ -114,7 +114,6 @@ exec zsh
 | `starship` | 跨 shell prompt，显示 Git、运行时、包和命令耗时等上下文。 |
 | `fzf` | 用于历史、文件、目录、Git 分支和临时选择的模糊查找器。 |
 | `zoxide` | 更聪明的 `cd`，学习常用目录并通过 `z` 跳转。 |
-| `tmux` | 终端复用器，用于保持远程 shell、构建、部署或日志会话。 |
 | `zsh-autosuggestions` | 输入时从历史中显示命令建议。 |
 | `zsh-syntax-highlighting` | 在 prompt 中高亮合法命令、字符串、路径和错误。 |
 | `fnm` | 快速 Node.js 版本管理器。 |
@@ -174,7 +173,11 @@ cdp() {
 
 ## Tmux 会话
 
-Tmux 适合远程机器、长时间构建、部署排查和需要断开后继续观察的日志会话。
+Tmux 适合远程机器、长时间构建、部署排查和需要断开后继续观察的日志会话。它不是默认核心工具，需要时可单独安装：
+
+```bash
+brew install tmux
+```
 
 新建命名会话：
 

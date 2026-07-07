@@ -2,7 +2,6 @@
 brew "starship"
 brew "fzf"
 brew "zoxide"
-brew "tmux"
 brew "zsh-autosuggestions"
 brew "zsh-syntax-highlighting"
 

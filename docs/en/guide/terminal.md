@@ -156,7 +156,6 @@ exec zsh
 | `starship` | Cross-shell prompt with Git, runtime, package, and command-duration context. |
 | `fzf` | Fuzzy finder for history, files, directories, Git branches, and ad hoc selection. |
 | `zoxide` | Smarter `cd`; learns frequently used directories and jumps with `z`. |
-| `tmux` | Terminal multiplexer for keeping remote shells, builds, deploys, or log sessions alive. |
 | `zsh-autosuggestions` | Shows command suggestions from history as you type. |
 | `zsh-syntax-highlighting` | Highlights valid commands, strings, paths, and errors in the prompt. |
 | `fnm` | Fast Node.js version manager. |
@@ -217,7 +216,12 @@ cdp() {
 ## Tmux Sessions
 
 Tmux is useful for remote machines, long builds, deployment debugging, and log
-sessions that should keep running after disconnecting.
+sessions that should keep running after disconnecting. It is optional rather
+than part of the default core tools; install it only when needed:
+
+```bash
+brew install tmux
+```
 
 Create a named session:
 
