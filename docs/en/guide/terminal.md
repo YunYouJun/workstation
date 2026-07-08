@@ -34,9 +34,9 @@ line only shows the input symbol. Git context appears only inside repositories:
 - `+N`: staged files.
 - `?N`: untracked files.
 - `-N`: deleted files.
-- `>N`: renamed files.
+- `»N`: renamed files.
 - `=N`: conflicted files.
-- ` N` / ` N` / `  A  B`: upstream commit difference for ahead, behind, and diverged branches.
+- `⇡N` / `⇣N` / `⇕⇡A⇣B`: upstream commit difference for ahead, behind, and diverged branches.
 - ` +A -D` (`nf-oct-diff`): added and deleted lines in the current diff.
 
 `git_state` shows merge, rebase, cherry-pick, bisect, and similar in-progress
