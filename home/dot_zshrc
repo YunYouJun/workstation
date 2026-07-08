@@ -269,14 +269,6 @@ disproxy() {
 # python
 alias python2="$HOME/.pyenv/versions/2.7.18/bin/python2"
 
-# ---- Secrets (managed by dotfiles sync) ----
-
-_oa_pages_api_key="{{DOTFILES_SECRET:OA_PAGES_API_KEY}}"
-if [[ "$_oa_pages_api_key" != "{{DOTFILES_SECRET:""OA_PAGES_API_KEY}}" ]]; then
-  export OA_PAGES_API_KEY="$_oa_pages_api_key"
-fi
-unset _oa_pages_api_key
-
 if [[ -n "${HOMEBREW_PREFIX:-}" ]]; then
   if [[ ! -d "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" && -r "$HOMEBREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]]; then
     source "$HOMEBREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"

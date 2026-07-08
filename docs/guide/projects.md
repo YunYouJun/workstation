@@ -31,11 +31,29 @@ cd "$(ghq list -p github.com/YunYouJun/workstation)"
 
 这样本地路径会接近远程 URL，也避免 `~/repos/gh/yyj` 这类私有简称。
 
+## 临时实验区
+
+临时 demo、一次性试验和随时可删除的样例可以放在：
+
+```text
+~/repos/play/<demo-name>
+```
+
+`~/repos/play` 只作为本机实验区，不承载长期维护的正式 checkout。这里的内容默认
+视为可丢弃；如果 demo 演进成需要保留的仓库，再用 `ghq` 或标准路径重新 checkout
+到 `~/repos/<host>/<owner-or-group>/<repo>`。
+
+清理 `~/repos/play` 前，先做只读巡检，避免误删仍有本地状态的 Git 仓库：
+
+```bash
+wst p status --max-depth 8
+```
+
 ## 旧布局迁移
 
-旧机器上可能已经存在 `~/repos/gh/<owner>/<repo>`、`~/repos/play/<repo>`
-或其他按个人习惯组织的目录。迁移时把这些目录当成历史别名，新 checkout
-统一落到接近远程 URL 的路径：
+旧机器上可能已经存在 `~/repos/gh/<owner>/<repo>`、早期放在
+`~/repos/play/<repo>` 的正式仓库，或其他按个人习惯组织的目录。迁移时把这些目录
+当成历史别名，新 checkout 统一落到接近远程 URL 的路径：
 
 ```text
 ~/repos/<host>/<owner-or-group>/<repo>

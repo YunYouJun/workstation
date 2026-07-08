@@ -33,12 +33,32 @@ cd "$(ghq list -p github.com/YunYouJun/workstation)"
 This keeps the local path close to the remote URL and avoids private shorthand
 such as `~/repos/gh/yyj`.
 
+## Temporary Playground
+
+Temporary demos, one-off experiments, and disposable examples can live under:
+
+```text
+~/repos/play/<demo-name>
+```
+
+Use `~/repos/play` only as a machine-local playground, not as the home for
+long-lived checkouts. Treat its contents as disposable by default. If a demo
+turns into a repository worth keeping, check it out again with `ghq` or move it
+to the canonical path under `~/repos/<host>/<owner-or-group>/<repo>`.
+
+Before cleaning `~/repos/play`, run a read-only audit so Git repositories with
+local state are not removed by mistake:
+
+```bash
+wst p status --max-depth 8
+```
+
 ## Legacy Layout Migration
 
 Older machines may already have directories such as
-`~/repos/gh/<owner>/<repo>`, `~/repos/play/<repo>`, or other personal grouping
-schemes. Treat those paths as historical aliases. New checkouts should use a
-path derived from the remote URL:
+`~/repos/gh/<owner>/<repo>`, formal repositories that were previously kept under
+`~/repos/play/<repo>`, or other personal grouping schemes. Treat those paths as
+historical aliases. New checkouts should use a path derived from the remote URL:
 
 ```text
 ~/repos/<host>/<owner-or-group>/<repo>
