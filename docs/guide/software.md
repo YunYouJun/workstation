@@ -33,14 +33,16 @@ pnpm software list
 pnpm software:open raycast feishu wetype microsoft-todo ima
 ```
 
-快速安装 Raycast、飞书、微信输入法和微软待办；ima 暂时走官方下载页：
+快速安装 Raycast、飞书和微软待办；微信输入法与 ima 走官方下载页：
 
 ```bash
-brew install --cask raycast feishu wetype
+brew install --cask raycast feishu
 brew install mas
 mas install 1274495053
-pnpm software:open ima
+pnpm software:open wetype ima
 ```
+
+微信输入法优先使用官网下载安装器，避免 Homebrew cask 版本滞后或安装入口不完整。
 
 显示共享软件目录中的安装状态：
 

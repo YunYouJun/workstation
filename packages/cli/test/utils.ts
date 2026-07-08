@@ -46,6 +46,14 @@ export function repoStarshipPath(root: string) {
   return path.join(root, 'home', 'dot_config', 'starship.toml')
 }
 
+export function ghosttyConfigPath(root: string) {
+  return path.join(root, '.config', 'ghostty', 'config')
+}
+
+export function repoGhosttyConfigPath(root: string) {
+  return path.join(root, 'home', 'dot_config', 'ghostty', 'config')
+}
+
 export function vscodeSettingsPath(root: string) {
   return path.join(root, 'Library', 'Application Support', 'Code', 'User', 'settings.json')
 }

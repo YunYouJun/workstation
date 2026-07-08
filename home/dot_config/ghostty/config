@@ -1,0 +1,4 @@
+# Keep Ghostty close to its defaults while matching this workstation's font setup.
+font-family = "Hack Nerd Font Mono"
+font-size = 14
+theme = light:GitHub Light Default,dark:GitHub Dark Default

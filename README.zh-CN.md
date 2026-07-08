@@ -113,6 +113,7 @@ workstation dotfiles chezmoi apply     # apply home/ 下管理的文件
 当前受管理的 home 文件位于 `home/`：
 
 - `home/dot_codex/AGENTS.md` -> `~/.codex/AGENTS.md`
+- `home/dot_config/ghostty/config` -> `~/.config/ghostty/config`
 - `home/dot_config/starship.toml` -> `~/.config/starship.toml`
 - `home/dot_zshrc` -> `~/.zshrc`
 - `home/Library/Application Support/Code/User/settings.json` -> `~/Library/Application Support/Code/User/settings.json`

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, describe, it } from 'vitest'
-import { codexAgentsPath, createSyncFixture, removePath, repoCodexAgentsPath, repoStarshipPath, repoVscodeSettingsPath, repoZshrcPath, runCli, starshipPath, vscodeSettingsPath, writeFile, zshrcPath } from './utils'
+import { codexAgentsPath, createSyncFixture, ghosttyConfigPath, removePath, repoCodexAgentsPath, repoGhosttyConfigPath, repoStarshipPath, repoVscodeSettingsPath, repoZshrcPath, runCli, starshipPath, vscodeSettingsPath, writeFile, zshrcPath } from './utils'
 
 const originalRepoRoot = process.env.DOTFILES_REPO_ROOT
 const originalHome = process.env.DOTFILES_HOME
@@ -43,6 +43,7 @@ function writeManagedRepoSources(repoRoot: string) {
   writeFile(repoCodexAgentsPath(repoRoot), '# Codex\n')
   writeFile(repoZshrcPath(repoRoot), 'export API_TOKEN="{{DOTFILES_SECRET:API_TOKEN}}"\nalias ll="ls -la"\n')
   writeFile(repoStarshipPath(repoRoot), 'add_newline = true\n')
+  writeFile(repoGhosttyConfigPath(repoRoot), 'font-size = 14\n')
   writeFile(repoVscodeSettingsPath(repoRoot), '{"editor.fontSize":14}\n')
 }
 
@@ -139,6 +140,7 @@ describe('sync CLI', () => {
     writeFile(codexAgentsPath(homeRoot), '# Codex\n')
     writeFile(zshrcPath(homeRoot), 'export API_TOKEN="secret-token-123"\nalias ll="ls -la"\n')
     writeFile(starshipPath(homeRoot), 'add_newline = true\n')
+    writeFile(ghosttyConfigPath(homeRoot), 'font-size = 14\n')
     writeFile(vscodeSettingsPath(homeRoot), '{"editor.fontSize":14}\n')
 
     runCliOk(['push', '--force'], repoRoot, homeRoot)
@@ -156,6 +158,9 @@ describe('sync CLI', () => {
     const repoStarship = fs.readFileSync(repoStarshipPath(repoRoot), 'utf-8')
     assert.equal(repoStarship, 'add_newline = true\n')
 
+    const repoGhosttyConfig = fs.readFileSync(repoGhosttyConfigPath(repoRoot), 'utf-8')
+    assert.equal(repoGhosttyConfig, 'font-size = 14\n')
+
     const envLocal = fs.readFileSync(path.join(repoRoot, '.env.local'), 'utf-8')
     assert.equal(envLocal.includes('API_TOKEN="secret-token-123"'), true)
   })
@@ -166,6 +171,7 @@ describe('sync CLI', () => {
     writeFile(repoZshrcPath(repoRoot), 'export API_TOKEN="{{DOTFILES_SECRET:API_TOKEN}}"\nalias ll="ls -la"\n')
     writeFile(path.join(repoRoot, '.env.local'), 'API_TOKEN="secret-token-123"\n')
     writeFile(repoStarshipPath(repoRoot), 'add_newline = true\n')
+    writeFile(repoGhosttyConfigPath(repoRoot), 'font-size = 14\n')
     writeFile(repoVscodeSettingsPath(repoRoot), '{"editor.fontSize":14}\n')
 
     runCliOk(['pull', '--force'], repoRoot, homeRoot)
@@ -191,6 +197,9 @@ describe('sync CLI', () => {
     const homeStarship = fs.readFileSync(starshipPath(homeRoot), 'utf-8')
     assert.equal(homeStarship, 'add_newline = true\n')
 
+    const homeGhosttyConfig = fs.readFileSync(ghosttyConfigPath(homeRoot), 'utf-8')
+    assert.equal(homeGhosttyConfig, 'font-size = 14\n')
+
     const repoAgents = fs.readFileSync(repoCodexAgentsPath(repoRoot), 'utf-8')
     assert.equal(repoAgents, '# Codex\n')
   })
@@ -200,12 +209,14 @@ describe('sync CLI', () => {
     writeFile(repoCodexAgentsPath(repoRoot), '# Codex\n')
     writeFile(repoZshrcPath(repoRoot), 'alias ll="ls -la"\n')
     writeFile(repoStarshipPath(repoRoot), 'add_newline = true\n')
+    writeFile(repoGhosttyConfigPath(repoRoot), 'font-size = 14\n')
     writeFile(repoVscodeSettingsPath(repoRoot), '{"editor.fontSize":14}\n')
 
     runCliOk(['df', 'pull', '--force'], repoRoot, homeRoot)
 
     assert.equal(fs.readFileSync(zshrcPath(homeRoot), 'utf-8'), 'alias ll="ls -la"\n')
     assert.equal(fs.readFileSync(codexAgentsPath(homeRoot), 'utf-8'), '# Codex\n')
+    assert.equal(fs.readFileSync(ghosttyConfigPath(homeRoot), 'utf-8'), 'font-size = 14\n')
   })
 
   it('dry-run does not write repo or home files', () => {
@@ -213,6 +224,7 @@ describe('sync CLI', () => {
     writeFile(repoCodexAgentsPath(repoRoot), '# Codex\n')
     writeFile(repoZshrcPath(repoRoot), 'alias ll="ls -la"\n')
     writeFile(repoStarshipPath(repoRoot), 'add_newline = true\n')
+    writeFile(repoGhosttyConfigPath(repoRoot), 'font-size = 14\n')
     writeFile(repoVscodeSettingsPath(repoRoot), '{"editor.fontSize":14}\n')
 
     runCliOk(['sync', '--direction', 'pull', '--dry-run'], repoRoot, homeRoot)
@@ -220,6 +232,7 @@ describe('sync CLI', () => {
     assert.equal(fs.existsSync(zshrcPath(homeRoot)), false)
     assert.equal(fs.existsSync(codexAgentsPath(homeRoot)), false)
     assert.equal(fs.existsSync(starshipPath(homeRoot)), false)
+    assert.equal(fs.existsSync(ghosttyConfigPath(homeRoot)), false)
     assert.equal(fs.existsSync(vscodeSettingsPath(homeRoot)), false)
   })
 
@@ -228,10 +241,12 @@ describe('sync CLI', () => {
     writeFile(repoCodexAgentsPath(repoRoot), '# Codex\n')
     writeFile(repoZshrcPath(repoRoot), 'export API_TOKEN="{{DOTFILES_SECRET:API_TOKEN}}"\nalias ll="ls -la"\n')
     writeFile(repoStarshipPath(repoRoot), 'add_newline = true\n')
+    writeFile(repoGhosttyConfigPath(repoRoot), 'font-size = 14\n')
     writeFile(repoVscodeSettingsPath(repoRoot), '{"editor.fontSize":14}\n')
     writeFile(codexAgentsPath(homeRoot), '# Codex\n')
     writeFile(zshrcPath(homeRoot), 'export API_TOKEN="secret-token-123"\nalias gs="git status"\n')
     writeFile(starshipPath(homeRoot), 'add_newline = true\n')
+    writeFile(ghosttyConfigPath(homeRoot), 'font-size = 14\n')
     writeFile(vscodeSettingsPath(homeRoot), '{"editor.fontSize":14}\n')
 
     const result = runCliOk(['diff'], repoRoot, homeRoot)

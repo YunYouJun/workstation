@@ -4,6 +4,7 @@ brew "fzf"
 brew "zoxide"
 brew "zsh-autosuggestions"
 brew "zsh-syntax-highlighting"
+cask "ghostty"
 
 # Daily CLI tools
 brew "git"

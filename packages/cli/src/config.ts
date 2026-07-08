@@ -40,6 +40,12 @@ export const dotfiles: DotfileEntry[] = [
     appendSyncMeta: false,
   },
   {
+    source: path.join('home', 'dot_config', 'ghostty', 'config'),
+    target: path.join('.config', 'ghostty', 'config'),
+    description: 'Ghostty Terminal Config',
+    appendSyncMeta: false,
+  },
+  {
     source: path.join('home', vscodeSettingsRelativePath),
     target: vscodeSettingsRelativePath,
     description: 'VSCode Global Settings (macOS)',

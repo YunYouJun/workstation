@@ -120,6 +120,17 @@ function brewList(kind: '--cask', name: string): boolean {
   return commandResult('brew', ['list', kind, name]).status === 0
 }
 
+function localInstallStatus(item: SoftwareItem): ItemStatus | undefined {
+  if (appExists(item.app))
+    return { state: 'installed', via: 'app bundle' }
+
+  if (inputMethodExists(item.inputMethod))
+    return { state: 'installed', via: 'input method' }
+
+  if (item.bin && commandExists(item.bin))
+    return { state: 'installed', via: 'PATH' }
+}
+
 function appExists(appName?: string): boolean {
   if (!appName)
     return false
@@ -172,30 +183,22 @@ function readMasState(): MasState {
 }
 
 function isInstallable(item: SoftwareItem): boolean {
-  return Boolean(item.cask || item.masId || item.installCommand)
+  return Boolean(item.cask || item.masId || item.installCommand || item.inputMethod)
 }
 
 function inspectItem(item: SoftwareItem, masState: MasState): ItemStatus {
+  const localStatus = localInstallStatus(item)
+  if (localStatus)
+    return localStatus
+
   if (item.cask) {
     if (brewList('--cask', item.cask))
       return { state: 'installed', via: 'brew cask' }
-
-    if (appExists(item.app))
-      return { state: 'installed', via: 'app bundle' }
-
-    if (inputMethodExists(item.inputMethod))
-      return { state: 'installed', via: 'input method' }
-
-    if (item.bin && commandExists(item.bin))
-      return { state: 'installed', via: 'PATH' }
 
     return { state: 'missing', via: item.defaultInstall === false ? 'manual review' : 'brew cask' }
   }
 
   if (item.masId) {
-    if (appExists(item.app))
-      return { state: 'installed', via: 'app bundle' }
-
     if (!masState.available)
       return { state: 'missing', via: masState.reason }
 
@@ -206,6 +209,9 @@ function inspectItem(item: SoftwareItem, masState: MasState): ItemStatus {
 
   if (item.installCommand)
     return { state: 'unknown', via: 'script installer' }
+
+  if (item.inputMethod)
+    return { state: 'missing', via: 'official download' }
 
   return { state: 'manual', via: 'manual bootstrap' }
 }

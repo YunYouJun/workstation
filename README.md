@@ -115,6 +115,7 @@ workstation dotfiles chezmoi apply     # apply files managed under home/
 Current managed home files live under `home/`:
 
 - `home/dot_codex/AGENTS.md` -> `~/.codex/AGENTS.md`
+- `home/dot_config/ghostty/config` -> `~/.config/ghostty/config`
 - `home/dot_config/starship.toml` -> `~/.config/starship.toml`
 - `home/dot_zshrc` -> `~/.zshrc`
 - `home/Library/Application Support/Code/User/settings.json` -> `~/Library/Application Support/Code/User/settings.json`

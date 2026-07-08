@@ -6,6 +6,8 @@ old `dotfiles` command remains as a compatibility entrypoint.
 ## Managed Files
 
 - `home/dot_codex/AGENTS.md` -> `~/.codex/AGENTS.md`
+- `home/dot_config/ghostty/config` -> `~/.config/ghostty/config`
+- `home/dot_config/starship.toml` -> `~/.config/starship.toml`
 - `home/dot_zshrc` -> `~/.zshrc`
 - `home/Library/Application Support/Code/User/settings.json` -> `~/Library/Application Support/Code/User/settings.json`
 

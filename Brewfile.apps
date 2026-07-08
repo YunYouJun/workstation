@@ -19,9 +19,6 @@ cask "qq"
 cask "wechat"
 cask "feishu"
 
-# Input methods
-cask "wetype"
-
 # Productivity apps
 brew "mas"
 mas "Microsoft To Do", id: 1274495053

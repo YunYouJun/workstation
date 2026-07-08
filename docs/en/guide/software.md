@@ -40,15 +40,18 @@ Open selected official download pages:
 pnpm software:open raycast feishu wetype microsoft-todo ima
 ```
 
-Fast-install Raycast, Feishu, WeType, and Microsoft To Do; keep ima on the
-official download page until it has a stable package-manager path:
+Fast-install Raycast, Feishu, and Microsoft To Do; keep WeType and ima on the
+official download pages:
 
 ```bash
-brew install --cask raycast feishu wetype
+brew install --cask raycast feishu
 brew install mas
 mas install 1274495053
-pnpm software:open ima
+pnpm software:open wetype ima
 ```
+
+Prefer the official WeType installer over the Homebrew cask so the WeChat Input
+Method site controls the current macOS package.
 
 Show install status from the shared software catalog:
 
