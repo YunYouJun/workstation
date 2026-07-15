@@ -45,6 +45,7 @@ const enNav: DefaultTheme.NavItem[] = [
     items: [
       { text: 'VSCode Extensions', link: '/en/vscode/extensions' },
       { text: 'Codex Skills', link: '/en/guide/codex-skills' },
+      { text: 'Microsoft To Do Graph', link: '/en/guide/microsoft-todo-graph' },
     ],
   },
 ]
@@ -76,6 +77,7 @@ const zhNav: DefaultTheme.NavItem[] = [
     items: [
       { text: 'VSCode 扩展', link: '/vscode/extensions' },
       { text: 'Codex Skills', link: '/guide/codex-skills' },
+      { text: 'Microsoft To Do Graph', link: '/guide/microsoft-todo-graph' },
     ],
   },
 ]
@@ -112,6 +114,7 @@ const enSidebar: DefaultTheme.Sidebar = [
     items: [
       { text: 'VSCode Extensions', link: '/en/vscode/extensions' },
       { text: 'Codex Skills', link: '/en/guide/codex-skills' },
+      { text: 'Microsoft To Do Graph', link: '/en/guide/microsoft-todo-graph' },
     ],
   },
 ]
@@ -148,6 +151,7 @@ const zhSidebar: DefaultTheme.Sidebar = [
     items: [
       { text: 'VSCode 扩展', link: '/vscode/extensions' },
       { text: 'Codex Skills', link: '/guide/codex-skills' },
+      { text: 'Microsoft To Do Graph', link: '/guide/microsoft-todo-graph' },
     ],
   },
 ]
