@@ -1,0 +1,24 @@
+{
+  "name": "@yunyoujun/microsoft-todo-graph",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "todo": "node src/cli.js",
+    "auth": "node src/cli.js auth",
+    "auth:write": "MS_TODO_WRITE=1 node src/cli.js auth",
+    "status": "MS_TODO_WRITE=1 node src/cli.js status",
+    "lists": "MS_TODO_WRITE=1 node src/cli.js lists",
+    "tasks": "MS_TODO_WRITE=1 node src/cli.js tasks",
+    "test": "node --check src/*.js && vitest run"
+  },
+  "dependencies": {
+    "@azure/msal-node": "5.2.2"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.9"
+  }
+}

@@ -43,6 +43,11 @@
     "private:status": "pnpm private status",
     "sync": "pnpm --filter @yunyoujun/workstation exec tsx src/cli.ts df sync",
     "test": "pnpm -r run test",
+    "todo": "pnpm --filter @yunyoujun/microsoft-todo-graph todo",
+    "todo:auth": "pnpm --filter @yunyoujun/microsoft-todo-graph auth:write",
+    "todo:lists": "pnpm --filter @yunyoujun/microsoft-todo-graph lists",
+    "todo:status": "pnpm --filter @yunyoujun/microsoft-todo-graph status",
+    "todo:tasks": "pnpm --filter @yunyoujun/microsoft-todo-graph tasks",
     "typecheck": "tsc --noEmit && pnpm -r run typecheck",
     "vscode:extensions": "pnpm docs:generate",
     "vscode:extensions:check": "tsx scripts/vscode-extensions.ts check"
