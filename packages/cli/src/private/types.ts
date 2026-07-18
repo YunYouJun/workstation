@@ -137,6 +137,7 @@ export interface PrivateSkill {
   id: string
   source: {
     path?: string
+    ref?: string
     repo?: string
     type: string
   }

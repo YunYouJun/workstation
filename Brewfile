@@ -18,6 +18,7 @@ brew "eza"
 brew "jq"
 brew "chezmoi"
 brew "gitleaks"
+brew "microsoft/apm/apm"
 
 # Prompt glyphs and terminal icons
 cask "font-hack-nerd-font"

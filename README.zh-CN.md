@@ -37,7 +37,7 @@ VitePress 文档是工作站设置模型的事实来源：
 - [项目](./docs/guide/projects.md)
 - [软件包](./docs/guide/packages.md)
 - [软件](./docs/guide/software.md)
-- [Codex skills](./docs/guide/codex-skills.md)
+- [Agent Skills 与 APM](./docs/guide/codex-skills.md)
 - [Microsoft To Do Graph 客户端](./docs/guide/microsoft-todo-graph.md)
 - [VSCode 扩展](./docs/vscode/extensions.md)
 

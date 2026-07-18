@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import * as p from '@clack/prompts'
@@ -60,6 +61,24 @@ export function doctor() {
   else
     fail(counts, 'home source tree is missing')
 
+  const apmSources = [
+    {
+      label: 'APM manifest',
+      sourcePath: path.join(homeSourcePath, 'dot_apm', 'apm.yml'),
+    },
+    {
+      label: 'APM lockfile',
+      sourcePath: path.join(homeSourcePath, 'dot_apm', 'private_apm.lock.yaml'),
+    },
+  ]
+
+  for (const source of apmSources) {
+    if (fs.existsSync(source.sourcePath))
+      pass(`${source.label}: source exists`)
+    else
+      fail(counts, `${source.label}: source missing at ${source.sourcePath}`)
+  }
+
   const secretsMap = loadSecretsFile()
   for (const entry of dotfiles) {
     const sourcePath = resolveSource(entry)
@@ -86,6 +105,24 @@ export function doctor() {
   }
   else {
     pass('chezmoi executable is available')
+  }
+
+  const apmVersion = spawnSync('apm', ['--version'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  if (apmVersion.error) {
+    const code = (apmVersion.error as NodeJS.ErrnoException).code
+    if (code === 'ENOENT')
+      warn(counts, 'APM is not installed; run `brew install microsoft/apm/apm`')
+    else
+      warn(counts, `APM check failed: ${apmVersion.error.message}`)
+  }
+  else if (typeof apmVersion.status === 'number' && apmVersion.status !== 0) {
+    warn(counts, `apm --version exited with code ${apmVersion.status}`)
+  }
+  else {
+    pass('APM executable is available')
   }
 
   if (counts.errors > 0)

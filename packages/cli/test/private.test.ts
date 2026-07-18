@@ -61,6 +61,7 @@ function createPrivateFixture() {
         'op-inject-template',
         'op-run-wrapper',
         'op-typescript-cli',
+        'private-skill-install',
         'secret-scan',
         'managed-block-fragment',
       ],
@@ -201,12 +202,24 @@ afterEach(() => {
 })
 
 describe('private CLI', () => {
-  it('keeps private operation validation aligned with the public manifest schema', () => {
-    const schemaPath = path.resolve(import.meta.dirname, '..', '..', '..', 'schemas', 'codex-tools-manifest.schema.json')
+  it('keeps private operation validation aligned with the overlay schema', () => {
+    const schemaPath = path.resolve(import.meta.dirname, '..', '..', '..', 'schemas', 'private-overlay.schema.json')
     const schema = JSON.parse(fs.readFileSync(schemaPath, 'utf-8'))
     const schemaOperations = [...schema.$defs.operation.enum].sort()
 
     assert.deepEqual([...privateAllowedOperations].sort(), schemaOperations)
+  })
+
+  it('rejects removed private MCP compatibility operations', () => {
+    const fixture = createPrivateFixture()
+    const manifest = readJsonFile(fixture.manifestPath)
+    manifest.mcp.fragments[0].operation = 'codex-mcp-fragment'
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+
+    const result = runCli(['private', 'apply', '--manifest', fixture.manifestPath, '--dry-run'], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 1)
+    assert.match(`${result.stdout}\n${result.stderr}`, /unsupported MCP fragment operation/)
   })
 
   it('generates skills and MCP inventory from a private manifest', () => {
@@ -378,6 +391,9 @@ describe('private CLI', () => {
   it('remembers connected private manifests for later commands', () => {
     const fixture = createPrivateFixture()
     fs.mkdirSync(path.join(fixture.repoRoot, '.git'))
+    writeExecutable(path.join(fixture.binDir, 'op'), [
+      'process.exit(1)',
+    ])
 
     const connectResult = runCli([
       'private',
@@ -387,7 +403,9 @@ describe('private CLI', () => {
       '--target-dir',
       fixture.repoRoot,
       '--yes',
-    ], fixture.repoRoot, fixture.homeRoot)
+    ], fixture.repoRoot, fixture.homeRoot, {
+      PATH: testPath(fixture.binDir),
+    })
 
     assert.equal(connectResult.status, 0, `${connectResult.stdout}\n${connectResult.stderr}`)
     assert.match(connectResult.stdout, /\[ok\] default private manifest saved/)
@@ -413,30 +431,126 @@ describe('private CLI', () => {
     assert.match(result.stdout, new RegExp(escapeRegExp(`Manifest: ${path.join(discoveredRepo, 'config', 'sync-manifest.json')}`)))
   })
 
-  it('falls back to the current workstation checkout when private apply has a stale workstation path', () => {
+  it('applies private Skills and Codex MCP without pnpm or public install scripts', () => {
     const fixture = createPrivateFixture()
     const manifest = readJsonFile(fixture.manifestPath)
-    manifest.policy.relatedRepositories[0].path = path.join(fixture.repoRoot, 'missing-workstation')
+    manifest.mcp.templates = []
+    manifest.secrets.envTemplates = []
+    manifest.skills.install = [
+      {
+        id: 'private-review',
+        targetName: 'private-review',
+        description: 'Private review workflow.',
+        source: {
+          type: 'local',
+          path: 'skills/install/private-review',
+        },
+      },
+    ]
     writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
-    const callsPath = path.join(fixture.repoRoot, 'pnpm-calls.json')
-    writeExecutable(path.join(fixture.binDir, 'pnpm'), [
-      'const fs = require("node:fs")',
-      'const callsPath = process.env.FAKE_PNPM_CALLS',
-      'const calls = fs.existsSync(callsPath) ? JSON.parse(fs.readFileSync(callsPath, "utf-8")) : []',
-      'calls.push({ cwd: process.cwd(), args: process.argv.slice(2) })',
-      'fs.writeFileSync(callsPath, JSON.stringify(calls))',
-      'process.exit(0)',
-    ])
+    writeFile(path.join(fixture.repoRoot, 'skills', 'install', 'private-review', 'SKILL.md'), '# Private review\n')
+    writeFile(path.join(fixture.repoRoot, 'mcp', 'codex-mcp.overlay.toml'), [
+      '[mcp_servers.private_docs]',
+      'url = "https://docs.example.com/mcp"',
+      '',
+    ].join('\n'))
 
-    const result = runCli(['private', 'apply', '--manifest', fixture.manifestPath, '--dry-run'], fixture.repoRoot, fixture.homeRoot, {
-      FAKE_PNPM_CALLS: callsPath,
-      PATH: testPath(fixture.binDir),
+    const result = runCli(['private', 'apply', '--manifest', fixture.manifestPath, '--yes'], fixture.repoRoot, fixture.homeRoot, {
+      PATH: fixture.binDir,
     })
 
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
-    const calls = readJsonFile(callsPath)
-    assert.equal(calls.length, 2)
-    assert.equal(calls[0].cwd, path.resolve(import.meta.dirname, '..', '..', '..'))
+    assert.equal(
+      fs.readFileSync(path.join(fixture.homeRoot, '.codex', 'skills', 'private-review', 'SKILL.md'), 'utf-8'),
+      '# Private review\n',
+    )
+    const codexConfig = fs.readFileSync(path.join(fixture.homeRoot, '.codex', 'config.toml'), 'utf-8')
+    assert.match(codexConfig, /# >>> workstation managed private mcp/)
+    assert.match(codexConfig, /\[mcp_servers\.private_docs\]/)
+  })
+
+  it('removes the managed private MCP block when no fragments remain', () => {
+    const fixture = createPrivateFixture()
+    const manifest = readJsonFile(fixture.manifestPath)
+    manifest.mcp.fragments = []
+    manifest.mcp.templates = []
+    manifest.secrets.envTemplates = []
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    writeFile(path.join(fixture.homeRoot, '.codex', 'config.toml'), [
+      'model = "gpt-5"',
+      '',
+      '# >>> workstation managed private mcp',
+      '[mcp_servers.private_docs]',
+      'url = "https://docs.example.com/mcp"',
+      '# <<< workstation managed private mcp',
+      '',
+    ].join('\n'))
+
+    const result = runCli(['private', 'apply', '--manifest', fixture.manifestPath, '--yes'], fixture.repoRoot, fixture.homeRoot, {
+      PATH: fixture.binDir,
+    })
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.equal(
+      fs.readFileSync(path.join(fixture.homeRoot, '.codex', 'config.toml'), 'utf-8'),
+      'model = "gpt-5"\n',
+    )
+  })
+
+  it('adopts an unmanaged private MCP section that is a subset of the desired section', () => {
+    const fixture = createPrivateFixture()
+    const manifest = readJsonFile(fixture.manifestPath)
+    manifest.mcp.templates = []
+    manifest.secrets.envTemplates = []
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    writeFile(path.join(fixture.repoRoot, 'mcp', 'codex-mcp.overlay.toml'), [
+      '[mcp_servers.private_docs]',
+      'url = "https://docs.example.com/mcp"',
+      'tool_timeout_sec = 60',
+      '',
+    ].join('\n'))
+    writeFile(path.join(fixture.homeRoot, '.codex', 'config.toml'), [
+      'model = "gpt-5"',
+      '',
+      '[mcp_servers.private_docs]',
+      'url = "https://docs.example.com/mcp"',
+      '',
+    ].join('\n'))
+
+    const result = runCli(['private', 'apply', '--manifest', fixture.manifestPath, '--yes'], fixture.repoRoot, fixture.homeRoot, {
+      PATH: fixture.binDir,
+    })
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    const codexConfig = fs.readFileSync(path.join(fixture.homeRoot, '.codex', 'config.toml'), 'utf-8')
+    assert.equal(codexConfig.match(/\[mcp_servers\.private_docs\]/g)?.length, 1)
+    assert.match(codexConfig, /# >>> workstation managed private mcp/)
+    assert.match(codexConfig, /tool_timeout_sec = 60/)
+  })
+
+  it('refuses to adopt a conflicting unmanaged private MCP section', () => {
+    const fixture = createPrivateFixture()
+    const manifest = readJsonFile(fixture.manifestPath)
+    manifest.mcp.templates = []
+    manifest.secrets.envTemplates = []
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    writeFile(path.join(fixture.repoRoot, 'mcp', 'codex-mcp.overlay.toml'), [
+      '[mcp_servers.private_docs]',
+      'url = "https://desired.example.com/mcp"',
+      '',
+    ].join('\n'))
+    writeFile(path.join(fixture.homeRoot, '.codex', 'config.toml'), [
+      '[mcp_servers.private_docs]',
+      'url = "https://different.example.com/mcp"',
+      '',
+    ].join('\n'))
+
+    const result = runCli(['private', 'apply', '--manifest', fixture.manifestPath, '--yes'], fixture.repoRoot, fixture.homeRoot, {
+      PATH: fixture.binDir,
+    })
+
+    assert.equal(result.status, 1)
+    assert.match(`${result.stdout}\n${result.stderr}`, /already exist with different content/)
   })
 
   it('runs iOS commands with materialized App Store Connect key files', () => {
@@ -546,6 +660,7 @@ describe('private CLI', () => {
     const result = runCli(['private', 'secrets-import', '--yes', '--manifest', fixture.manifestPath], fixture.repoRoot, fixture.homeRoot, {
       CODEX_CONFIG_FILE: path.join(fixture.homeRoot, '.codex', 'config.toml'),
       FAKE_OP_CALLS: callsPath,
+      KNOT_X_KNOT_API_TOKEN: '',
       PATH: testPath(fixture.binDir),
     })
 
@@ -845,8 +960,8 @@ describe('private CLI', () => {
     assert.equal(allResult.status, 0, `${allResult.stdout}\n${allResult.stderr}`)
     assert.equal(stagedResult.status, 0, `${stagedResult.stdout}\n${stagedResult.stderr}`)
     const calls = readJsonFile(callsPath)
-    assert.deepEqual(calls[0], ['detect', '--source', fixture.repoRoot, '--no-git', '--verbose'])
-    assert.deepEqual(calls[1], ['protect', '--staged', '--verbose'])
+    assert.deepEqual(calls[0], ['detect', '--source', fixture.repoRoot, '--no-git', '--redact', '--verbose'])
+    assert.deepEqual(calls[1], ['protect', '--staged', '--redact', '--verbose'])
   })
 })
 

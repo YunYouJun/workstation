@@ -1,0 +1,11 @@
+name: yunyoujun-workstation
+version: 1.0.0
+description: Public and portable agent dependencies for YunYouJun's workstation.
+targets:
+  - codex
+dependencies:
+  apm:
+    - git: https://github.com/nextlevelbuilder/ui-ux-pro-max-skill.git
+      ref: main
+      path: .claude/skills/ui-ux-pro-max
+      alias: ui-ux-pro-max

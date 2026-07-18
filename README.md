@@ -37,7 +37,7 @@ The VitePress docs are the source of truth for the workstation setup model:
 - [Projects](./docs/en/guide/projects.md)
 - [Packages](./docs/en/guide/packages.md)
 - [Software](./docs/en/guide/software.md)
-- [Codex skills](./docs/en/guide/codex-skills.md)
+- [Agent Skills and APM](./docs/en/guide/codex-skills.md)
 - [Microsoft To Do Graph client](./docs/en/guide/microsoft-todo-graph.md)
 - [VSCode extensions](./docs/en/vscode/extensions.md)
 

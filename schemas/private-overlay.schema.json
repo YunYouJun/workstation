@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/YunYouJun/workstation/main/schemas/codex-tools-manifest.schema.json",
-  "title": "Workstation Codex Tools Manifest",
+  "$id": "https://raw.githubusercontent.com/YunYouJun/workstation/main/schemas/private-overlay.schema.json",
+  "title": "Workstation Private Overlay Manifest",
   "type": "object",
   "required": ["version"],
   "additionalProperties": false,
@@ -254,8 +254,7 @@
         "op-typescript-cli",
         "secret-scan",
         "op-inject-template",
-        "codex-skill-install",
-        "codex-mcp-fragment",
+        "private-skill-install",
         "managed-block-fragment"
       ]
     },
@@ -360,7 +359,7 @@
           "enum": ["toml-codex"]
         },
         "operation": {
-          "enum": ["managed-block-fragment", "codex-mcp-fragment"]
+          "const": "managed-block-fragment"
         },
         "visibility": {
           "$ref": "#/$defs/visibility"

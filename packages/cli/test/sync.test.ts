@@ -38,8 +38,20 @@ function writeFakeChezmoi(binDir: string) {
   ].join('\r\n'))
 }
 
+function writeFakeApm(binDir: string) {
+  const scriptPath = path.join(binDir, 'apm')
+  writeFile(scriptPath, [
+    '#!/usr/bin/env node',
+    'console.log("apm 0.25.0")',
+    '',
+  ].join('\n'))
+  fs.chmodSync(scriptPath, 0o755)
+}
+
 function writeManagedRepoSources(repoRoot: string) {
   writeFile(path.join(repoRoot, '.chezmoiroot'), 'home\n')
+  writeFile(path.join(repoRoot, 'home', 'dot_apm', 'apm.yml'), 'name: workstation\nversion: 1.0.0\n')
+  writeFile(path.join(repoRoot, 'home', 'dot_apm', 'private_apm.lock.yaml'), 'lockfileVersion: 1\n')
   writeFile(repoCodexAgentsPath(repoRoot), '# Codex\n')
   writeFile(repoZshrcPath(repoRoot), 'export API_TOKEN="{{DOTFILES_SECRET:API_TOKEN}}"\nalias ll="ls -la"\n')
   writeFile(repoStarshipPath(repoRoot), 'add_newline = true\n')
@@ -68,6 +80,7 @@ describe('sync CLI', () => {
     const binDir = path.join(tempDir, 'bin')
     const argsPath = path.join(tempDir, 'chezmoi-args.json')
     writeFakeChezmoi(binDir)
+    writeFakeApm(binDir)
 
     const result = runCli(['chezmoi', 'diff', '--dry-run'], repoRoot, homeRoot, {
       CHEZMOI_ARGS_OUT: argsPath,
@@ -104,6 +117,7 @@ describe('sync CLI', () => {
     const binDir = path.join(tempDir, 'bin')
     const argsPath = path.join(tempDir, 'chezmoi-args.json')
     writeFakeChezmoi(binDir)
+    writeFakeApm(binDir)
 
     const result = runCli(['doctor'], repoRoot, homeRoot, {
       CHEZMOI_ARGS_OUT: argsPath,
@@ -125,6 +139,7 @@ describe('sync CLI', () => {
 
     const binDir = path.join(tempDir, 'bin')
     writeFakeChezmoi(binDir)
+    writeFakeApm(binDir)
 
     const result = runCli(['doctor'], repoRoot, homeRoot, {
       PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}`,
@@ -133,6 +148,24 @@ describe('sync CLI', () => {
     assert.equal(result.status, 1)
     assert.match(`${result.stdout}\n${result.stderr}`, /missing local secrets for API_TOKEN/)
     assert.equal(`${result.stdout}\n${result.stderr}`.includes('secret-token-123'), false)
+  })
+
+  it('doctor fails when the managed APM lockfile is missing', () => {
+    const { repoRoot, homeRoot, tempDir } = useFixture()
+    writeManagedRepoSources(repoRoot)
+    fs.rmSync(path.join(repoRoot, 'home', 'dot_apm', 'private_apm.lock.yaml'))
+    writeFile(path.join(repoRoot, '.env.local'), 'API_TOKEN="secret-token-123"\n')
+
+    const binDir = path.join(tempDir, 'bin')
+    writeFakeChezmoi(binDir)
+    writeFakeApm(binDir)
+
+    const result = runCli(['doctor'], repoRoot, homeRoot, {
+      PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}`,
+    })
+
+    assert.equal(result.status, 1)
+    assert.match(`${result.stdout}\n${result.stderr}`, /APM lockfile: source missing/)
   })
 
   it('push masks secrets and stores real values in .env.local', () => {

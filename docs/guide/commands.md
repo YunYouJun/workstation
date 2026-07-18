@@ -78,14 +78,12 @@ pnpm install
 pnpm build
 ```
 
-同步 Codex 个人 skills 与 MCP 片段：
+应用全局 APM manifest，并按锁文件恢复公开 Skills 与标准 MCP：
 
 ```bash
-pnpm skills:status
-pnpm skills:install
-pnpm mcp:status
-pnpm mcp:install --dry-run
-pnpm mcp:install
+wst df chezmoi apply
+apm install --global --frozen
+apm deps list --global
 ```
 
 读取私有 dotfiles overlay，并只预览会生成的本地 ignored 配置：

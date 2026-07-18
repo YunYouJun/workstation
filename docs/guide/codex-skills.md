@@ -1,191 +1,108 @@
-# Codex Skills
+# Agent Skills 与 APM
 
-Codex skills 是可复用工作流。一个 skill 会把任务特定说明、参考资料和可选脚本打包在一起，让 Codex 在不同线程中可靠地遵循同一流程。
+这个仓库使用 [APM（Agent Package Manager）](https://microsoft.github.io/apm/)
+管理公开、可移植的 Agent Skills 与标准 MCP server。APM 是这部分能力的唯一事实源：
+workstation 不再维护第二套 Skills manifest、Git 下载器、状态命令或 MCP 映射脚本。
 
-当工作流可复用时使用 skill。当输出应该是确定的机器状态时，使用脚本或包管理器清单。
+## 文件与职责
 
-## 调用
+| 文件或工具 | 职责 |
+| --- | --- |
+| `home/dot_apm/apm.yml` | 声明公开 Skills、标准 MCP 和目标 Agent |
+| `home/dot_apm/private_apm.lock.yaml` | APM 生成的锁文件；`private_` 是 chezmoi 的 `0600` 权限标记 |
+| `~/.apm/apm.yml` | chezmoi 应用后的全局 APM manifest |
+| `~/.apm/apm.lock.yaml` | 全局 APM lock；不要手改 |
+| `wst private` | 私有本地 Skills、Codex 专属 MCP、1Password 与 inventory-only 配置 |
 
-知道需要哪个工作流时，可以显式调用 skill：
+APM 默认把共享 Skills 部署到 `~/.agents/skills`。仓库自己的工作流仍放在
+`.agents/skills`，私有 overlay 显式安装的本地 Skill 则保留在
+`~/.codex/skills`，避免把私有路径写入公开 manifest。
 
-```text
-$skill-name
-```
+## 新机器恢复
 
-在 Codex CLI 和 IDE 界面中，可以使用 `/skills` 或输入 `$` 来选择 skill。已安装的插件也可能暴露可在提示中显式调用的 skills。
-
-当你的请求匹配 skill 描述时，Codex 也可以隐式调用 skill。好的 skill 描述应该清楚说明什么时候应该触发，以及什么时候不应该触发。
-
-## Skill 结构
-
-一个 skill 是包含 `SKILL.md` 的目录：
-
-```md
----
-name: workstation-software
-description: Maintain the workstation software catalog, Brewfiles, and docs.
----
-
-Follow the repository's software setup workflow.
-```
-
-可选文件夹可以存放脚本、参考资料、模板或资源。Codex 起初只看到 skill 名称、描述和路径；只有在判断该 skill 适用后，才会读取完整的 `SKILL.md`。
-
-## 本地位置
-
-Codex 会从多个范围发现 skills：
-
-| 范围 | 位置 | 用途 |
-| --- | --- | --- |
-| 仓库 | `.agents/skills` | 此仓库共享的工作流 |
-| 用户 | `$CODEX_HOME/skills`（默认 `~/.codex/skills`） | 跨仓库的个人工作流 |
-| 管理员 | `/etc/codex/skills` | 机器或组织默认项 |
-| 系统 | Codex 内置 | 例如 skill 创建等内置工作流 |
-
-当 Codex 在嵌套项目中启动时，仓库 skills 也可以位于父目录。新增或修改 skill 后如果未出现，请重启 Codex。
-
-## 创建或安装
-
-用内置 creator 创建新 skill：
-
-```text
-$skill-creator
-```
-
-安装 curated 或外部 skill 到本地：
-
-```text
-$skill-installer
-```
-
-如果一个工作流需要分发给其他开发者，应把它打包成插件，而不是只提交一个本地 skill。
-
-## 个人 Skill 清单
-
-这个仓库用 [`config/codex-tools.manifest.json`](../../config/codex-tools.manifest.json)
-记录可复用的个人 skills。同步脚本会把它们安装到 `$CODEX_HOME/skills`，默认是
-`~/.codex/skills`。
-本机公开可记录的候选清单放在 `codex-skills.inventory.md`；它只是 inventory，
-只有确认上游来源后才提升到安装清单。
+`Brewfile` 会安装 APM CLI。应用 dotfiles 后，用锁文件做 frozen replay：
 
 ```bash
-pnpm skills:list      # 查看配置的来源
-pnpm skills:status    # 查看已安装 / 缺失状态
-pnpm skills:check     # 有配置项缺失时返回非零退出码
-pnpm skills:install   # 安装缺失的 skills
+brew bundle --file Brewfile
+wst df chezmoi apply
+apm install --global --frozen
 ```
 
-要增加新的个人 skill，在 `skills.install` 里添加 `id`、`description`、`source` 和可选
-`targetName`。`source.ref` 可以用 `main` 跟随上游，也可以固定到 tag 或 commit，
-让新机器迁移结果更可复现。
-
-```json
-{
-  "skills": {
-    "install": [
-      {
-        "id": "ui-ux-pro-max",
-        "targetName": "ui-ux-pro-max",
-        "description": "Broad UI/UX design intelligence for web, mobile, dashboards, landing pages, and component review.",
-        "visibility": "public",
-        "syncMode": "install",
-        "source": {
-          "type": "github",
-          "repo": "nextlevelbuilder/ui-ux-pro-max-skill",
-          "path": ".claude/skills/ui-ux-pro-max",
-          "ref": "main"
-        }
-      }
-    ]
-  }
-}
-```
-
-其中 `id` 是 workstation 清单里的唯一标识，`targetName` 是安装到
-`$CODEX_HOME/skills/<targetName>` 的目录名。一般让 `id`、`targetName` 和
-`SKILL.md` 里的 `name` 保持一致最省心。建议保持小而精：全局 skills 太多时，
-触发描述容易重叠，Codex 会变得更吵。
-
-## Codex MCP 同步
-
-Codex MCP servers 使用 Codex 原生 `config.toml` 结构。这个仓库用
-[`schemas/codex-tools-manifest.schema.json`](../../schemas/codex-tools-manifest.schema.json)
-统一约束清单元数据，但不重新发明 MCP server 的 TOML 结构，也不直接同步完整
-`~/.codex/config.toml`；`config/codex-tools.manifest.json` 只声明
-`codex-mcp.toml` 这个可审查 MCP 片段，并由脚本合并到
-`$CODEX_HOME/config.toml`（默认 `~/.codex/config.toml`）里的 managed block。
+查看全局依赖：
 
 ```bash
-pnpm mcp:list             # 查看仓库声明的 MCP 片段
-pnpm mcp:status           # 查看 managed block 状态
-pnpm mcp:check            # managed block 缺失或过期时返回非零退出码
-pnpm mcp:install --dry-run
-pnpm mcp:install          # 合并 managed block，并备份原 config.toml
+apm deps list --global
+apm deps tree --global
 ```
 
-MCP 片段只应包含 `[mcp_servers.*]`、插件 MCP 策略，以及少量 MCP OAuth callback
-顶层配置。不要把 `auth.json`、OAuth token、bearer token 实值、插件运行态或自动生成的
-本机 MCP server 写进仓库。需要凭证时只提交环境变量名，例如
-`bearer_token_env_var = "FIGMA_OAUTH_TOKEN"`。
+## 增加或更新依赖
 
-## 与私有 dotfiles 的分工
+让 APM 修改全局 manifest、安装并生成 lock，然后把两个文件收回 chezmoi source：
 
-`workstation` 是可复现安装源：`config/codex-tools.manifest.json` 决定要安装哪些个人
-skills，并声明哪些 MCP fragment 要进入 `~/.codex/config.toml` 里的 workstation
-managed block。
+```bash
+apm install --global owner/repo --skill skill-name
+wst df chezmoi re-add ~/.apm/apm.yml ~/.apm/apm.lock.yaml
+git diff -- home/dot_apm
+```
 
-私有 `dotfiles` 可以记录本机已有 skills/MCP inventory、内部 server 名称和 1Password
-`op://...` 引用，但不应该直接复制或覆盖 `~/.codex/skills`、完整
-`~/.codex/config.toml`。当某项配置需要成为跨机器可复现的安装流程时，再提升到
-`workstation` 的清单或 managed block。
+更新现有依赖时先预览，再确认：
 
-## Skills、插件与脚本
+```bash
+apm update --global --dry-run
+apm update --global
+wst df chezmoi re-add ~/.apm/apm.yml ~/.apm/apm.lock.yaml
+apm install --global --frozen
+```
+
+不要手工编辑 `apm.lock.yaml`。`main` 或版本范围可以留在 manifest 中，lock 仍会固定
+解析后的 commit；更新只通过显式 `apm update --global` 发生。
+
+## 标准 MCP 与私有 Codex MCP
+
+公开且可移植的 MCP 使用 APM：
+
+```bash
+apm install --global --mcp io.github.example/server
+```
+
+包含内部 server 名称、私有本地命令、Codex plugin 配置或 OAuth callback 顶层字段的
+TOML 不进入公开 APM manifest。这些内容继续由 allowlisted private overlay 管理：
+
+```bash
+wst private apply --dry-run
+wst private apply --yes
+```
+
+private apply 只写 `~/.codex/config.toml` 中标记为
+`workstation managed private mcp` 的 block，不覆盖完整配置。
+
+## Skill 结构与触发
+
+一个 Skill 是包含 `SKILL.md` 的目录，可以带脚本、参考资料和资源。Agent 根据
+`SKILL.md` frontmatter 中的名称和描述决定是否触发；需要时也可以显式输入
+`$skill-name`。
+
+全局 Skills 应保持少而清晰。描述重叠会增加误触发；不具备跨项目价值的工作流应留在
+仓库 `.agents/skills` 或私有 overlay 中。
+
+## 边界
 
 | 需求 | 使用 |
 | --- | --- |
-| Codex 可复用说明 | Skill |
-| 包含 skills、应用集成、MCP servers 或资源的共享包 | 插件 |
-| 确定性的本地安装或机器状态变更 | 脚本或清单 |
-| 定时检查或提醒 | 自动化 |
-| 仓库约定和命令 | `AGENTS.md` |
+| 公开 Skills、标准 MCP、版本锁定、更新与重放 | APM |
+| 仓库共享工作流 | `.agents/skills` |
+| 私有本地 Skill、Codex 专属 MCP、1Password | `wst private` |
+| 软件安装 | `Brewfile` / `pnpm software:*` |
+| 仓库约定 | `AGENTS.md` |
 
-对于此工作站仓库，软件安装应保留在 `Brewfile`、`Brewfile.apps` 和 `pnpm software:*` 中。Skill 可以帮助维护目录、解释选择或运行文档化流程，但不应是唯一知道要安装什么的地方。
-
-此仓库还提供 repo-scoped skill：
-
-| Skill | 用途 |
-| --- | --- |
-| `$workstation-projects` | 让 Codex 按 dry-run、`gh`、`ghq` 和 `wst p active` 的规范处理项目 checkout。 |
-
-## 示例工作流
-
-让 Codex 使用 skill 做维护：
-
-```text
-$workstation-software update the software catalog for a new Mac setup
-```
-
-让 Codex 使用项目 checkout workflow：
-
-```text
-$workstation-projects preview cloning YunYouJun's 50 most active repositories
-```
-
-让 Codex 运行确定性的机器状态脚本：
-
-```text
-Check missing software and install the app manifest.
-```
-
-Codex 应把第二个请求解析为：
-
-```bash
-pnpm software:missing
-pnpm software:install --apps
-```
+APM v0.25.0 的 `audit` 没有全局模式。用
+`apm install --global --frozen` 校验全局 manifest/lock 一致性并重放锁定状态；
+不要在 `~/.apm` 下运行项目作用域的 `apm audit --ci`，因为它会按错误的
+项目根目录解释部署路径。
 
 ## 参考
 
-- [Agent Skills](https://developers.openai.com/codex/skills)
-- [Plugins](https://developers.openai.com/codex/plugins)
-- [Build plugins](https://developers.openai.com/codex/plugins/build)
+- [APM 文档](https://microsoft.github.io/apm/)
+- [APM install](https://microsoft.github.io/apm/reference/cli/install/)
+- [Agent Skills](https://agentskills.io/)
+- [Model Context Protocol](https://modelcontextprotocol.io/)

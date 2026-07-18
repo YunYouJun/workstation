@@ -3,8 +3,6 @@ import fs from 'node:fs'
 import { matchesAny } from './paths'
 
 export const privateAllowedOperations = [
-  'codex-mcp-fragment',
-  'codex-skill-install',
   'inventory',
   'mcp-export',
   'managed-block-fragment',
@@ -14,6 +12,7 @@ export const privateAllowedOperations = [
   'op-file-restore',
   'op-run-wrapper',
   'op-typescript-cli',
+  'private-skill-install',
   'secret-scan',
 ] as const
 
@@ -98,7 +97,7 @@ export function validatePrivateManifest(manifest: PrivateManifest): string[] {
   }
 
   for (const fragment of manifest.mcp?.fragments || []) {
-    if (fragment.operation && !['managed-block-fragment', 'codex-mcp-fragment'].includes(fragment.operation))
+    if (fragment.operation && fragment.operation !== 'managed-block-fragment')
       errors.push(`unsupported MCP fragment operation for ${fragment.id}: ${fragment.operation}`)
 
     if (fragment.format && fragment.format !== 'toml-codex')
@@ -170,7 +169,7 @@ export function privateSecretFileBundles(manifest: PrivateManifest): SecretFileB
 
 export function privateMcpFragments(manifest: PrivateManifest): McpFragment[] {
   return (manifest.mcp?.fragments || [])
-    .filter(fragment => !fragment.operation || fragment.operation === 'managed-block-fragment' || fragment.operation === 'codex-mcp-fragment')
+    .filter(fragment => !fragment.operation || fragment.operation === 'managed-block-fragment')
 }
 
 export function privateSkillInstalls(manifest: PrivateManifest): PrivateSkill[] {
