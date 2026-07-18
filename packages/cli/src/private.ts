@@ -5,7 +5,9 @@ import path from 'node:path'
 import process from 'node:process'
 import { createInterface } from 'node:readline/promises'
 import { getHomeDir } from './config'
-import { commandExists, commandOutput, formatCommand } from './private/exec'
+import { applyPrivateCodexMcp } from './private/codex-mcp'
+import { applyPrivateCodexSkills } from './private/codex-skills'
+import { commandExists, commandOutput } from './private/exec'
 import { restoreSecretFileBundles } from './private/files'
 import { generatePrivateInventory } from './private/inventory'
 import { importIosSecrets, materializeIosCommand, runIosCommand } from './private/ios'
@@ -468,47 +470,9 @@ function printStatusError(error: unknown, check: boolean): void {
     process.exitCode = 1
 }
 
-function workstationRoot(manifest: PrivateManifest): string {
-  const configured = manifest.policy?.relatedRepositories?.find(repo => repo.id === 'workstation')?.path
-  if (configured) {
-    const resolved = path.resolve(expandHome(configured))
-    if (fs.existsSync(path.join(resolved, 'scripts')))
-      return resolved
-  }
-
-  return path.resolve(import.meta.dirname, '..', '..', '..')
-}
-
-function runWorkstationScript(manifest: PrivateManifest, script: string, args: string[], dryRun: boolean): void {
-  if (!commandExists('pnpm'))
-    throw new Error('pnpm is required to apply Codex private overlay entries')
-
-  const root = workstationRoot(manifest)
-  const scriptPath = path.join(root, 'scripts', script)
-  const commandArgs = ['exec', 'tsx', scriptPath, ...args]
-  console.log(`${dryRun ? '[dry-run]' : '[apply]'} ${formatCommand('pnpm', commandArgs)}`)
-
-  const result = spawnSync('pnpm', commandArgs, {
-    cwd: root,
-    stdio: 'inherit',
-  })
-
-  if (result.status !== 0)
-    throw new Error(`workstation script failed: ${script}`)
-}
-
 function applyCodexOverlay(manifestPath: string, manifest: PrivateManifest, dryRun: boolean): void {
-  const hasSkillInstalls = Boolean(manifest.skills?.install?.length)
-  const hasMcpFragments = privateMcpFragments(manifest).length > 0
-
-  if (!hasSkillInstalls && !hasMcpFragments) {
-    console.log('[skip] no Codex skill installs or MCP fragments')
-    return
-  }
-
-  const dryRunArgs = dryRun ? ['--dry-run'] : []
-  runWorkstationScript(manifest, 'codex-skills.ts', ['install', '--private-manifest', manifestPath, ...dryRunArgs], dryRun)
-  runWorkstationScript(manifest, 'codex-mcp.ts', ['install', '--private-manifest', manifestPath, ...dryRunArgs], dryRun)
+  applyPrivateCodexSkills(manifestPath, manifest, dryRun)
+  applyPrivateCodexMcp(manifestPath, manifest, dryRun)
 }
 
 function apply(manifestPath: string, manifest: PrivateManifest, dryRun: boolean): void {

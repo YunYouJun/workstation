@@ -60,7 +60,12 @@ After reviewing the dry-run output, apply the dotfiles:
 
 ```bash
 workstation dotfiles pull --force
+apm install --global --frozen
 ```
+
+`apm install --global --frozen` only replays public Skills and standard MCP
+already pinned by `~/.apm/apm.lock.yaml`; it never resolves newer state silently
+on a fresh machine.
 
 For more copyable command blocks, see [Copyable Commands](./commands.md).
 
@@ -76,8 +81,8 @@ For more copyable command blocks, see [Copyable Commands](./commands.md).
 ## Suggested Phases
 
 1. Install command-line prerequisites.
-2. Restore dotfiles.
-3. Configure local secrets.
+2. Restore dotfiles and the global APM lock.
+3. Configure local secrets and the private overlay.
 4. Clone common projects.
 5. Install editor extensions and language tooling.
 6. Run `doctor` again.

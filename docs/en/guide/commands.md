@@ -80,14 +80,13 @@ pnpm install
 pnpm build
 ```
 
-Sync personal Codex skills and the MCP fragment:
+Apply the global APM manifest and replay public Skills and standard MCP from the
+lockfile:
 
 ```bash
-pnpm skills:status
-pnpm skills:install
-pnpm mcp:status
-pnpm mcp:install --dry-run
-pnpm mcp:install
+wst df chezmoi apply
+apm install --global --frozen
+apm deps list --global
 ```
 
 Read a private dotfiles overlay and preview the local ignored config that would

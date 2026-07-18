@@ -76,7 +76,7 @@ A private repository can expose `config/sync-manifest.json`:
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/YunYouJun/workstation/main/schemas/codex-tools-manifest.schema.json",
+  "$schema": "https://raw.githubusercontent.com/YunYouJun/workstation/main/schemas/private-overlay.schema.json",
   "version": 1,
   "visibility": "private",
   "workstationOverlay": {
@@ -87,8 +87,7 @@ A private repository can expose `config/sync-manifest.json`:
       "inventory",
       "mcp-export",
       "op-inject-template",
-      "codex-skill-install",
-      "codex-mcp-fragment",
+      "private-skill-install",
       "managed-block-fragment"
     ],
     "allowedReadPaths": [
@@ -139,7 +138,7 @@ A private repository can expose `config/sync-manifest.json`:
         "path": "$HOME/.codex/config.toml",
         "format": "toml-codex",
         "syncMode": "inventory-only",
-        "managedBy": "workstation codex-mcp.toml managed block plus local unmanaged entries"
+        "managedBy": "APM for standard MCP plus workstation private managed block"
       }
     ]
   }

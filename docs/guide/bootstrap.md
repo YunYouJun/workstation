@@ -59,7 +59,11 @@ workstation dotfiles pull --dry-run
 
 ```bash
 workstation dotfiles pull --force
+apm install --global --frozen
 ```
+
+`apm install --global --frozen` 只重放 `~/.apm/apm.lock.yaml` 已锁定的公开
+Skills 与标准 MCP，不会在新机器上静默解析新版本。
 
 更多可直接复制的命令块见[可复制命令](./commands.md)。
 
@@ -75,8 +79,8 @@ workstation dotfiles pull --force
 ## 建议阶段
 
 1. 安装命令行前置工具。
-2. 恢复 dotfiles。
-3. 配置本地密钥。
+2. 恢复 dotfiles 和全局 APM lock。
+3. 配置本地密钥与私有 overlay。
 4. Clone 常用项目。
 5. 安装编辑器扩展和语言工具链。
 6. 再次运行 `doctor`。

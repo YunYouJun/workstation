@@ -9,8 +9,8 @@ export function scanSecrets(options: PrivateOptions): void {
 
   if (commandExists('gitleaks')) {
     const args = options.scanMode === 'staged'
-      ? ['protect', '--staged', '--verbose']
-      : ['detect', '--source', repoRoot, '--no-git', '--verbose']
+      ? ['protect', '--staged', '--redact', '--verbose']
+      : ['detect', '--source', repoRoot, '--no-git', '--redact', '--verbose']
     const result = spawnSync('gitleaks', args, {
       cwd: repoRoot,
       stdio: 'inherit',

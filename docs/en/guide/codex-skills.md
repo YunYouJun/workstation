@@ -1,213 +1,116 @@
-# Codex Skills
+# Agent Skills and APM
 
-Codex skills are reusable workflows. A skill packages task-specific
-instructions, references, and optional scripts so Codex can follow the same
-process reliably across threads.
+This repository uses [APM (Agent Package Manager)](https://microsoft.github.io/apm/)
+for public, portable Agent Skills and standard MCP servers. APM is the only
+source of truth for that lifecycle: workstation no longer maintains a second
+Skills manifest, Git downloader, status command, or MCP mapping script.
 
-Use a skill when the workflow is reusable. Use a script or package-manager
-manifest when the output should be deterministic machine state.
+## Files and ownership
 
-## Invocation
+| File or tool | Ownership |
+| --- | --- |
+| `home/dot_apm/apm.yml` | Declares public Skills, standard MCP, and agent targets |
+| `home/dot_apm/private_apm.lock.yaml` | APM-generated lock; `private_` is chezmoi's `0600` source-state marker |
+| `~/.apm/apm.yml` | Global APM manifest after chezmoi apply |
+| `~/.apm/apm.lock.yaml` | Global APM lock; never hand-edit it |
+| `wst private` | Private local Skills, Codex-only MCP, 1Password, and inventory-only config |
 
-Invoke a skill explicitly when you know which workflow you want:
+APM deploys shared Skills to `~/.agents/skills` by default. Repository workflows
+remain under `.agents/skills`. Local Skills explicitly declared by the private
+overlay remain under `~/.codex/skills`, so private paths never enter the public
+manifest.
 
-```text
-$skill-name
-```
+## Restore a new machine
 
-In Codex CLI and IDE surfaces, use `/skills` or type `$` to choose a skill.
-Installed plugins may also expose skills that can be invoked explicitly from
-the prompt.
-
-Codex can also invoke skills implicitly when your request matches the skill
-description. Good skill descriptions should say exactly when the skill should
-and should not trigger.
-
-## Skill Shape
-
-A skill is a directory with a `SKILL.md` file:
-
-```md
----
-name: workstation-software
-description: Maintain the workstation software catalog, Brewfiles, and docs.
----
-
-Follow the repository's software setup workflow.
-```
-
-Optional folders can hold scripts, references, templates, or assets. Codex first
-sees the skill name, description, and path. It reads the full `SKILL.md` only
-after deciding the skill applies.
-
-## Local Locations
-
-Codex discovers skills from several scopes:
-
-| Scope | Location | Use |
-| --- | --- | --- |
-| Repo | `.agents/skills` | Workflows shared by this repository |
-| User | `$CODEX_HOME/skills` (defaults to `~/.codex/skills`) | Personal workflows across repositories |
-| Admin | `/etc/codex/skills` | Machine or organization defaults |
-| System | Bundled with Codex | Built-in workflows such as skill creation |
-
-Repo skills can also live in parent directories when Codex is launched inside a
-nested project. Restart Codex if a new or changed skill does not appear.
-
-## Create or Install
-
-Create a new skill with the built-in creator:
-
-```text
-$skill-creator
-```
-
-Install curated or external skills for local use:
-
-```text
-$skill-installer
-```
-
-For a workflow that should be distributed to other developers, package it as a
-plugin instead of only checking in a local skill.
-
-## Personal Skill Manifest
-
-This repository keeps reusable personal skills in
-[`config/codex-tools.manifest.json`](../../../config/codex-tools.manifest.json).
-The sync script installs them into `$CODEX_HOME/skills`, which defaults to
-`~/.codex/skills`.
-Public-safe local candidates are recorded in `codex-skills.inventory.md`. That
-file is only an inventory; promote entries into the install manifest only after
-their upstream source is known.
+The core Brewfile installs APM. Apply dotfiles, then replay the lock in frozen
+mode:
 
 ```bash
-pnpm skills:list      # show configured sources
-pnpm skills:status    # show installed/missing skills
-pnpm skills:check     # fail when a configured skill is missing
-pnpm skills:install   # install missing skills
+brew bundle --file Brewfile
+wst df chezmoi apply
+apm install --global --frozen
 ```
 
-To add another personal skill, add an entry under `skills.install` with `id`,
-`description`, `source`, and optional `targetName`. `source.ref` can track
-`main`, or it can be pinned to a tag or commit for more reproducible machine
-migrations.
-
-```json
-{
-  "skills": {
-    "install": [
-      {
-        "id": "ui-ux-pro-max",
-        "targetName": "ui-ux-pro-max",
-        "description": "Broad UI/UX design intelligence for web, mobile, dashboards, landing pages, and component review.",
-        "visibility": "public",
-        "syncMode": "install",
-        "source": {
-          "type": "github",
-          "repo": "nextlevelbuilder/ui-ux-pro-max-skill",
-          "path": ".claude/skills/ui-ux-pro-max",
-          "ref": "main"
-        }
-      }
-    ]
-  }
-}
-```
-
-Here `id` is the unique workstation manifest key, and `targetName` is the
-directory installed at `$CODEX_HOME/skills/<targetName>`. In most cases, keep
-`id`, `targetName`, and the `name` inside `SKILL.md` the same. Prefer a small,
-intentional list: too many global skills can overlap in their trigger
-descriptions and make Codex noisier.
-
-## Codex MCP Sync
-
-Codex MCP servers use Codex's native `config.toml` shape. This repository uses
-[`schemas/codex-tools-manifest.schema.json`](../../../schemas/codex-tools-manifest.schema.json)
-to validate manifest metadata, but it does not redefine MCP server TOML or sync
-the full `~/.codex/config.toml`. Instead, `config/codex-tools.manifest.json`
-declares `codex-mcp.toml` as a reviewable MCP fragment, and the sync script
-merges it into a managed block in
-`$CODEX_HOME/config.toml`, which defaults to `~/.codex/config.toml`.
+Inspect global dependencies with:
 
 ```bash
-pnpm mcp:list             # show the repository MCP fragment
-pnpm mcp:status           # show managed block status
-pnpm mcp:check            # fail when the managed block is missing or stale
-pnpm mcp:install --dry-run
-pnpm mcp:install          # merge the managed block and back up config.toml
+apm deps list --global
+apm deps tree --global
 ```
 
-The MCP fragment should only contain `[mcp_servers.*]`, plugin MCP policy, and
-the small set of top-level MCP OAuth callback settings. Do not commit
-`auth.json`, OAuth tokens, bearer token values, plugin runtime state, or
-machine-generated MCP servers. When credentials are needed, commit only the
-environment variable name, such as `bearer_token_env_var = "FIGMA_OAUTH_TOKEN"`.
+## Add or update dependencies
 
-## Relationship With Private Dotfiles
+Let APM mutate the global manifest, install, and generate the lock. Then capture
+both files back into the chezmoi source tree:
 
-`workstation` is the reproducible install source:
-`config/codex-tools.manifest.json` decides which personal skills are installed
-and which MCP fragments enter the workstation managed block inside
-`~/.codex/config.toml`.
+```bash
+apm install --global owner/repo --skill skill-name
+wst df chezmoi re-add ~/.apm/apm.yml ~/.apm/apm.lock.yaml
+git diff -- home/dot_apm
+```
 
-A private `dotfiles` repository may record local skills/MCP inventory, internal
-server names, and 1Password `op://...` references, but it should not directly
-copy over or replace `~/.codex/skills` or the full `~/.codex/config.toml`. When
-a configuration should become reproducible across machines, promote it into the
-`workstation` manifest or managed block.
+Preview and explicitly approve updates:
 
-## Skills vs Plugins vs Scripts
+```bash
+apm update --global --dry-run
+apm update --global
+wst df chezmoi re-add ~/.apm/apm.yml ~/.apm/apm.lock.yaml
+apm install --global --frozen
+```
+
+Never hand-edit `apm.lock.yaml`. The manifest may track `main` or a version
+range; the lock still pins the resolved commit, and only an explicit
+`apm update --global` advances it.
+
+## Standard MCP and private Codex MCP
+
+Use APM for public, portable MCP servers:
+
+```bash
+apm install --global --mcp io.github.example/server
+```
+
+TOML containing internal server names, private local commands, Codex plugin
+configuration, or top-level OAuth callback fields does not belong in the public
+APM manifest. It remains in the allowlisted private overlay:
+
+```bash
+wst private apply --dry-run
+wst private apply --yes
+```
+
+Private apply only writes the `workstation managed private mcp` block in
+`~/.codex/config.toml`; it never replaces the full config.
+
+## Skill shape and triggering
+
+A Skill is a directory containing `SKILL.md`, optionally with scripts,
+references, and assets. Agents match the name and description in `SKILL.md`
+frontmatter, and users can explicitly invoke `$skill-name`.
+
+Keep global Skills intentional and small. Overlapping descriptions increase
+false triggers; workflows without cross-project value should remain in the
+repository's `.agents/skills` or the private overlay.
+
+## Ownership boundary
 
 | Need | Use |
 | --- | --- |
-| Reusable instructions for Codex | Skill |
-| Shareable bundle with skills, app integrations, MCP servers, or assets | Plugin |
-| Deterministic local install or machine-state change | Script or manifest |
-| Scheduled checks or reminders | Automation |
-| Repo conventions and commands | `AGENTS.md` |
+| Public Skills, standard MCP, locking, updates, and replay | APM |
+| Repository workflows | `.agents/skills` |
+| Private local Skills, Codex-only MCP, and 1Password | `wst private` |
+| Software installation | `Brewfile` / `pnpm software:*` |
+| Repository conventions | `AGENTS.md` |
 
-For this workstation repository, software installation should stay in
-`Brewfile`, `Brewfile.apps`, and `pnpm software:*`. A skill can help maintain
-the catalog, explain choices, or run the documented flow, but it should not be
-the only place that knows what to install.
-
-This repository also provides a repo-scoped skill:
-
-| Skill | Use |
-| --- | --- |
-| `$workstation-projects` | Have Codex follow the dry-run, `gh`, `ghq`, and `wst p active` workflow for project checkouts. |
-
-## Example Workflow
-
-Ask Codex to use a skill for maintenance:
-
-```text
-$workstation-software update the software catalog for a new Mac setup
-```
-
-Ask Codex to use the project checkout workflow:
-
-```text
-$workstation-projects preview cloning YunYouJun's 50 most active repositories
-```
-
-Ask Codex to run the deterministic script for machine state:
-
-```text
-Check missing software and install the app manifest.
-```
-
-Codex should resolve that second request to:
-
-```bash
-pnpm software:missing
-pnpm software:install --apps
-```
+APM v0.25.0 does not expose a global mode for `audit`. Validate global
+manifest/lock consistency and replay the locked state with
+`apm install --global --frozen`. Do not run project-scope `apm audit --ci` from
+`~/.apm`, because it interprets deployed paths relative to the wrong project
+root.
 
 ## References
 
-- [Agent Skills](https://developers.openai.com/codex/skills)
-- [Plugins](https://developers.openai.com/codex/plugins)
-- [Build plugins](https://developers.openai.com/codex/plugins/build)
+- [APM documentation](https://microsoft.github.io/apm/)
+- [APM install](https://microsoft.github.io/apm/reference/cli/install/)
+- [Agent Skills](https://agentskills.io/)
+- [Model Context Protocol](https://modelcontextprotocol.io/)
