@@ -99,8 +99,10 @@ Git 2.55 and newer can register global named configured hooks while preserving
 each repository's own `.git/hooks`. Workstation's `pre-push` guard only checks
 `github.com` remotes. It builds a local thin-pack estimate from the old and new
 object IDs supplied to the hook, then asks through a macOS dialog before the
-bulk pack upload when the estimate exceeds the default `800 KiB`. Cancelling,
-or having neither a dialog nor an interactive terminal, blocks the push.
+bulk pack upload when the estimate exceeds the default `800 KiB`. Packs below
+the `10 MiB` estimation cap show a concrete size; estimation stops
+at the cap and reports "over 10 MiB" for larger packs. Cancelling, or having
+neither a dialog nor an interactive terminal, blocks the push.
 
 Sync the executable first, then preview and enable the optional init task:
 

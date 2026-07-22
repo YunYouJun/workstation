@@ -3,6 +3,7 @@
 set -eu
 
 DEFAULT_THRESHOLD_BYTES=819200
+MAX_ESTIMATE_BYTES=10485760
 HOOK_NAME='workstation-large-push-guard'
 
 remote_name=${1:-unknown}
@@ -106,20 +107,24 @@ done <"$updates_file"
 [ -s "$revisions_file" ] || exit 0
 
 threshold=$(read_threshold)
-limit=$((threshold + 1))
+estimate_limit=$MAX_ESTIMATE_BYTES
+if [ "$threshold" -gt "$estimate_limit" ]; then
+  estimate_limit=$threshold
+fi
+read_limit=$((estimate_limit + 1))
 mkfifo "$pack_fifo"
 
 git pack-objects --revs --stdout --thin --delta-base-offset -q \
   <"$revisions_file" >"$pack_fifo" 2>"$pack_error_file" &
 pack_pid=$!
 
-bytes=$(head -c "$limit" <"$pack_fifo" | wc -c | tr -d '[:space:]')
+bytes=$(head -c "$read_limit" <"$pack_fifo" | wc -c | tr -d '[:space:]')
 
-if [ "$bytes" -ge "$limit" ]; then
+if [ "$bytes" -ge "$read_limit" ]; then
   kill "$pack_pid" 2>/dev/null || true
   wait "$pack_pid" 2>/dev/null || true
-  threshold_label=$(format_bytes "$threshold")
-  confirm_push "超过 $threshold_label" 'Git 主体 pack 尚未上传。'
+  estimate_limit_label=$(format_bytes "$estimate_limit")
+  confirm_push "超过 $estimate_limit_label" 'Git 主体 pack 尚未上传。'
   exit $?
 fi
 
@@ -127,6 +132,12 @@ if ! wait "$pack_pid"; then
   error_message=$(sed -n '1p' "$pack_error_file")
   [ -n "$error_message" ] || error_message='git pack-objects 执行失败'
   confirm_push '未知' "无法估算 pack 大小：$error_message"
+  exit $?
+fi
+
+if [ "$bytes" -gt "$threshold" ]; then
+  estimate_label=$(format_bytes "$bytes")
+  confirm_push "$estimate_label" 'Git 主体 pack 尚未上传。'
   exit $?
 fi
 

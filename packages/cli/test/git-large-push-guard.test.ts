@@ -61,10 +61,11 @@ function runGit(repoRoot: string, env: NodeJS.ProcessEnv, args: string[]) {
   })
 }
 
-function writeFakeOsascript(binDir: string, exitCode: number, markerPath?: string) {
+function writeFakeOsascript(binDir: string, exitCode: number, markerPath?: string, estimatePath?: string) {
   const lines = [
     '#!/bin/sh',
     markerPath ? `: > "${markerPath}"` : ':',
+    estimatePath ? `printf '%s\n' "$4" > "${estimatePath}"` : ':',
     `exit ${exitCode}`,
     '',
   ]
@@ -116,6 +117,30 @@ describe('github large-push guard', () => {
 
     assert.equal(result.status, 1)
     assert.match(result.stderr, /已取消 GitHub 大流量推送/)
+  })
+
+  it('shows the exact estimated pack size when estimation completes', () => {
+    const fixture = createGuardFixture(32 * 1024, 1024)
+    const estimatePath = path.join(path.dirname(fixture.repoRoot), 'estimate')
+    writeFakeOsascript(fixture.binDir, 1, undefined, estimatePath)
+
+    const result = runGuard(fixture)
+
+    assert.equal(result.status, 1)
+    const estimate = fs.readFileSync(estimatePath, 'utf-8').trim()
+    assert.match(estimate, /^\d+ KiB$/)
+    assert.doesNotMatch(estimate, /超过/)
+  })
+
+  it('bounds estimation at 10 MiB', () => {
+    const fixture = createGuardFixture(11 * 1024 * 1024, 1024)
+    const estimatePath = path.join(path.dirname(fixture.repoRoot), 'estimate')
+    writeFakeOsascript(fixture.binDir, 1, undefined, estimatePath)
+
+    const result = runGuard(fixture)
+
+    assert.equal(result.status, 1)
+    assert.equal(fs.readFileSync(estimatePath, 'utf-8').trim(), '超过 10.0 MiB')
   })
 
   it('allows a large push after confirmation', () => {

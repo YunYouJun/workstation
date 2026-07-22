@@ -61,7 +61,7 @@ Codex Desktop 的内置终端有时会把交互式 shell 的 `TERM` 暴露为 `d
 
 ### GitHub 大 Push 确认
 
-Git 2.55 及以上版本可以通过 named configured hook 注册全局 hook，同时保留仓库自己的 `.git/hooks`。workstation 提供的 `pre-push` 守卫只检查 `github.com` remote；它根据 hook 收到的新旧 object ID 在本地生成 thin pack，超过默认 `800 KiB` 时，在主体 pack 上传前通过 macOS 对话框确认。取消或无法显示对话框且没有交互终端时，push 会被阻止。
+Git 2.55 及以上版本可以通过 named configured hook 注册全局 hook，同时保留仓库自己的 `.git/hooks`。workstation 提供的 `pre-push` 守卫只检查 `github.com` remote；它根据 hook 收到的新旧 object ID 在本地生成 thin pack，超过默认 `800 KiB` 时，在主体 pack 上传前通过 macOS 对话框确认。不超过 `10 MiB` 的 pack 会显示具体估算值；达到估算上限后会提前停止并显示“超过 10 MiB”。取消或无法显示对话框且没有交互终端时，push 会被阻止。
 
 先同步 executable，再预览和启用可选初始化任务：
 
