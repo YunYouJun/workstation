@@ -9,14 +9,44 @@ HOOK_NAME='workstation-large-push-guard'
 remote_name=${1:-unknown}
 remote_url=${2:-}
 
-is_github_remote() {
-  case "$1" in
-    git@github.com:*|github.com:*|*://github.com/*|*://github.com:*/*|*://*@github.com/*|*://*@github.com:*/*)
-      return 0
+github_repository_path() {
+  github_url=$1
+
+  case "$github_url" in
+    git@github.com:*|github.com:*) github_path=${github_url#*:} ;;
+    *://github.com/*) github_path=${github_url#*://github.com/} ;;
+    *://*@github.com/*) github_path=${github_url#*@github.com/} ;;
+    *://github.com:*/*)
+      github_path=${github_url#*://github.com:}
+      github_path=${github_path#*/}
       ;;
+    *://*@github.com:*/*)
+      github_path=${github_url#*@github.com:}
+      github_path=${github_path#*/}
+      ;;
+    *) return 1 ;;
   esac
 
-  return 1
+  github_path=${github_path%%\#*}
+  github_path=${github_path%%\?*}
+  github_path=${github_path%/}
+  github_path=${github_path%.git}
+  printf '%s\n' "$github_path"
+}
+
+is_github_remote() {
+  github_repository_path "$1" >/dev/null
+}
+
+format_repository_label() {
+  repository_url=$1
+  fallback_name=$2
+
+  if repository_path=$(github_repository_path "$repository_url"); then
+    printf 'github.com/%s\n' "$repository_path"
+  else
+    printf '%s\n' "$fallback_name"
+  fi
 }
 
 is_nonzero_oid() {
@@ -48,15 +78,20 @@ confirm_push() {
   reason=$2
   repo_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
   repo_name=${repo_root##*/}
+  repository_label=$(format_repository_label "$remote_url" "$repo_name")
+  remote_label=$remote_name
+  if [ "$remote_name" = "$remote_url" ]; then
+    remote_label='直接地址'
+  fi
 
   if osascript_path=$(command -v osascript 2>/dev/null); then
-    if "$osascript_path" - "$repo_name" "$remote_name" "$estimate" "$reason" <<'APPLESCRIPT' >/dev/null
+    if "$osascript_path" - "$repository_label" "$remote_label" "$estimate" "$reason" <<'APPLESCRIPT' >/dev/null
 on run argv
-  set repoName to item 1 of argv
-  set remoteName to item 2 of argv
+  set repositoryLabel to item 1 of argv
+  set remoteLabel to item 2 of argv
   set estimateText to item 3 of argv
   set reasonText to item 4 of argv
-  set messageText to "仓库：" & repoName & return & "远程：" & remoteName & "（github.com）" & return & "预计 Git 上传量：" & estimateText & return & return & reasonText
+  set messageText to "仓库：" & repositoryLabel & return & "远程：" & remoteLabel & "（github.com）" & return & "预计 Git 上传量：" & estimateText & return & return & reasonText
   display dialog messageText with title "确认 GitHub 大流量推送" buttons {"取消", "继续推送"} default button "取消" cancel button "取消" with icon caution
 end run
 APPLESCRIPT
@@ -69,7 +104,7 @@ APPLESCRIPT
   fi
 
   if [ -t 2 ] && [ -r /dev/tty ] && [ -w /dev/tty ]; then
-    printf '\nGitHub 大流量推送：%s/%s（%s）。是否继续？[y/N] ' "$repo_name" "$remote_name" "$estimate" >/dev/tty
+    printf '\nGitHub 大流量推送：%s/%s（%s）。是否继续？[y/N] ' "$repository_label" "$remote_label" "$estimate" >/dev/tty
     answer=''
     IFS= read -r answer </dev/tty || true
     case "$answer" in
@@ -96,15 +131,27 @@ pack_error_file="$tmp_dir/pack-error"
 cat >"$updates_file"
 : >"$revisions_file"
 
-while read -r local_ref local_oid remote_ref remote_oid; do
+has_new_remote_ref=false
+while read -r _local_ref local_oid _remote_ref remote_oid; do
   is_nonzero_oid "$local_oid" || continue
   printf '%s\n' "$local_oid" >>"$revisions_file"
   if is_nonzero_oid "$remote_oid"; then
     printf '^%s\n' "$remote_oid" >>"$revisions_file"
+  else
+    has_new_remote_ref=true
   fi
 done <"$updates_file"
 
 [ -s "$revisions_file" ] || exit 0
+
+if [ "$has_new_remote_ref" = true ]; then
+  GIT_TERMINAL_PROMPT=0 git ls-remote --refs "$remote_url" 2>/dev/null |
+    while read -r advertised_oid _advertised_ref; do
+      if git cat-file -e "$advertised_oid^{object}" 2>/dev/null; then
+        printf '^%s\n' "$advertised_oid"
+      fi
+    done >>"$revisions_file"
+fi
 
 threshold=$(read_threshold)
 estimate_limit=$MAX_ESTIMATE_BYTES
