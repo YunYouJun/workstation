@@ -508,6 +508,7 @@ wst init -i
 ## 最佳实践
 
 - 普通项目 checkout 优先使用 `ghq`。
+- 偏好线性历史且仓库未明确采用 merge 工作流时，推荐设置 `git config --global pull.rebase true`，避免 `git pull` 产生仅用于同步的 merge commit。
 - Git 提交身份按 `~/repos/<host>/...` 目录切换，远端认证账号按 SSH host 或 credential helper 切换。
 - 开启 `user.useConfigOnly`，让未匹配身份的仓库无法提交。
 - 按用途分组项目，而不是按历史偶然性分组；分组不应改变 clone 目标路径。
@@ -518,6 +519,19 @@ wst init -i
 - 目标目录应可配置，默认根目录为 `~/repos`。
 - GitHub 特定的列表和认证流程使用 `gh`。
 - “活跃仓库”发现使用 `PUSHED_AT` 排序。
+
+`pull.rebase=true` 只会 rebase 本地尚未推送的提交，不会重写远端已有提交。发生冲突时，使用 `git rebase --continue` 继续，或使用 `git rebase --abort` 放弃本次 rebase。明确采用 merge 工作流的仓库可以局部覆盖：
+
+```bash
+git config pull.rebase false
+```
+
+如果不希望自动 rebase，而是希望分支出现分叉时直接停止，可以改用更保守的 fast-forward-only 策略：
+
+```bash
+git config --global pull.rebase false
+git config --global pull.ff only
+```
 
 清单模式可以继续扩展更多分组，同时不需要把私有仓库名放进公开 Git。对于普通 Git 仓库，它会生成与 `ghq` 一致的目标路径。
 

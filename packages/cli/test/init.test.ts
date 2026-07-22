@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, describe, it } from 'vitest'
-import { createTempDir, removePath, runCli, writeFile } from './utils'
+import { createTempDir, gitLargePushGuardPath, removePath, runCli, writeFile } from './utils'
 
 let tempDir: string | undefined
 
@@ -35,6 +35,22 @@ function countOccurrences(value: string, pattern: string) {
   return value.split(pattern).length - 1
 }
 
+function writeFakeGit(binDir: string, version = '2.55.0') {
+  const scriptPath = path.join(binDir, 'git')
+  writeFile(scriptPath, [
+    '#!/usr/bin/env node',
+    `console.log("git version ${version}")`,
+    '',
+  ].join('\n'))
+  fs.chmodSync(scriptPath, 0o755)
+
+  writeFile(path.join(binDir, 'git.cmd'), [
+    '@echo off',
+    `node "${scriptPath}" %*`,
+    '',
+  ].join('\r\n'))
+}
+
 afterEach(() => {
   removePath(tempDir)
   tempDir = undefined
@@ -47,7 +63,70 @@ describe('init CLI', () => {
 
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
     assert.match(result.stdout, /git\.include-if/)
+    assert.match(result.stdout, /git\.large-push-guard/)
     assert.match(result.stdout, /recommended/)
+    assert.match(result.stdout, /optional/)
+  })
+
+  it('blocks the large-push guard setup until its executable is synced', () => {
+    const fixture = createInitFixture()
+    const binDir = path.join(tempDir!, 'bin')
+    writeFakeGit(binDir)
+
+    const result = runCli(
+      ['init', 'git.large-push-guard', '--yes'],
+      fixture.repoRoot,
+      fixture.homeRoot,
+      { PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}` },
+    )
+
+    assert.equal(result.status, 1)
+    assert.match(`${result.stdout}\n${result.stderr}`, /missing or not executable/)
+    assert.match(`${result.stdout}\n${result.stderr}`, /dotfiles chezmoi apply/)
+    assert.equal(fs.existsSync(gitConfigPath(fixture.homeRoot)), false)
+  })
+
+  it('installs the Git 2.55 configured hook idempotently', () => {
+    const fixture = createInitFixture()
+    const binDir = path.join(tempDir!, 'bin')
+    const guardPath = gitLargePushGuardPath(fixture.homeRoot)
+    writeFakeGit(binDir)
+    writeFile(guardPath, '#!/bin/sh\nexit 0\n')
+    fs.chmodSync(guardPath, 0o755)
+
+    const args = ['init', 'git.large-push-guard', '--yes']
+    const env = { PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}` }
+    const first = runCli(args, fixture.repoRoot, fixture.homeRoot, env)
+    const second = runCli(args, fixture.repoRoot, fixture.homeRoot, env)
+
+    assert.equal(first.status, 0, `${first.stdout}\n${first.stderr}`)
+    assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`)
+    assert.match(second.stdout, /\[unchanged\] ~\/\.gitconfig/)
+
+    const globalConfig = fs.readFileSync(gitConfigPath(fixture.homeRoot), 'utf-8')
+    assert.equal(countOccurrences(globalConfig, '[hook "workstation-large-push-guard"]'), 1)
+    assert.match(globalConfig, /command = ~\/\.local\/libexec\/git-confirm-large-push/)
+    assert.match(globalConfig, /event = pre-push/)
+  })
+
+  it('requires Git 2.55 for the configured large-push hook', () => {
+    const fixture = createInitFixture()
+    const binDir = path.join(tempDir!, 'bin')
+    const guardPath = gitLargePushGuardPath(fixture.homeRoot)
+    writeFakeGit(binDir, '2.54.0')
+    writeFile(guardPath, '#!/bin/sh\nexit 0\n')
+    fs.chmodSync(guardPath, 0o755)
+
+    const result = runCli(
+      ['init', 'git.large-push-guard', '--yes'],
+      fixture.repoRoot,
+      fixture.homeRoot,
+      { PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}` },
+    )
+
+    assert.equal(result.status, 1)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Git 2\.54\.0 is too old/)
+    assert.equal(fs.existsSync(gitConfigPath(fixture.homeRoot)), false)
   })
 
   it('previews git includeIf identity routing by default', () => {

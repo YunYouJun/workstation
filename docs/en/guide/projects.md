@@ -585,6 +585,9 @@ wst init -i
 ## Best Practices
 
 - Prefer `ghq` for ordinary project checkouts.
+- When linear history is preferred and a repository does not explicitly use a
+  merge workflow, set `git config --global pull.rebase true` to avoid merge
+  commits created only to synchronize during `git pull`.
 - Switch Git commit identity by `~/repos/<host>/...` path, and switch remote
   authentication by SSH host or credential helper.
 - Enable `user.useConfigOnly` so repositories without a matching identity cannot
@@ -598,6 +601,24 @@ wst init -i
 - Keep target directories configurable, with `~/repos` as the default root.
 - Use `gh` for GitHub-specific listing and authentication workflows.
 - Use `PUSHED_AT` ordering for active repository discovery.
+
+`pull.rebase=true` rebases only local commits that have not been pushed; it does
+not rewrite commits already present on the remote. After a conflict, use
+`git rebase --continue` to proceed or `git rebase --abort` to abandon the
+rebase. Override the default in a repository that explicitly uses a merge
+workflow:
+
+```bash
+git config pull.rebase false
+```
+
+If automatic rebasing is not desired and pulls should stop when branches have
+diverged, use the more conservative fast-forward-only strategy instead:
+
+```bash
+git config --global pull.rebase false
+git config --global pull.ff only
+```
 
 Manifest mode can keep expanding around this shape without forcing private
 repository names into public Git. For ordinary Git repositories, it produces the

@@ -10,6 +10,8 @@ old `dotfiles` command remains as a compatibility entrypoint.
 - `home/dot_config/starship.toml` -> `~/.config/starship.toml`
 - `home/dot_zshrc` -> `~/.zshrc`
 - `home/Library/Application Support/Code/User/settings.json` -> `~/Library/Application Support/Code/User/settings.json`
+- `home/Library/Application Support/CodeBuddy CN/User/settings.json` -> `~/Library/Application Support/CodeBuddy CN/User/settings.json`
+- `home/dot_local/libexec/executable_git-confirm-large-push` -> `~/.local/libexec/git-confirm-large-push`
 
 ## Commands
 
@@ -46,6 +48,7 @@ Use the CLI diff for everyday checks because it masks local secrets before print
 - Pull restores placeholders from `.env.local` when possible.
 - Push masks matching secret-like shell assignments before writing to the repo.
 - Force writes back up existing files first.
+- Scripts marked as executable are normalized to mode `0755` after copy/push.
 - macOS-only files can be excluded on other platforms with `home/.chezmoiignore.tmpl`.
 
 Keep this layer focused on files that should map directly into `$HOME`. Higher-level setup tasks belong in scripts or docs.

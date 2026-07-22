@@ -1,0 +1,17 @@
+{
+  "codingcopilot.enableInlineChat": true,
+  "codingcopilot.enableInlineChatIDEShortcutsTip": false,
+  "codingcopilot.commitMessageStyle": "Auto",
+  "codingcopilot.commitMessageLanguage": "zh_CN",
+  "codingcopilot.toolbarOnSelection": false,
+  "codingcopilot.enableAutoCompletions": true,
+  "codingcopilot.enableNextEditSuggestions": true,
+  "codingcopilot.generationPreference": "intelligentMode",
+  "codingcopilot.selectedCompletionModel": "",
+  "codingcopilot.enableCompletionLanguage": {
+    "scmInput": false
+  },
+  "codingcopilot.enableFloatShortcut": true,
+  "codingcopilot.enableIDENotification": true,
+  "terminal.integrated.fontFamily": "Hack Nerd Font Mono, Source Code Pro, monospace"
+}

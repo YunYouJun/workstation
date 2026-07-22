@@ -30,6 +30,22 @@ export function repoCodexAgentsPath(root: string) {
   return path.join(root, 'home', 'dot_codex', 'AGENTS.md')
 }
 
+export function codeBuddyCnSettingsPath(root: string) {
+  return path.join(root, 'Library', 'Application Support', 'CodeBuddy CN', 'User', 'settings.json')
+}
+
+export function repoCodeBuddyCnSettingsPath(root: string) {
+  return path.join(root, 'home', 'Library', 'Application Support', 'CodeBuddy CN', 'User', 'settings.json')
+}
+
+export function gitLargePushGuardPath(root: string) {
+  return path.join(root, '.local', 'libexec', 'git-confirm-large-push')
+}
+
+export function repoGitLargePushGuardPath(root: string) {
+  return path.join(root, 'home', 'dot_local', 'libexec', 'executable_git-confirm-large-push')
+}
+
 export function zshrcPath(root: string) {
   return path.join(root, '.zshrc')
 }

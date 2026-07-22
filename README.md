@@ -120,8 +120,9 @@ Current managed home files live under `home/`:
 - `home/dot_config/starship.toml` -> `~/.config/starship.toml`
 - `home/dot_zshrc` -> `~/.zshrc`
 - `home/Library/Application Support/Code/User/settings.json` -> `~/Library/Application Support/Code/User/settings.json`
+- `home/Library/Application Support/CodeBuddy CN/User/settings.json` -> `~/Library/Application Support/CodeBuddy CN/User/settings.json`
 
-VSCode settings are macOS-only for now and are ignored by chezmoi on non-macOS hosts via [`home/.chezmoiignore.tmpl`](./home/.chezmoiignore.tmpl). Use `workstation dotfiles diff` for secret-safe diffs; raw `workstation dotfiles chezmoi diff` may show unmasked local values.
+VS Code and CodeBuddy CN settings are macOS-only for now and are ignored by chezmoi on non-macOS hosts via [`home/.chezmoiignore.tmpl`](./home/.chezmoiignore.tmpl). Use `workstation dotfiles diff` for secret-safe diffs; raw `workstation dotfiles chezmoi diff` may show unmasked local values.
 
 Run `workstation dotfiles doctor` after cloning or pulling this repo to verify `.chezmoiroot`, managed source files, local secret placeholders, and chezmoi availability.
 

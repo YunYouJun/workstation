@@ -1,0 +1,133 @@
+#!/bin/sh
+
+set -eu
+
+DEFAULT_THRESHOLD_BYTES=819200
+HOOK_NAME='workstation-large-push-guard'
+
+remote_name=${1:-unknown}
+remote_url=${2:-}
+
+is_github_remote() {
+  case "$1" in
+    git@github.com:*|github.com:*|*://github.com/*|*://github.com:*/*|*://*@github.com/*|*://*@github.com:*/*)
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
+is_nonzero_oid() {
+  case "$1" in
+    ''|*[!0]*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+read_threshold() {
+  configured=$(git config --type=int --get workstation.largePushGuardBytes 2>/dev/null || true)
+  case "$configured" in
+    ''|*[!0-9]*) printf '%s\n' "$DEFAULT_THRESHOLD_BYTES" ;;
+    *) printf '%s\n' "$configured" ;;
+  esac
+}
+
+format_bytes() {
+  awk -v bytes="$1" 'BEGIN {
+    if (bytes >= 1048576)
+      printf "%.1f MiB", bytes / 1048576
+    else
+      printf "%.0f KiB", bytes / 1024
+  }'
+}
+
+confirm_push() {
+  estimate=$1
+  reason=$2
+  repo_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+  repo_name=${repo_root##*/}
+
+  if osascript_path=$(command -v osascript 2>/dev/null); then
+    if "$osascript_path" - "$repo_name" "$remote_name" "$estimate" "$reason" <<'APPLESCRIPT' >/dev/null
+on run argv
+  set repoName to item 1 of argv
+  set remoteName to item 2 of argv
+  set estimateText to item 3 of argv
+  set reasonText to item 4 of argv
+  set messageText to "仓库：" & repoName & return & "远程：" & remoteName & "（github.com）" & return & "预计 Git 上传量：" & estimateText & return & return & reasonText
+  display dialog messageText with title "确认 GitHub 大流量推送" buttons {"取消", "继续推送"} default button "取消" cancel button "取消" with icon caution
+end run
+APPLESCRIPT
+    then
+      return 0
+    fi
+
+    printf '已取消 GitHub 大流量推送。\n' >&2
+    return 1
+  fi
+
+  if [ -t 2 ] && [ -r /dev/tty ] && [ -w /dev/tty ]; then
+    printf '\nGitHub 大流量推送：%s/%s（%s）。是否继续？[y/N] ' "$repo_name" "$remote_name" "$estimate" >/dev/tty
+    answer=''
+    IFS= read -r answer </dev/tty || true
+    case "$answer" in
+      y|Y|yes|YES) return 0 ;;
+    esac
+  else
+    printf '无法请求确认：osascript 与交互式终端均不可用。\n' >&2
+  fi
+
+  printf '已阻止 GitHub 大流量推送。如需仅在当前仓库禁用，请运行：git config hook.%s.enabled false\n' "$HOOK_NAME" >&2
+  return 1
+}
+
+is_github_remote "$remote_url" || exit 0
+
+tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/git-large-push.XXXXXX")
+trap 'rm -rf "$tmp_dir"' EXIT HUP INT TERM
+
+updates_file="$tmp_dir/updates"
+revisions_file="$tmp_dir/revisions"
+pack_fifo="$tmp_dir/pack"
+pack_error_file="$tmp_dir/pack-error"
+
+cat >"$updates_file"
+: >"$revisions_file"
+
+while read -r local_ref local_oid remote_ref remote_oid; do
+  is_nonzero_oid "$local_oid" || continue
+  printf '%s\n' "$local_oid" >>"$revisions_file"
+  if is_nonzero_oid "$remote_oid"; then
+    printf '^%s\n' "$remote_oid" >>"$revisions_file"
+  fi
+done <"$updates_file"
+
+[ -s "$revisions_file" ] || exit 0
+
+threshold=$(read_threshold)
+limit=$((threshold + 1))
+mkfifo "$pack_fifo"
+
+git pack-objects --revs --stdout --thin --delta-base-offset -q \
+  <"$revisions_file" >"$pack_fifo" 2>"$pack_error_file" &
+pack_pid=$!
+
+bytes=$(head -c "$limit" <"$pack_fifo" | wc -c | tr -d '[:space:]')
+
+if [ "$bytes" -ge "$limit" ]; then
+  kill "$pack_pid" 2>/dev/null || true
+  wait "$pack_pid" 2>/dev/null || true
+  threshold_label=$(format_bytes "$threshold")
+  confirm_push "超过 $threshold_label" 'Git 主体 pack 尚未上传。'
+  exit $?
+fi
+
+if ! wait "$pack_pid"; then
+  error_message=$(sed -n '1p' "$pack_error_file")
+  [ -n "$error_message" ] || error_message='git pack-objects 执行失败'
+  confirm_push '未知' "无法估算 pack 大小：$error_message"
+  exit $?
+fi
+
+exit 0

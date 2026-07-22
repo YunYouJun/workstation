@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
@@ -69,7 +70,10 @@ interface GitIdentityProfile {
 }
 
 const GIT_INCLUDE_IF_TASK_ID = 'git.include-if'
+const GIT_LARGE_PUSH_GUARD_TASK_ID = 'git.large-push-guard'
 const DEFAULT_GIT_HOST = 'github.com'
+const GIT_LARGE_PUSH_GUARD_COMMAND = '~/.local/libexec/git-confirm-large-push'
+const GIT_LARGE_PUSH_GUARD_SECTION = '[hook "workstation-large-push-guard"]'
 
 const tasks: InitTaskDefinition[] = [
   {
@@ -80,6 +84,15 @@ const tasks: InitTaskDefinition[] = [
     createPlan: createGitIncludeIfPlan,
     apply: applyFileChangePlan,
     verify: verifyFileChangePlan,
+  },
+  {
+    id: GIT_LARGE_PUSH_GUARD_TASK_ID,
+    title: 'GitHub large-push confirmation guard',
+    description: 'Confirm GitHub pushes whose estimated Git pack exceeds 800 KiB.',
+    recommended: false,
+    createPlan: createGitLargePushGuardPlan,
+    apply: applyFileChangePlan,
+    verify: verifyGitLargePushGuardPlan,
   },
 ]
 
@@ -317,6 +330,62 @@ function createGitIncludeIfPlan(options: ResolvedInitOptions): InitTaskPlan {
   }
 }
 
+function createGitLargePushGuardPlan(): InitTaskPlan {
+  const messages: string[] = []
+  const gitVersion = readGitVersion()
+  const guardPath = path.join(getHomeDir(), '.local', 'libexec', 'git-confirm-large-push')
+
+  if (!gitVersion) {
+    messages.push('Git is unavailable; install Git 2.55 or newer before enabling configured hooks.')
+  }
+  else if (!supportsConfiguredHooks(gitVersion)) {
+    messages.push(`Git ${gitVersion} is too old; configured hooks require Git 2.55 or newer.`)
+  }
+
+  if (!isExecutableFile(guardPath)) {
+    messages.push(`Guard script is missing or not executable at ${displayPath(guardPath)}.`)
+    messages.push('Run "mkdir -p ~/.local/libexec && workstation dotfiles chezmoi apply ~/.local/libexec/git-confirm-large-push" before enabling the hook.')
+  }
+
+  if (messages.length > 0) {
+    return {
+      taskId: GIT_LARGE_PUSH_GUARD_TASK_ID,
+      title: 'GitHub large-push confirmation guard',
+      status: 'blocked',
+      messages,
+      changes: [],
+    }
+  }
+
+  const globalGitConfigPath = path.join(getHomeDir(), '.gitconfig')
+  const globalOriginal = readTextFile(globalGitConfigPath)
+  let globalNext = setGitConfigValue(
+    globalOriginal,
+    GIT_LARGE_PUSH_GUARD_SECTION,
+    'command',
+    GIT_LARGE_PUSH_GUARD_COMMAND,
+  )
+  globalNext = setGitConfigValue(globalNext, GIT_LARGE_PUSH_GUARD_SECTION, 'event', 'pre-push')
+
+  return {
+    taskId: GIT_LARGE_PUSH_GUARD_TASK_ID,
+    title: 'GitHub large-push confirmation guard',
+    status: 'ready',
+    messages: [
+      `Git ${gitVersion} supports named configured hooks, so repository hooks remain intact.`,
+      'The guard checks github.com remotes and asks before the bulk Git pack is uploaded.',
+    ],
+    changes: [
+      makeFileChange(
+        globalGitConfigPath,
+        globalOriginal,
+        globalNext,
+        'register workstation-large-push-guard for pre-push',
+      ),
+    ],
+  }
+}
+
 function applyFileChangePlan(plan: InitTaskPlan) {
   for (const change of plan.changes) {
     if (change.action === 'unchanged')
@@ -343,6 +412,44 @@ function verifyFileChangePlan(plan: InitTaskPlan): InitTaskVerification {
     messages.push('verified planned file contents')
 
   return { ok, messages }
+}
+
+function verifyGitLargePushGuardPlan(plan: InitTaskPlan): InitTaskVerification {
+  const verification = verifyFileChangePlan(plan)
+  const guardPath = path.join(getHomeDir(), '.local', 'libexec', 'git-confirm-large-push')
+
+  if (!isExecutableFile(guardPath)) {
+    verification.ok = false
+    verification.messages.push(`verification failed for executable ${displayPath(guardPath)}`)
+  }
+
+  return verification
+}
+
+function readGitVersion() {
+  const result = spawnSync('git', ['--version'], {
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  })
+  if (result.error || result.status !== 0)
+    return undefined
+
+  return result.stdout.match(/\b(\d+\.\d+(?:\.\d+)?)/)?.[1]
+}
+
+function supportsConfiguredHooks(version: string) {
+  const [major = 0, minor = 0] = version.split('.').map(Number)
+  return major > 2 || (major === 2 && minor >= 55)
+}
+
+function isExecutableFile(filePath: string) {
+  try {
+    fs.accessSync(filePath, fs.constants.X_OK)
+    return fs.statSync(filePath).isFile()
+  }
+  catch {
+    return false
+  }
 }
 
 function resolveGitProfiles(profiles: GitIdentityProfile[]): GitIdentityProfile[] {

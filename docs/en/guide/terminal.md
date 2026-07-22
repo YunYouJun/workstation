@@ -54,10 +54,11 @@ the outer edges of a segment, but keep only one space between consecutive
 submodules so their padding does not stack into double spaces. `Brewfile`
 installs `font-hack-nerd-font`; terminal apps need to use a `Hack Nerd Font
 Mono` font to render powerline, Git branch, Node, Bun, Deno, and package icons
-correctly. The VS Code integrated-terminal font is set through the global
-settings template as `Hack Nerd Font Mono, Source Code Pro, monospace`; iTerm2
-or Terminal profiles need to select a Nerd Font in their own profile settings.
-File states still use short text symbols like `~N`, `+N`, and `?N`, while diff
+correctly. The VS Code and CodeBuddy CN integrated-terminal fonts are set
+through the global settings templates as `Hack Nerd Font Mono, Source Code Pro,
+monospace`; iTerm2 or Terminal profiles need to select a Nerd Font in their own
+profile settings. File states still use short text symbols like `~N`, `+N`, and
+`?N`, while diff
 metrics use the `nf-oct-diff` icon, so the prompt remains quick to scan.
 
 `home/dot_zshrc` provides a `starship-theme` function and the shorter `stheme`
@@ -91,6 +92,49 @@ appearance setting `fonts.code`; on a local machine, set that code font in
 `~/.codex/config.toml` to `Hack Nerd Font Mono`. Do not sync the whole Codex
 config through workstation because it may contain auth state, MCP settings, or
 other machine-local data.
+
+### GitHub Large-Push Confirmation
+
+Git 2.55 and newer can register global named configured hooks while preserving
+each repository's own `.git/hooks`. Workstation's `pre-push` guard only checks
+`github.com` remotes. It builds a local thin-pack estimate from the old and new
+object IDs supplied to the hook, then asks through a macOS dialog before the
+bulk pack upload when the estimate exceeds the default `800 KiB`. Cancelling,
+or having neither a dialog nor an interactive terminal, blocks the push.
+
+Sync the executable first, then preview and enable the optional init task:
+
+```bash
+mkdir -p ~/.local/libexec
+workstation dotfiles chezmoi apply ~/.local/libexec/git-confirm-large-push
+wst init git.large-push-guard
+wst init git.large-push-guard --yes
+git hook list --show-scope pre-push
+```
+
+The threshold intentionally stays below the common external `1 MiB` alert line
+to leave room for Git protocol, SSH/HTTPS, and pack-estimation overhead. Adjust
+it with bytes or Git's `k`/`m` suffixes:
+
+```bash
+git config --global workstation.largePushGuardBytes 800k
+```
+
+Disable the guard only for a repository that needs an exception, and remove the
+local override to restore it:
+
+```bash
+git config --local hook.workstation-large-push-guard.enabled false
+git config --local --unset hook.workstation-large-push-guard.enabled
+```
+
+The connection handshake and remote-ref discovery still send a small amount of
+traffic before `pre-push`; the guard stops the bulk Git pack rather than
+providing a zero-byte network policy. `git push --no-verify` deliberately
+bypasses it. Git LFS uses a separate upload flow and is not currently counted
+in the pack threshold. See [Git hooks](https://git-scm.com/docs/githooks#_pre_push),
+[configured hooks](https://git-scm.com/docs/git-hook), and
+[pack-objects](https://git-scm.com/docs/git-pack-objects).
 
 ### Directory Jumping
 

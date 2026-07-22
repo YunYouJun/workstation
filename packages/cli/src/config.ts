@@ -11,9 +11,12 @@ export interface DotfileEntry {
   description?: string
   /** pull 到本地时是否追加同步元信息 */
   appendSyncMeta?: boolean
+  /** 同步后是否确保目标文件可执行 */
+  executable?: boolean
 }
 
 export const vscodeSettingsRelativePath = path.join('Library', 'Application Support', 'Code', 'User', 'settings.json')
+export const codeBuddyCnSettingsRelativePath = path.join('Library', 'Application Support', 'CodeBuddy CN', 'User', 'settings.json')
 
 /**
  * dotfiles 映射表
@@ -50,6 +53,19 @@ export const dotfiles: DotfileEntry[] = [
     target: vscodeSettingsRelativePath,
     description: 'VSCode Global Settings (macOS)',
     appendSyncMeta: false,
+  },
+  {
+    source: path.join('home', codeBuddyCnSettingsRelativePath),
+    target: codeBuddyCnSettingsRelativePath,
+    description: 'CodeBuddy CN Global Settings (macOS)',
+    appendSyncMeta: false,
+  },
+  {
+    source: path.join('home', 'dot_local', 'libexec', 'executable_git-confirm-large-push'),
+    target: path.join('.local', 'libexec', 'git-confirm-large-push'),
+    description: 'GitHub large-push confirmation guard',
+    appendSyncMeta: false,
+    executable: true,
   },
 ]
 

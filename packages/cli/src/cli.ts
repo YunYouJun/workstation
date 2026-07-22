@@ -213,14 +213,14 @@ async function runDotfilesAction(action: string | undefined, options: any, comma
 
 function registerDotfilesNamespace(name: string, description: string) {
   cli
-    .command(`${name} [action]`, description)
+    .command(`${name} [action] [...args]`, description)
     .option('--direction <dir>', 'Sync direction: push or pull', { default: 'pull' })
     .option('--mode <mode>', 'Sync mode: link or copy', { default: 'copy' })
     .option('--force', 'Overwrite existing files (with backup)', { default: false })
     .option('--dry-run', 'Preview changes without applying', { default: false })
     .option('-i, --interactive', 'Interactive mode', { default: false })
     .allowUnknownOptions()
-    .action(async (action: string | undefined, options) => {
+    .action(async (action: string | undefined, _args: string[], options) => {
       await runDotfilesAction(action, options, name)
     })
 }

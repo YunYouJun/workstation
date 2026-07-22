@@ -36,6 +36,11 @@ function ensureDir(filePath: string) {
     fs.mkdirSync(dir, { recursive: true })
 }
 
+function ensureExecutable(filePath: string, entry: DotfileEntry) {
+  if (entry.executable)
+    fs.chmodSync(filePath, 0o755)
+}
+
 /**
  * 获取同步元信息注释（时间 + commit hash）
  * 仅用于 pull 到本地时追加
@@ -158,6 +163,7 @@ function pushEntry(entry: DotfileEntry, options: SyncOptions): SyncResult {
   if (fs.existsSync(repoPath)) {
     const existing = fs.readFileSync(repoPath, 'utf-8')
     if (existing === content) {
+      ensureExecutable(repoPath, entry)
       return {
         entry,
         status: 'skipped',
@@ -178,6 +184,7 @@ function pushEntry(entry: DotfileEntry, options: SyncOptions): SyncResult {
 
   ensureDir(repoPath)
   fs.writeFileSync(repoPath, content, 'utf-8')
+  ensureExecutable(repoPath, entry)
 
   const secretsInfo = secrets.length > 0 ? ` (${secrets.length} secrets masked)` : ''
   return {
@@ -274,6 +281,7 @@ function pullEntry(entry: DotfileEntry, options: SyncOptions): SyncResult {
     finalContent = `${finalContent.trimEnd()}\n${getSyncMeta()}`
 
   fs.writeFileSync(homePath, finalContent, 'utf-8')
+  ensureExecutable(homePath, entry)
 
   if (missing.length > 0) {
     return {

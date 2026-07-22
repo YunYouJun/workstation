@@ -251,6 +251,14 @@ wst init --list
 wst init git.include-if --git-profile 'id=github;host=github.com;name=Your Name;email=you@example.com'
 ```
 
+同步守卫脚本并预览 GitHub 大 push 确认：
+
+```bash
+mkdir -p ~/.local/libexec
+workstation dotfiles chezmoi apply ~/.local/libexec/git-confirm-large-push
+wst init git.large-push-guard
+```
+
 预览从仓库恢复到 `$HOME`：
 
 ```bash
@@ -386,6 +394,13 @@ workstation dotfiles chezmoi apply
 
 ```bash
 wst init git.include-if --git-profile 'id=github;host=github.com;name=Your Name;email=you@example.com' --yes
+```
+
+启用并检查 GitHub 大 push 确认 hook：
+
+```bash
+wst init git.large-push-guard --yes
+git hook list --show-scope pre-push
 ```
 
 检查 dry-run 输出后，clone 最近活跃的 `YunYouJun` 仓库：

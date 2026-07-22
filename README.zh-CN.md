@@ -118,8 +118,9 @@ workstation dotfiles chezmoi apply     # apply home/ 下管理的文件
 - `home/dot_config/starship.toml` -> `~/.config/starship.toml`
 - `home/dot_zshrc` -> `~/.zshrc`
 - `home/Library/Application Support/Code/User/settings.json` -> `~/Library/Application Support/Code/User/settings.json`
+- `home/Library/Application Support/CodeBuddy CN/User/settings.json` -> `~/Library/Application Support/CodeBuddy CN/User/settings.json`
 
-VSCode 设置目前只面向 macOS，并会通过 [`home/.chezmoiignore.tmpl`](./home/.chezmoiignore.tmpl) 在非 macOS 主机上被 chezmoi 忽略。使用 `workstation dotfiles diff` 查看会遮罩密钥的安全 diff；原始的 `workstation dotfiles chezmoi diff` 可能显示未遮罩的本地值。
+VS Code 与 CodeBuddy CN 设置目前只面向 macOS，并会通过 [`home/.chezmoiignore.tmpl`](./home/.chezmoiignore.tmpl) 在非 macOS 主机上被 chezmoi 忽略。使用 `workstation dotfiles diff` 查看会遮罩密钥的安全 diff；原始的 `workstation dotfiles chezmoi diff` 可能显示未遮罩的本地值。
 
 克隆或拉取这个仓库后，运行 `workstation dotfiles doctor` 来检查 `.chezmoiroot`、受管理源文件、本地密钥占位符和 chezmoi 可用性。
 

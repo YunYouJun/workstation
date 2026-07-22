@@ -259,6 +259,14 @@ Preview Git `includeIf` identity routing setup:
 wst init git.include-if --git-profile 'id=github;host=github.com;name=Your Name;email=you@example.com'
 ```
 
+Sync the guard executable and preview GitHub large-push confirmation:
+
+```bash
+mkdir -p ~/.local/libexec
+workstation dotfiles chezmoi apply ~/.local/libexec/git-confirm-large-push
+wst init git.large-push-guard
+```
+
 Preview a restore from the repository into `$HOME`:
 
 ```bash
@@ -394,6 +402,13 @@ Apply Git `includeIf` identity routing after reviewing the dry-run:
 
 ```bash
 wst init git.include-if --git-profile 'id=github;host=github.com;name=Your Name;email=you@example.com' --yes
+```
+
+Enable and inspect the GitHub large-push confirmation hook:
+
+```bash
+wst init git.large-push-guard --yes
+git hook list --show-scope pre-push
 ```
 
 Clone the recently active `YunYouJun` repositories after reviewing the dry-run:

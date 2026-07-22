@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, describe, it } from 'vitest'
-import { codexAgentsPath, createSyncFixture, ghosttyConfigPath, removePath, repoCodexAgentsPath, repoGhosttyConfigPath, repoStarshipPath, repoVscodeSettingsPath, repoZshrcPath, runCli, starshipPath, vscodeSettingsPath, writeFile, zshrcPath } from './utils'
+import { codeBuddyCnSettingsPath, codexAgentsPath, createSyncFixture, ghosttyConfigPath, gitLargePushGuardPath, removePath, repoCodeBuddyCnSettingsPath, repoCodexAgentsPath, repoGhosttyConfigPath, repoGitLargePushGuardPath, repoStarshipPath, repoVscodeSettingsPath, repoZshrcPath, runCli, starshipPath, vscodeSettingsPath, writeFile, zshrcPath } from './utils'
 
 const originalRepoRoot = process.env.DOTFILES_REPO_ROOT
 const originalHome = process.env.DOTFILES_HOME
@@ -57,6 +57,16 @@ function writeManagedRepoSources(repoRoot: string) {
   writeFile(repoStarshipPath(repoRoot), 'add_newline = true\n')
   writeFile(repoGhosttyConfigPath(repoRoot), 'font-size = 14\n')
   writeFile(repoVscodeSettingsPath(repoRoot), '{"editor.fontSize":14}\n')
+  writeFile(repoCodeBuddyCnSettingsPath(repoRoot), '{"terminal.integrated.fontFamily":"Hack Nerd Font Mono"}\n')
+  writeFile(repoGitLargePushGuardPath(repoRoot), '#!/bin/sh\nexit 0\n')
+}
+
+function writeGuardSource(repoRoot: string) {
+  writeFile(repoGitLargePushGuardPath(repoRoot), '#!/bin/sh\nexit 0\n')
+}
+
+function writeGuardTarget(homeRoot: string) {
+  writeFile(gitLargePushGuardPath(homeRoot), '#!/bin/sh\nexit 0\n')
 }
 
 afterEach(() => {
@@ -93,6 +103,27 @@ describe('sync CLI', () => {
       repoRoot,
       'diff',
       '--dry-run',
+    ])
+  })
+
+  it('passes variadic chezmoi arguments through the dotfiles namespace', () => {
+    const { repoRoot, homeRoot, tempDir } = useFixture()
+    const binDir = path.join(tempDir, 'bin')
+    const argsPath = path.join(tempDir, 'chezmoi-args.json')
+    const targetPath = path.join(homeRoot, '.local', 'libexec', 'git-confirm-large-push')
+    writeFakeChezmoi(binDir)
+
+    const result = runCli(['df', 'chezmoi', 'apply', targetPath], repoRoot, homeRoot, {
+      CHEZMOI_ARGS_OUT: argsPath,
+      PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}`,
+    })
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.deepEqual(JSON.parse(fs.readFileSync(argsPath, 'utf-8')), [
+      '--source',
+      repoRoot,
+      'apply',
+      targetPath,
     ])
   })
 
@@ -175,6 +206,8 @@ describe('sync CLI', () => {
     writeFile(starshipPath(homeRoot), 'add_newline = true\n')
     writeFile(ghosttyConfigPath(homeRoot), 'font-size = 14\n')
     writeFile(vscodeSettingsPath(homeRoot), '{"editor.fontSize":14}\n')
+    writeFile(codeBuddyCnSettingsPath(homeRoot), '{"terminal.integrated.fontFamily":"Hack Nerd Font Mono"}\n')
+    writeGuardTarget(homeRoot)
 
     runCliOk(['push', '--force'], repoRoot, homeRoot)
 
@@ -188,11 +221,15 @@ describe('sync CLI', () => {
     const repoSettings = fs.readFileSync(repoVscodeSettingsPath(repoRoot), 'utf-8')
     assert.equal(repoSettings, '{"editor.fontSize":14}\n')
 
+    const repoCodeBuddySettings = fs.readFileSync(repoCodeBuddyCnSettingsPath(repoRoot), 'utf-8')
+    assert.equal(repoCodeBuddySettings, '{"terminal.integrated.fontFamily":"Hack Nerd Font Mono"}\n')
+
     const repoStarship = fs.readFileSync(repoStarshipPath(repoRoot), 'utf-8')
     assert.equal(repoStarship, 'add_newline = true\n')
 
     const repoGhosttyConfig = fs.readFileSync(repoGhosttyConfigPath(repoRoot), 'utf-8')
     assert.equal(repoGhosttyConfig, 'font-size = 14\n')
+    assert.equal(fs.statSync(repoGitLargePushGuardPath(repoRoot)).mode & 0o111, 0o111)
 
     const envLocal = fs.readFileSync(path.join(repoRoot, '.env.local'), 'utf-8')
     assert.equal(envLocal.includes('API_TOKEN="secret-token-123"'), true)
@@ -206,6 +243,8 @@ describe('sync CLI', () => {
     writeFile(repoStarshipPath(repoRoot), 'add_newline = true\n')
     writeFile(repoGhosttyConfigPath(repoRoot), 'font-size = 14\n')
     writeFile(repoVscodeSettingsPath(repoRoot), '{"editor.fontSize":14}\n')
+    writeFile(repoCodeBuddyCnSettingsPath(repoRoot), '{"terminal.integrated.fontFamily":"Hack Nerd Font Mono"}\n')
+    writeGuardSource(repoRoot)
 
     runCliOk(['pull', '--force'], repoRoot, homeRoot)
 
@@ -227,6 +266,9 @@ describe('sync CLI', () => {
     const homeSettings = fs.readFileSync(vscodeSettingsPath(homeRoot), 'utf-8')
     assert.equal(homeSettings, '{"editor.fontSize":14}\n')
 
+    const homeCodeBuddySettings = fs.readFileSync(codeBuddyCnSettingsPath(homeRoot), 'utf-8')
+    assert.equal(homeCodeBuddySettings, '{"terminal.integrated.fontFamily":"Hack Nerd Font Mono"}\n')
+
     const homeStarship = fs.readFileSync(starshipPath(homeRoot), 'utf-8')
     assert.equal(homeStarship, 'add_newline = true\n')
 
@@ -235,6 +277,7 @@ describe('sync CLI', () => {
 
     const repoAgents = fs.readFileSync(repoCodexAgentsPath(repoRoot), 'utf-8')
     assert.equal(repoAgents, '# Codex\n')
+    assert.equal(fs.statSync(gitLargePushGuardPath(homeRoot)).mode & 0o111, 0o111)
   })
 
   it('supports the dotfiles namespace short alias', () => {
@@ -244,12 +287,15 @@ describe('sync CLI', () => {
     writeFile(repoStarshipPath(repoRoot), 'add_newline = true\n')
     writeFile(repoGhosttyConfigPath(repoRoot), 'font-size = 14\n')
     writeFile(repoVscodeSettingsPath(repoRoot), '{"editor.fontSize":14}\n')
+    writeFile(repoCodeBuddyCnSettingsPath(repoRoot), '{"terminal.integrated.fontFamily":"Hack Nerd Font Mono"}\n')
+    writeGuardSource(repoRoot)
 
     runCliOk(['df', 'pull', '--force'], repoRoot, homeRoot)
 
     assert.equal(fs.readFileSync(zshrcPath(homeRoot), 'utf-8'), 'alias ll="ls -la"\n')
     assert.equal(fs.readFileSync(codexAgentsPath(homeRoot), 'utf-8'), '# Codex\n')
     assert.equal(fs.readFileSync(ghosttyConfigPath(homeRoot), 'utf-8'), 'font-size = 14\n')
+    assert.equal(fs.readFileSync(codeBuddyCnSettingsPath(homeRoot), 'utf-8'), '{"terminal.integrated.fontFamily":"Hack Nerd Font Mono"}\n')
   })
 
   it('dry-run does not write repo or home files', () => {
@@ -259,6 +305,8 @@ describe('sync CLI', () => {
     writeFile(repoStarshipPath(repoRoot), 'add_newline = true\n')
     writeFile(repoGhosttyConfigPath(repoRoot), 'font-size = 14\n')
     writeFile(repoVscodeSettingsPath(repoRoot), '{"editor.fontSize":14}\n')
+    writeFile(repoCodeBuddyCnSettingsPath(repoRoot), '{"terminal.integrated.fontFamily":"Hack Nerd Font Mono"}\n')
+    writeGuardSource(repoRoot)
 
     runCliOk(['sync', '--direction', 'pull', '--dry-run'], repoRoot, homeRoot)
 
@@ -267,6 +315,8 @@ describe('sync CLI', () => {
     assert.equal(fs.existsSync(starshipPath(homeRoot)), false)
     assert.equal(fs.existsSync(ghosttyConfigPath(homeRoot)), false)
     assert.equal(fs.existsSync(vscodeSettingsPath(homeRoot)), false)
+    assert.equal(fs.existsSync(codeBuddyCnSettingsPath(homeRoot)), false)
+    assert.equal(fs.existsSync(gitLargePushGuardPath(homeRoot)), false)
   })
 
   it('diff masks local secrets before printing output', () => {
@@ -276,11 +326,15 @@ describe('sync CLI', () => {
     writeFile(repoStarshipPath(repoRoot), 'add_newline = true\n')
     writeFile(repoGhosttyConfigPath(repoRoot), 'font-size = 14\n')
     writeFile(repoVscodeSettingsPath(repoRoot), '{"editor.fontSize":14}\n')
+    writeFile(repoCodeBuddyCnSettingsPath(repoRoot), '{"terminal.integrated.fontFamily":"Hack Nerd Font Mono"}\n')
+    writeGuardSource(repoRoot)
     writeFile(codexAgentsPath(homeRoot), '# Codex\n')
     writeFile(zshrcPath(homeRoot), 'export API_TOKEN="secret-token-123"\nalias gs="git status"\n')
     writeFile(starshipPath(homeRoot), 'add_newline = true\n')
     writeFile(ghosttyConfigPath(homeRoot), 'font-size = 14\n')
     writeFile(vscodeSettingsPath(homeRoot), '{"editor.fontSize":14}\n')
+    writeFile(codeBuddyCnSettingsPath(homeRoot), '{"terminal.integrated.fontFamily":"Hack Nerd Font Mono"}\n')
+    writeGuardTarget(homeRoot)
 
     const result = runCliOk(['diff'], repoRoot, homeRoot)
 
