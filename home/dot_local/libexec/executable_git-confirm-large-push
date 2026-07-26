@@ -131,20 +131,24 @@ pack_error_file="$tmp_dir/pack-error"
 cat >"$updates_file"
 : >"$revisions_file"
 
-has_new_remote_ref=false
+needs_advertised_remote_refs=false
 while read -r _local_ref local_oid _remote_ref remote_oid; do
   is_nonzero_oid "$local_oid" || continue
   printf '%s\n' "$local_oid" >>"$revisions_file"
   if is_nonzero_oid "$remote_oid"; then
-    printf '^%s\n' "$remote_oid" >>"$revisions_file"
+    if git cat-file -e "$remote_oid^{object}" 2>/dev/null; then
+      printf '^%s\n' "$remote_oid" >>"$revisions_file"
+    else
+      needs_advertised_remote_refs=true
+    fi
   else
-    has_new_remote_ref=true
+    needs_advertised_remote_refs=true
   fi
 done <"$updates_file"
 
 [ -s "$revisions_file" ] || exit 0
 
-if [ "$has_new_remote_ref" = true ]; then
+if [ "$needs_advertised_remote_refs" = true ]; then
   GIT_TERMINAL_PROMPT=0 git ls-remote --refs "$remote_url" 2>/dev/null |
     while read -r advertised_oid _advertised_ref; do
       if git cat-file -e "$advertised_oid^{object}" 2>/dev/null; then

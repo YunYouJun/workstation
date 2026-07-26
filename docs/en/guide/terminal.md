@@ -104,6 +104,13 @@ the `10 MiB` estimation cap show a concrete size; estimation stops
 at the cap and reports "over 10 MiB" for larger packs. Cancelling, or having
 neither a dialog nor an interactive terminal, blocks the push.
 
+When the old remote tip is not in the local object database, the guard excludes
+only remote objects it can verify locally and conservatively estimates the
+remainder. It does not pass a missing OID to `pack-objects`, so `bad object`
+does not turn the size into an "unknown" estimate merely because the remote tip
+has not been fetched yet. Fetching first usually makes the estimate more precise
+by filling in the shared history.
+
 Sync the executable first, then preview and enable the optional init task:
 
 ```bash

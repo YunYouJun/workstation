@@ -22,6 +22,7 @@ interface GuardFixture {
 interface FakeOsascriptOptions {
   markerPath?: string
   estimatePath?: string
+  reasonPath?: string
   repositoryPath?: string
   remotePath?: string
 }
@@ -75,11 +76,25 @@ function runGit(repoRoot: string, env: NodeJS.ProcessEnv, args: string[]) {
   })
 }
 
+function createRemoteOnlyCommit(fixture: GuardFixture) {
+  const remoteSourceRoot = path.join(path.dirname(fixture.repoRoot), 'remote-source')
+  fs.mkdirSync(remoteSourceRoot)
+  runGit(remoteSourceRoot, fixture.env, ['init', '-q', '-b', 'main'])
+  runGit(remoteSourceRoot, fixture.env, ['config', 'user.name', 'Guard Test'])
+  runGit(remoteSourceRoot, fixture.env, ['config', 'user.email', 'guard@example.com'])
+  fs.writeFileSync(path.join(remoteSourceRoot, 'remote-only.txt'), 'remote only\n')
+  runGit(remoteSourceRoot, fixture.env, ['add', 'remote-only.txt'])
+  runGit(remoteSourceRoot, fixture.env, ['commit', '-q', '-m', 'remote only'])
+  runGit(remoteSourceRoot, fixture.env, ['push', '-q', fixture.emptyRemoteUrl, 'HEAD:refs/heads/main'])
+  return runGit(remoteSourceRoot, fixture.env, ['rev-parse', 'HEAD']).trim()
+}
+
 function writeFakeOsascript(binDir: string, exitCode: number, options: FakeOsascriptOptions = {}) {
   const lines = [
     '#!/bin/sh',
     options.markerPath ? `: > "${options.markerPath}"` : ':',
     options.estimatePath ? `printf '%s\n' "$4" > "${options.estimatePath}"` : ':',
+    options.reasonPath ? `printf '%s\n' "$5" > "${options.reasonPath}"` : ':',
     options.repositoryPath ? `printf '%s\n' "$2" > "${options.repositoryPath}"` : ':',
     options.remotePath ? `printf '%s\n' "$3" > "${options.remotePath}"` : ':',
     `exit ${exitCode}`,
@@ -122,6 +137,31 @@ describe('github large-push guard', () => {
     const result = runGuard(fixture)
 
     assert.equal(result.status, 0, result.stderr)
+    assert.equal(fs.existsSync(markerPath), false)
+  })
+
+  it('uses a conservative estimate when the remote tip is missing locally', () => {
+    const fixture = createGuardFixture(128, 800 * 1024)
+    const remoteOid = createRemoteOnlyCommit(fixture)
+    const localOid = runGit(fixture.repoRoot, fixture.env, ['rev-parse', 'HEAD']).trim()
+    assert.notEqual(
+      spawnSync('git', ['cat-file', '-e', `${remoteOid}^{object}`], {
+        cwd: fixture.repoRoot,
+        env: fixture.env,
+      }).status,
+      0,
+    )
+    fixture.hookInput = `refs/heads/main ${localOid} refs/heads/main ${remoteOid}\n`
+    const markerPath = path.join(path.dirname(fixture.repoRoot), 'prompted')
+    const estimatePath = path.join(path.dirname(fixture.repoRoot), 'estimate')
+    const reasonPath = path.join(path.dirname(fixture.repoRoot), 'reason')
+    writeFakeOsascript(fixture.binDir, 1, { markerPath, estimatePath, reasonPath })
+
+    const result = runGuard(fixture)
+    const estimate = fs.existsSync(estimatePath) ? fs.readFileSync(estimatePath, 'utf-8').trim() : 'none'
+    const reason = fs.existsSync(reasonPath) ? fs.readFileSync(reasonPath, 'utf-8').trim() : 'none'
+
+    assert.equal(result.status, 0, `${result.stderr}\nestimate: ${estimate}\nreason: ${reason}`)
     assert.equal(fs.existsSync(markerPath), false)
   })
 
