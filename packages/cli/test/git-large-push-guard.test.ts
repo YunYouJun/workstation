@@ -27,7 +27,7 @@ interface FakeOsascriptOptions {
   remotePath?: string
 }
 
-function createGuardFixture(blobBytes: number, thresholdBytes: number): GuardFixture {
+function createGuardFixture(blobBytes: number, thresholdBytes?: number): GuardFixture {
   const tempDir = createTempDir('git-large-push-guard-')
   const repoRoot = path.join(tempDir, 'repo')
   const homeRoot = path.join(tempDir, 'home')
@@ -47,7 +47,8 @@ function createGuardFixture(blobBytes: number, thresholdBytes: number): GuardFix
   runGit(repoRoot, env, ['init', '-q', '-b', 'main'])
   runGit(repoRoot, env, ['config', 'user.name', 'Guard Test'])
   runGit(repoRoot, env, ['config', 'user.email', 'guard@example.com'])
-  runGit(repoRoot, env, ['config', 'workstation.largePushGuardBytes', String(thresholdBytes)])
+  if (thresholdBytes !== undefined)
+    runGit(repoRoot, env, ['config', 'workstation.largePushGuardBytes', String(thresholdBytes)])
   const emptyRemoteRoot = path.join(tempDir, 'empty-remote.git')
   runGit(repoRoot, env, ['init', '--bare', '-q', emptyRemoteRoot])
   const emptyRemoteUrl = pathToFileURL(emptyRemoteRoot).href
@@ -138,6 +139,28 @@ describe('github large-push guard', () => {
 
     assert.equal(result.status, 0, result.stderr)
     assert.equal(fs.existsSync(markerPath), false)
+  })
+
+  it('does not classify an approximately 800 KiB pack as large by default', () => {
+    const fixture = createGuardFixture(800 * 1024)
+    const markerPath = path.join(path.dirname(fixture.repoRoot), 'prompted')
+    writeFakeOsascript(fixture.binDir, 1, { markerPath })
+
+    const result = runGuard(fixture)
+
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(fs.existsSync(markerPath), false)
+  })
+
+  it('classifies an approximately 1 MiB pack as large by default', () => {
+    const fixture = createGuardFixture(1024 * 1024)
+    const markerPath = path.join(path.dirname(fixture.repoRoot), 'prompted')
+    writeFakeOsascript(fixture.binDir, 1, { markerPath })
+
+    const result = runGuard(fixture)
+
+    assert.equal(result.status, 1, result.stderr)
+    assert.equal(fs.existsSync(markerPath), true)
   })
 
   it('uses a conservative estimate when the remote tip is missing locally', () => {

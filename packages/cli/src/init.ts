@@ -88,7 +88,7 @@ const tasks: InitTaskDefinition[] = [
   {
     id: GIT_LARGE_PUSH_GUARD_TASK_ID,
     title: 'GitHub large-push confirmation guard',
-    description: 'Confirm GitHub pushes whose estimated Git pack exceeds 800 KiB.',
+    description: 'Confirm GitHub pushes whose estimated Git pack exceeds 900 KiB.',
     recommended: false,
     createPlan: createGitLargePushGuardPlan,
     apply: applyFileChangePlan,
