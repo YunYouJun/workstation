@@ -4,7 +4,7 @@
 
 - Homebrew 用于包安装。
 - Zsh 作为交互式 shell。
-- Oh My Zsh 用于轻量 shell 插件和补全。
+- Oh My Zsh 提供轻量插件源码；`.zshrc` 直接加载所需插件。
 - Starship 用于 prompt。
 - fzf 用于模糊选择。
 - zoxide 用于更聪明的目录跳转。
@@ -17,7 +17,14 @@
 
 Starship 跨 shell，只需要一个 TOML 配置文件，并且可以轻松通过 Homebrew 重新安装。如果一台机器已经有调好的 Zsh-only Powerlevel10k prompt，它仍然很好；但因为上游项目支持有限且不再计划新功能，它不再是新机器的默认选择。
 
-保留 Oh My Zsh，但不要让它负责 prompt。在这套设置中，Oh My Zsh 提供插件和补全，Starship 负责 prompt 渲染。
+保留 Oh My Zsh 的 Git、Docker、macOS、dotenv 等插件，但不加载完整
+`oh-my-zsh.sh`。`.zshrc` 每天执行一次补全安全检查，其他新 shell 直接读取
+编译后的补全缓存；Starship 独立负责 prompt 渲染。这样保留常用别名和交互
+能力，同时避免每次打开终端都扫描数百个补全文件。
+
+Homebrew 环境使用标准安装路径直接初始化，不在每个 shell 中执行
+`brew shellenv` 和 `path_helper`。如果 Homebrew 安装在非标准目录，需要在
+机器本地配置中提前设置 `HOMEBREW_PREFIX`。
 
 ### Starship Prompt
 
@@ -266,6 +273,7 @@ Powerlevel10k 仍可作为已有机器的备用方案。如果没有安装 `star
 - 新 macOS 机器使用 [引导流程](./bootstrap.md) 与 [可复制命令](./commands.md)，不要再维护一份临时安装脚本。
 - Node.js 默认通过 `fnm` 安装，不再使用 Homebrew 安装 `nvm`。
 - prompt 默认使用 Starship，Powerlevel10k 只作为已有机器的 fallback。
+- Oh My Zsh 只直接加载所需插件，不再运行完整框架启动器。
 - 目录跳转默认使用 `zoxide` + `fzf`，不再安装或加载 `autojump`。
 - `zsh-autosuggestions` 和 `zsh-syntax-highlighting` 优先来自 Homebrew；如果已有 Oh My Zsh custom plugin，`.zshrc` 仍会兼容加载。
 

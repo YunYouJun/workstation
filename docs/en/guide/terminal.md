@@ -4,7 +4,7 @@ The default terminal stack for a new macOS machine is:
 
 - Homebrew for package installation.
 - Zsh as the interactive shell.
-- Oh My Zsh for lightweight shell plugins and completions.
+- Oh My Zsh as the source for lightweight plugins loaded directly by `.zshrc`.
 - Starship for the prompt.
 - fzf for fuzzy selection.
 - zoxide for smarter directory jumping.
@@ -17,7 +17,17 @@ Use Starship as the default prompt on new machines.
 
 Starship is cross-shell, configured with one TOML file, and easy to reinstall through Homebrew. Powerlevel10k is still excellent if a machine already has a tuned Zsh-only prompt, but it is no longer the default choice for new machines because the upstream project has very limited support and no new features planned.
 
-Keep Oh My Zsh, but do not let it own the prompt. In this setup, Oh My Zsh provides plugins and completions, while Starship owns the prompt rendering.
+Keep the Git, Docker, macOS, dotenv, and other selected Oh My Zsh plugins, but
+do not load the full `oh-my-zsh.sh` bootstrap. `.zshrc` performs the completion
+security audit once per day; warm shells read the compiled completion cache
+directly. Starship renders the prompt independently. This preserves familiar
+aliases and interactive behavior without scanning hundreds of completion files
+for every new terminal.
+
+The Homebrew environment is initialized from its standard installation paths
+instead of running `brew shellenv` and `path_helper` in every shell. Machines
+with Homebrew in a non-standard location should set `HOMEBREW_PREFIX` in a
+machine-local startup file.
 
 ### Starship Prompt
 
@@ -341,6 +351,8 @@ Terminal Proxy now collapse into this page and `home/dot_zshrc`:
   Homebrew.
 - Starship is the default prompt; Powerlevel10k is only a fallback for existing
   machines.
+- Oh My Zsh contributes selected plugins without running the full framework
+  bootstrap.
 - Directory jumping defaults to `zoxide` + `fzf`; do not install or load
   `autojump`.
 - `zsh-autosuggestions` and `zsh-syntax-highlighting` prefer Homebrew packages;
