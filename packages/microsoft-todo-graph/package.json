@@ -16,7 +16,7 @@
     "test": "node --check src/*.js && vitest run"
   },
   "dependencies": {
-    "@azure/msal-node": "5.2.2"
+    "@azure/msal-node": "5.5.0"
   },
   "devDependencies": {
     "vitest": "^4.1.10"
