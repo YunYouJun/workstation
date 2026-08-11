@@ -1,8 +1,9 @@
 # Agent Skills 与 APM
 
 这个仓库使用 [APM（Agent Package Manager）](https://microsoft.github.io/apm/)
-管理公开、可移植的 Agent Skills 与标准 MCP server。APM 是这部分能力的唯一事实源：
-workstation 不再维护第二套 Skills manifest、Git 下载器、状态命令或 MCP 映射脚本。
+管理公开、可移植的 Agent Skills 与项目级标准 MCP server。APM 是这部分能力的唯一事实源：
+workstation 不再维护第二套 Skills manifest、Git 下载器、状态命令或 MCP 映射脚本。需要
+跨项目生效的用户级 MCP 则使用客户端原生命令或显式的 workstation init 任务。
 
 ## 文件与职责
 
@@ -57,12 +58,21 @@ apm install --global --frozen
 不要手工编辑 `apm.lock.yaml`。`main` 或版本范围可以留在 manifest 中，lock 仍会固定
 解析后的 commit；更新只通过显式 `apm update --global` 发生。
 
-## 标准 MCP 与私有 Codex MCP
+## 项目级、用户级与私有 Codex MCP
 
-公开且可移植的 MCP 使用 APM：
+公开且随项目复用的 MCP 使用 APM：
 
 ```bash
-apm install --global --mcp io.github.example/server
+apm install --mcp io.github.example/server
+```
+
+APM 0.26 的自定义 MCP 安装目前只支持项目作用域；`--global --mcp` 会被拒绝。确实需要
+在所有 Codex 项目中生效的公开 MCP，应使用可预览、幂等的 workstation init 任务或
+`codex mcp add`。例如 Microsoft To Do：
+
+```bash
+workstation init codex.microsoft-todo-mcp
+workstation init codex.microsoft-todo-mcp --yes
 ```
 
 包含内部 server 名称、私有本地命令、Codex plugin 配置或 OAuth callback 顶层字段的
@@ -89,7 +99,8 @@ private apply 只写 `~/.codex/config.toml` 中标记为
 
 | 需求 | 使用 |
 | --- | --- |
-| 公开 Skills、标准 MCP、版本锁定、更新与重放 | APM |
+| 公开 Skills、项目级标准 MCP、版本锁定、更新与重放 | APM |
+| 公开的用户级 Codex MCP | workstation init / `codex mcp` |
 | 仓库共享工作流 | `.agents/skills` |
 | 私有本地 Skill、Codex 专属 MCP、1Password | `wst private` |
 | 软件安装 | `Brewfile` / `pnpm software:*` |
