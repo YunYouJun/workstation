@@ -14,6 +14,8 @@ codex mcp get microsoft-todo
 
 Open a new Codex task after configuration so the client reloads its MCP servers. Follow the Microsoft sign-in prompt on the first To Do tool call; OAuth tokens remain local. The `npx` command and pinned npm version make the same configuration reusable on macOS, Linux, and Windows.
 
+To Do authentication does not use 1Password, and rotating access or refresh tokens should not be copied into a long-lived secret item. The pinned server encrypts its MSAL cache in the user configuration directory and, on macOS, keeps only the cache-encryption key in the system Keychain. MSAL can therefore refresh tokens without making the repository, Codex configuration, or 1Password responsible for their lifecycle.
+
 APM remains the source of truth for public Skills and project-scoped MCP servers. APM 0.26 currently installs self-defined MCP servers only at project scope, so it cannot generate this user-level Codex configuration directly. The explicit workstation init task therefore manages this global server and replaces only `mcp_servers.microsoft-todo`, never the complete `~/.codex/config.toml`.
 
 The existing local Graph client remains available as the more auditable fallback for scripts, dry-run updates, and deletion with a second confirmation. Its implementation lives in [`packages/microsoft-todo-graph`](https://github.com/YunYouJun/workstation/tree/main/packages/microsoft-todo-graph).

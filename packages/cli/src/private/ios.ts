@@ -111,14 +111,31 @@ function commandFromOptions(options: PrivateOptions, usage: string): string[] | 
 }
 
 function readOpEnv(context: OpContext, refs: SecretReference[]): Record<string, string> {
-  const output: Record<string, string> = {}
+  const selectedRefs = appStoreConnectRefs(refs)
+  const envNames = selectedRefs.map(ref => ref.envName)
+  const script = [
+    `const names = ${JSON.stringify(envNames)}`,
+    'process.stdout.write(JSON.stringify(Object.fromEntries(names.map(name => [name, process.env[name]]))))',
+  ].join(';')
+  const result = runOp(context, ['run', '--no-masking', '--', process.execPath, '-e', script], {
+    extraEnv: Object.fromEntries(selectedRefs.map(ref => [ref.envName, secretReferencePath(ref)])),
+  })
 
-  for (const ref of appStoreConnectRefs(refs)) {
-    const result = runOp(context, ['read', secretReferencePath(ref)])
-    output[ref.envName] = trimOneTrailingNewline(result.stdout)
+  let values: Record<string, unknown>
+  try {
+    values = JSON.parse(result.stdout) as Record<string, unknown>
+  }
+  catch {
+    throw new Error('Could not decode App Store Connect values returned by op run')
   }
 
-  return output
+  return Object.fromEntries(selectedRefs.map((ref) => {
+    const value = values[ref.envName]
+    if (typeof value !== 'string' || value.length === 0)
+      throw new Error(`Missing App Store Connect value from 1Password: ${ref.envName}`)
+
+    return [ref.envName, trimOneTrailingNewline(value)]
+  }))
 }
 
 function appStoreConnectSecretsFromCurrentEnv(refs: SecretReference[]): AppStoreConnectSecrets {

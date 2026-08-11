@@ -14,6 +14,8 @@ codex mcp get microsoft-todo
 
 配置后新开一个 Codex 任务，使客户端重新加载 MCP。第一次调用 To Do 工具时按服务端提示完成 Microsoft 登录；OAuth token 只保存在本机。`npx` 和固定 npm 版本使同一配置可在 macOS、Linux 与 Windows 复用。
 
+To Do 认证不经过 1Password，也不需要把会轮换的 access token 或 refresh token 保存为长期密钥。当前固定版本默认把 MSAL 缓存加密写入用户配置目录；在 macOS 上只把缓存加密密钥交给系统钥匙串。这样既能让 MSAL 自动刷新 token，也不会让仓库、Codex 配置或 1Password 承担 OAuth token 生命周期。
+
 APM 仍是公开 Skills 和项目级 MCP 的事实源，但 APM 0.26 的自定义 MCP 安装目前只支持项目作用域，不能直接生成用户级 Codex 配置。因此这个全局 MCP 由显式的 workstation init 任务管理，任务只替换 `mcp_servers.microsoft-todo`，不会覆盖完整的 `~/.codex/config.toml`。
 
 仓库原有的本地 Graph 客户端继续保留为高可审计回退方案，尤其适合脚本、dry-run 更新和带二次确认的删除。实现位于 [`packages/microsoft-todo-graph`](https://github.com/YunYouJun/workstation/tree/main/packages/microsoft-todo-graph)。
