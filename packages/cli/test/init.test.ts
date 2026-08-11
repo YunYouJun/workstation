@@ -64,8 +64,96 @@ describe('init CLI', () => {
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
     assert.match(result.stdout, /git\.include-if/)
     assert.match(result.stdout, /git\.large-push-guard/)
+    assert.match(result.stdout, /codex\.microsoft-todo-mcp/)
     assert.match(result.stdout, /recommended/)
     assert.match(result.stdout, /optional/)
+  })
+
+  it('configures the least-privilege Microsoft To Do MCP idempotently', () => {
+    const fixture = createInitFixture()
+    const configPath = path.join(fixture.homeRoot, '.codex', 'config.toml')
+    writeFile(configPath, [
+      'model = "gpt-5"',
+      '',
+      '[mcp_servers.existing]',
+      'url = "https://example.com/mcp"',
+      '',
+    ].join('\n'))
+
+    const args = ['init', 'codex.microsoft-todo-mcp', '--yes']
+    const first = runCli(args, fixture.repoRoot, fixture.homeRoot)
+    const second = runCli(args, fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(first.status, 0, `${first.stdout}\n${first.stderr}`)
+    assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`)
+    assert.match(second.stdout, /\[unchanged\] ~\/\.codex\/config\.toml/)
+
+    const config = fs.readFileSync(configPath, 'utf-8')
+    assert.match(config, /^model = "gpt-5"/)
+    assert.match(config, /\[mcp_servers\.existing\]/)
+    assert.equal(countOccurrences(config, '[mcp_servers.microsoft-todo]'), 1)
+    assert.match(config, /@softeria\/ms-365-mcp-server@0\.140\.0/)
+    assert.match(config, /\^\(list\|get\|create\|update\)-todo-/)
+    assert.match(config, /Tasks\.ReadWrite/)
+    assert.match(config, /MS365_MCP_TENANT_ID = "consumers"/)
+    assert.doesNotMatch(config, /delete-todo/)
+  })
+
+  it('replaces only the existing Microsoft To Do MCP section', () => {
+    const fixture = createInitFixture()
+    const configPath = path.join(fixture.homeRoot, '.codex', 'config.toml')
+    writeFile(configPath, [
+      '[mcp_servers.microsoft-todo]',
+      'command = "old-command"',
+      '',
+      '[mcp_servers.microsoft-todo.env]',
+      'OLD_SECRET = "remove-me"',
+      '',
+      '[mcp_servers.existing]',
+      'command = "keep-me"',
+      '',
+    ].join('\n'))
+
+    const result = runCli(
+      ['init', 'codex.microsoft-todo-mcp', '--yes'],
+      fixture.repoRoot,
+      fixture.homeRoot,
+    )
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    const config = fs.readFileSync(configPath, 'utf-8')
+    assert.doesNotMatch(config, /old-command|OLD_SECRET|remove-me/)
+    assert.match(config, /\[mcp_servers\.existing\]\ncommand = "keep-me"/)
+    assert.match(config, /startup_timeout_sec = 120/)
+    assert.match(config, /\[mcp_servers\.microsoft-todo\.env\]\nMS365_MCP_TENANT_ID = "consumers"/)
+  })
+
+  it('preserves unrelated Codex config whitespace and CRLF line endings', () => {
+    const fixture = createInitFixture()
+    const configPath = path.join(fixture.homeRoot, '.codex', 'config.toml')
+    writeFile(configPath, [
+      'model = "gpt-5"',
+      '',
+      '',
+      '[mcp_servers.microsoft-todo]',
+      'command = "old-command"',
+      '',
+      '[mcp_servers.existing]',
+      'command = "keep-me"',
+      '',
+    ].join('\r\n'))
+
+    const result = runCli(
+      ['init', 'codex.microsoft-todo-mcp', '--yes'],
+      fixture.repoRoot,
+      fixture.homeRoot,
+    )
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    const config = fs.readFileSync(configPath, 'utf-8')
+    assert.match(config, /^model = "gpt-5"\r\n\r\n\r\n/)
+    assert.equal(config.replaceAll('\r\n', '').includes('\n'), false)
+    assert.match(config, /\[mcp_servers\.existing\]\r\ncommand = "keep-me"/)
   })
 
   it('blocks the large-push guard setup until its executable is synced', () => {

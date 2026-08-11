@@ -14,6 +14,11 @@ interface TokenCandidate {
   value: string
 }
 
+interface RunOpOptions {
+  allowFailure?: boolean
+  extraEnv?: Record<string, string>
+}
+
 interface OpItem {
   fields?: OpItemField[]
   tags?: string[]
@@ -37,7 +42,7 @@ export function opReadinessState(manifestPath: string, manifest: PrivateManifest
       const refs = readSecretReferences(secretEnvFilePath(manifestPath, manifest))
       const probeRef = refs.find(ref => !ref.optional) || refs[0]
 
-      if (probeRef && checkSecretReference(context, probeRef).ok)
+      if (probeRef && checkSecretReferences(context, [probeRef])[0]?.ok)
         return 'available'
     }
     catch {
@@ -69,8 +74,8 @@ export function checkMcpSecrets(manifestPath: string, manifest: PrivateManifest,
   console.log(`account: ${context.account}`)
   console.log(`env file: ${envFile}`)
 
-  for (const ref of refs) {
-    const result = checkSecretReference(context, ref)
+  for (const result of checkSecretReferences(context, refs)) {
+    const { ref } = result
 
     if (result.ok) {
       console.log(`ok: ${ref.ref}`)
@@ -235,6 +240,48 @@ function secretEnvFilePath(manifestPath: string, manifest: PrivateManifest, envF
   return resolveRepoPath(repoRootFromManifest(manifestPath), 'mcp/mcp.env.example')
 }
 
+function checkSecretReferences(context: OpContext, refs: SecretReference[]): Array<{ ok: boolean, ref: SecretReference }> {
+  const batch = probeSecretReferences(context, refs)
+  if (batch) {
+    return refs.map((ref, index) => ({
+      ok: batch[index],
+      ref,
+    }))
+  }
+
+  return refs.map(ref => checkSecretReference(context, ref))
+}
+
+function probeSecretReferences(context: OpContext, refs: SecretReference[]): boolean[] | undefined {
+  if (refs.length === 0)
+    return []
+
+  const envNames = refs.map((_, index) => `WST_OP_SECRET_${index}`)
+  const extraEnv = Object.fromEntries(refs.map((ref, index) => [envNames[index], secretReferencePath(ref)]))
+  const script = [
+    `const names = ${JSON.stringify(envNames)}`,
+    'process.stdout.write(JSON.stringify(names.map(name => Boolean(process.env[name]))))',
+  ].join(';')
+  const result = runOp(context, ['run', '--', process.execPath, '-e', script], {
+    allowFailure: true,
+    extraEnv,
+  })
+
+  if (result.status !== 0)
+    return undefined
+
+  try {
+    const values = JSON.parse(result.stdout) as unknown
+    if (!Array.isArray(values) || values.length !== refs.length || values.some(value => typeof value !== 'boolean'))
+      return undefined
+
+    return values as boolean[]
+  }
+  catch {
+    return undefined
+  }
+}
+
 function checkSecretReference(context: OpContext, ref: SecretReference): { ok: boolean, ref: SecretReference } {
   const result = runOp(context, ['read', secretReferencePath(ref)], { allowFailure: true })
 
@@ -246,11 +293,12 @@ function checkSecretReference(context: OpContext, ref: SecretReference): { ok: b
 
 function missingOptionalSecretReferences(manifestPath: string, manifest: PrivateManifest, context: OpContext): Set<string> {
   const refs = readSecretReferences(secretEnvFilePath(manifestPath, manifest))
+    .filter(ref => ref.optional)
   const missing = new Set<string>()
 
-  for (const ref of refs) {
-    if (ref.optional && !checkSecretReference(context, ref).ok)
-      missing.add(ref.ref)
+  for (const result of checkSecretReferences(context, refs)) {
+    if (!result.ok)
+      missing.add(result.ref.ref)
   }
 
   return missing
@@ -688,10 +736,13 @@ export function opEnv(context: OpContext): NodeJS.ProcessEnv {
   }
 }
 
-export function runOp(context: OpContext, args: string[], options: { allowFailure?: boolean } = {}): CommandResult {
+export function runOp(context: OpContext, args: string[], options: RunOpOptions = {}): CommandResult {
   const result = spawnSync('op', args, {
     encoding: 'utf8',
-    env: opEnv(context),
+    env: {
+      ...opEnv(context),
+      ...options.extraEnv,
+    },
     stdio: ['pipe', 'pipe', 'pipe'],
   })
 

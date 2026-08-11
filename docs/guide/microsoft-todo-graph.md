@@ -1,15 +1,31 @@
-# Microsoft To Do Graph 客户端
+# Microsoft To Do：MCP 与 Graph 客户端
 
-这个仓库使用一个本地、最小权限的 Microsoft Graph 客户端读写 Microsoft To Do。它直接调用微软官方 API，不依赖社区 MCP 中转服务；CLI 通过微软的 `@azure/msal-node` 完成设备代码登录。
+## 当前结论
 
-实现位于 [`packages/microsoft-todo-graph`](https://github.com/YunYouJun/workstation/tree/main/packages/microsoft-todo-graph)。OAuth token 缓存只保存在本机，不会写入仓库或打印到终端。
+日常让 Codex 操作 Microsoft To Do 时，优先使用 MCP，而不是再封装一个只包含调用说明的 Skill。workstation 将 `@softeria/ms-365-mcp-server@0.140.0` 固定为可选初始化任务，并把 Graph 资源能力限制为 To Do 的 list/get/create/update 工具和委托权限 `Tasks.ReadWrite`；delete 工具以及邮件、日历、文件等其他 Microsoft 365 资源都不会暴露。服务端仍提供登录、验登、账户选择/移除等本地认证辅助工具。本机使用个人 Microsoft 账户，因此 tenant 固定为 `consumers`，避免 `common` authority 的 refresh token 后续失效。
 
-## 为什么采用这个方案
+先预览，再写入当前用户的 Codex 配置：
 
-- Microsoft Graph 提供正式的 To Do list/task API，读取任务最低可使用委托权限 `Tasks.Read`，修改任务需要 `Tasks.ReadWrite`。
-- 设备代码流适合本地 CLI，不需要在仓库中保存 client secret。
-- 与通用 MCP server 相比，客户端只允许访问 `/v1.0/me/todo/`，攻击面和可授权操作更容易审查。
-- 写入与删除通过独立门禁控制，Codex 或脚本不能因为一次普通读取而意外修改任务。
+```bash
+workstation init codex.microsoft-todo-mcp
+workstation init codex.microsoft-todo-mcp --yes
+codex mcp get microsoft-todo
+```
+
+配置后新开一个 Codex 任务，使客户端重新加载 MCP。第一次调用 To Do 工具时按服务端提示完成 Microsoft 登录；OAuth token 只保存在本机。`npx` 和固定 npm 版本使同一配置可在 macOS、Linux 与 Windows 复用。
+
+To Do 认证不经过 1Password，也不需要把会轮换的 access token 或 refresh token 保存为长期密钥。当前固定版本默认把 MSAL 缓存加密写入用户配置目录；在 macOS 上只把缓存加密密钥交给系统钥匙串。这样既能让 MSAL 自动刷新 token，也不会让仓库、Codex 配置或 1Password 承担 OAuth token 生命周期。
+
+APM 仍是公开 Skills 和项目级 MCP 的事实源，但 APM 0.26 的自定义 MCP 安装目前只支持项目作用域，不能直接生成用户级 Codex 配置。因此这个全局 MCP 由显式的 workstation init 任务管理，任务只替换 `mcp_servers.microsoft-todo`，不会覆盖完整的 `~/.codex/config.toml`。
+
+仓库原有的本地 Graph 客户端继续保留为高可审计回退方案，尤其适合脚本、dry-run 更新和带二次确认的删除。实现位于 [`packages/microsoft-todo-graph`](https://github.com/YunYouJun/workstation/tree/main/packages/microsoft-todo-graph)。
+
+## 为什么这样分层
+
+- MCP 是 Agent 的执行接口，装一次即可被支持 MCP 的客户端直接发现；Skill 只在需要固定工作流、参数校验或审批策略时再加。
+- Microsoft Graph 提供正式的 To Do list/task API；读取最低可用 `Tasks.Read`，当前 MCP 为了支持创建和更新使用 `Tasks.ReadWrite`。
+- MCP 启动参数从服务端同时收窄工具和 scope；包版本固定，避免 `latest` 静默扩大能力。
+- 本地 Graph CLI 只允许访问 `/v1.0/me/todo/`，并继续提供独立的写入、`--apply` 和删除门禁。
 
 ## 安装与授权
 

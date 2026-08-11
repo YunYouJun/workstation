@@ -277,6 +277,43 @@ describe('private CLI', () => {
     assert.match(result.stdout, /optional missing, empty, or unreadable/)
   })
 
+  it('checks readable secret references with one op run invocation', () => {
+    const fixture = createPrivateFixture()
+    const callsPath = path.join(fixture.repoRoot, 'op-secret-probe-calls.json')
+    writeExecutable(path.join(fixture.binDir, 'op'), [
+      'const fs = require("node:fs")',
+      'const { spawnSync } = require("node:child_process")',
+      'const args = process.argv.slice(2)',
+      'const callsPath = process.env.FAKE_OP_CALLS',
+      'const calls = fs.existsSync(callsPath) ? JSON.parse(fs.readFileSync(callsPath, "utf-8")) : []',
+      'calls.push(args)',
+      'fs.writeFileSync(callsPath, JSON.stringify(calls))',
+      'if (args[0] === "run") {',
+      '  const separator = args.indexOf("--")',
+      '  const childEnv = { ...process.env }',
+      '  for (const name of Object.keys(childEnv)) {',
+      '    if (name.startsWith("WST_OP_SECRET_") && childEnv[name].startsWith("op://")) childEnv[name] = "secret"',
+      '  }',
+      '  const child = spawnSync(args[separator + 1], args.slice(separator + 2), { encoding: "utf8", env: childEnv })',
+      '  process.stdout.write(child.stdout || "")',
+      '  process.stderr.write(child.stderr || "")',
+      '  process.exit(child.status ?? 1)',
+      '}',
+      'if (args[0] === "read") process.exit(97)',
+      'process.exit(0)',
+    ])
+
+    const result = runCli(['private', 'secrets-check', '--manifest', fixture.manifestPath], fixture.repoRoot, fixture.homeRoot, {
+      FAKE_OP_CALLS: callsPath,
+      PATH: testPath(fixture.binDir),
+    })
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    const calls = readJsonFile(callsPath)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0][0], 'run')
+  })
+
   it('uses a readable secret reference as the private check 1Password probe', () => {
     const fixture = createPrivateFixture()
     writeExecutable(path.join(fixture.binDir, 'op'), [
@@ -555,13 +592,29 @@ describe('private CLI', () => {
 
   it('runs iOS commands with materialized App Store Connect key files', () => {
     const fixture = createPrivateFixture()
+    const callsPath = path.join(fixture.repoRoot, 'op-ios-run-calls.json')
     const outputPath = path.join(fixture.repoRoot, 'ios-run-output.json')
     const expectedKeyPath = path.join(fixture.homeRoot, '.appstoreconnect', 'private_keys', 'AuthKey_KEY123.p8')
     writeExecutable(path.join(fixture.binDir, 'op'), [
+      'const fs = require("node:fs")',
+      'const { spawnSync } = require("node:child_process")',
       'const args = process.argv.slice(2)',
-      'if (args[0] === "read" && args[1].endsWith("/key_id")) { process.stdout.write("KEY123"); process.exit(0) }',
-      'if (args[0] === "read" && args[1].endsWith("/issuer_id")) { process.stdout.write("ISSUER456"); process.exit(0) }',
-      'if (args[0] === "read" && args[1].endsWith("/private_key")) { process.stdout.write("-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----\\n"); process.exit(0) }',
+      'const callsPath = process.env.FAKE_OP_CALLS',
+      'const calls = fs.existsSync(callsPath) ? JSON.parse(fs.readFileSync(callsPath, "utf-8")) : []',
+      'calls.push(args)',
+      'fs.writeFileSync(callsPath, JSON.stringify(calls))',
+      'if (args[0] === "run") {',
+      '  const separator = args.indexOf("--")',
+      '  const childEnv = { ...process.env }',
+      '  childEnv.ASC_KEY_ID = "KEY123"',
+      '  childEnv.ASC_ISSUER_ID = "ISSUER456"',
+      '  childEnv.ASC_KEY_P8_CONTENT = "-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----\\n"',
+      '  const child = spawnSync(args[separator + 1], args.slice(separator + 2), { encoding: "utf8", env: childEnv })',
+      '  process.stdout.write(child.stdout || "")',
+      '  process.stderr.write(child.stderr || "")',
+      '  process.exit(child.status ?? 1)',
+      '}',
+      'if (args[0] === "read") process.exit(97)',
       'process.exit(0)',
     ])
 
@@ -585,6 +638,7 @@ describe('private CLI', () => {
         'fs.writeFileSync(process.env.OUT, JSON.stringify(output))',
       ].join('\n'),
     ], fixture.repoRoot, fixture.homeRoot, {
+      FAKE_OP_CALLS: callsPath,
       OUT: outputPath,
       PATH: testPath(fixture.binDir),
     })
@@ -597,6 +651,9 @@ describe('private CLI', () => {
     assert.equal(output.hasInlineKey, false)
     assert.match(output.keyContent, /BEGIN PRIVATE KEY/)
     assert.equal(fs.statSync(expectedKeyPath).mode & 0o777, 0o600)
+    const calls = readJsonFile(callsPath)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0][0], 'run')
   })
 
   it('imports App Store Connect credentials into one 1Password item', () => {

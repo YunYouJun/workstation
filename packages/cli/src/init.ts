@@ -71,9 +71,12 @@ interface GitIdentityProfile {
 
 const GIT_INCLUDE_IF_TASK_ID = 'git.include-if'
 const GIT_LARGE_PUSH_GUARD_TASK_ID = 'git.large-push-guard'
+const CODEX_MICROSOFT_TODO_MCP_TASK_ID = 'codex.microsoft-todo-mcp'
 const DEFAULT_GIT_HOST = 'github.com'
 const GIT_LARGE_PUSH_GUARD_COMMAND = '~/.local/libexec/git-confirm-large-push'
 const GIT_LARGE_PUSH_GUARD_SECTION = '[hook "workstation-large-push-guard"]'
+const MICROSOFT_TODO_MCP_SECTION = '[mcp_servers.microsoft-todo]'
+const MICROSOFT_TODO_MCP_PACKAGE = '@softeria/ms-365-mcp-server@0.140.0'
 
 const tasks: InitTaskDefinition[] = [
   {
@@ -93,6 +96,15 @@ const tasks: InitTaskDefinition[] = [
     createPlan: createGitLargePushGuardPlan,
     apply: applyFileChangePlan,
     verify: verifyGitLargePushGuardPlan,
+  },
+  {
+    id: CODEX_MICROSOFT_TODO_MCP_TASK_ID,
+    title: 'Microsoft To Do MCP for Codex',
+    description: 'Configure a pinned, To Do-only Microsoft 365 MCP server without delete tools.',
+    recommended: false,
+    createPlan: createCodexMicrosoftTodoMcpPlan,
+    apply: applyFileChangePlan,
+    verify: verifyFileChangePlan,
   },
 ]
 
@@ -386,6 +398,43 @@ function createGitLargePushGuardPlan(): InitTaskPlan {
   }
 }
 
+function createCodexMicrosoftTodoMcpPlan(): InitTaskPlan {
+  const codexHome = process.env.CODEX_HOME
+    ? path.resolve(process.env.CODEX_HOME)
+    : path.join(getHomeDir(), '.codex')
+  const configFile = path.join(codexHome, 'config.toml')
+  const original = readTextFile(configFile)
+  const next = setTomlSection(original, MICROSOFT_TODO_MCP_SECTION, [
+    'command = "npx"',
+    `args = ["-y", "${MICROSOFT_TODO_MCP_PACKAGE}", "--enabled-tools", "^(list|get|create|update)-todo-", "--allowed-scopes", "Tasks.ReadWrite"]`,
+    'startup_timeout_sec = 120',
+    '',
+    '[mcp_servers.microsoft-todo.env]',
+    'MS365_MCP_TENANT_ID = "consumers"',
+  ])
+
+  return {
+    taskId: CODEX_MICROSOFT_TODO_MCP_TASK_ID,
+    title: 'Microsoft To Do MCP for Codex',
+    status: 'ready',
+    messages: [
+      `Pinned ${MICROSOFT_TODO_MCP_PACKAGE}; npx downloads the same version on supported platforms.`,
+      'Graph resource tools are limited to list/get/create/update To Do operations with delegated Tasks.ReadWrite permission.',
+      'Delete tools and non-To Do Microsoft 365 resources are excluded at server startup.',
+      'Built-in login and account-cache helper tools remain available for local authentication.',
+      'The tenant is pinned to consumers for this workstation personal Microsoft account.',
+    ],
+    changes: [
+      makeFileChange(
+        configFile,
+        original,
+        next,
+        'manage the mcp_servers.microsoft-todo section',
+      ),
+    ],
+  }
+}
+
 function applyFileChangePlan(plan: InitTaskPlan) {
   for (const change of plan.changes) {
     if (change.action === 'unchanged')
@@ -654,6 +703,37 @@ function setGitConfigValue(content: string, section: string, key: string, value:
   }
 
   return `${lines.join('\n')}\n`
+}
+
+function setTomlSection(content: string, section: string, values: string[]) {
+  const newline = content.includes('\r\n') ? '\r\n' : '\n'
+  const lines = content.replace(/\r\n/g, '\n').split('\n')
+  if (lines.at(-1) === '')
+    lines.pop()
+
+  const sectionName = section.slice(1, -1)
+  const sectionIndex = lines.findIndex(line => line.trim() === section)
+  const nextLines = [section, ...values]
+
+  if (sectionIndex === -1) {
+    if (lines.length > 0)
+      lines.push('')
+    lines.push(...nextLines)
+    return `${lines.join(newline)}${newline}`
+  }
+
+  let endIndex = sectionIndex + 1
+  while (endIndex < lines.length) {
+    const match = lines[endIndex].trim().match(/^\[([^\]]+)\]$/)
+    if (match && !match[1].startsWith(`${sectionName}.`))
+      break
+    endIndex += 1
+  }
+
+  if (endIndex < lines.length)
+    nextLines.push('')
+  lines.splice(sectionIndex, endIndex - sectionIndex, ...nextLines)
+  return `${lines.join(newline)}${newline}`
 }
 
 function removeGitConfigValue(content: string, section: string, key: string) {

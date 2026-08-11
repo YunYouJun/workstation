@@ -1,9 +1,11 @@
 # Agent Skills and APM
 
 This repository uses [APM (Agent Package Manager)](https://microsoft.github.io/apm/)
-for public, portable Agent Skills and standard MCP servers. APM is the only
-source of truth for that lifecycle: workstation no longer maintains a second
-Skills manifest, Git downloader, status command, or MCP mapping script.
+for public, portable Agent Skills and project-scoped standard MCP servers. APM is
+the only source of truth for that lifecycle: workstation no longer maintains a
+second Skills manifest, Git downloader, status command, or MCP mapping script.
+User-scoped MCP servers that must work across projects use a native client
+command or an explicit workstation init task.
 
 ## Files and ownership
 
@@ -62,12 +64,22 @@ Never hand-edit `apm.lock.yaml`. The manifest may track `main` or a version
 range; the lock still pins the resolved commit, and only an explicit
 `apm update --global` advances it.
 
-## Standard MCP and private Codex MCP
+## Project, user, and private Codex MCP
 
-Use APM for public, portable MCP servers:
+Use APM for public MCP servers that travel with a project:
 
 ```bash
-apm install --global --mcp io.github.example/server
+apm install --mcp io.github.example/server
+```
+
+APM 0.26 currently installs self-defined MCP servers only at project scope and
+rejects `--global --mcp`. A public MCP that must be available in every Codex
+project should use a previewable, idempotent workstation init task or
+`codex mcp add`. For Microsoft To Do:
+
+```bash
+workstation init codex.microsoft-todo-mcp
+workstation init codex.microsoft-todo-mcp --yes
 ```
 
 TOML containing internal server names, private local commands, Codex plugin
@@ -96,7 +108,8 @@ repository's `.agents/skills` or the private overlay.
 
 | Need | Use |
 | --- | --- |
-| Public Skills, standard MCP, locking, updates, and replay | APM |
+| Public Skills, project-scoped standard MCP, locking, updates, and replay | APM |
+| Public user-scoped Codex MCP | workstation init / `codex mcp` |
 | Repository workflows | `.agents/skills` |
 | Private local Skills, Codex-only MCP, and 1Password | `wst private` |
 | Software installation | `Brewfile` / `pnpm software:*` |

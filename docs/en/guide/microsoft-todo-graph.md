@@ -1,15 +1,31 @@
-# Microsoft To Do Graph client
+# Microsoft To Do: MCP and Graph client
 
-This repository uses a local, least-privilege Microsoft Graph client to read and update Microsoft To Do. It calls the official Microsoft API directly instead of relying on a community MCP intermediary, and uses Microsoft's `@azure/msal-node` library for device-code authentication.
+## Current decision
 
-The implementation lives in [`packages/microsoft-todo-graph`](https://github.com/YunYouJun/workstation/tree/main/packages/microsoft-todo-graph). OAuth tokens stay in a local cache and are never written to the repository or printed to the terminal.
+Use MCP for routine Microsoft To Do operations from Codex instead of wrapping tool instructions in a dedicated Skill. Workstation pins `@softeria/ms-365-mcp-server@0.140.0` as an optional init task and limits Graph resource access to To Do list/get/create/update tools with delegated `Tasks.ReadWrite`. Delete tools and non-To Do Microsoft 365 resources such as mail, calendar, and files are not exposed. The server still provides local login, verification, account-selection, and account-removal helpers. This workstation uses a personal Microsoft account, so the tenant is pinned to `consumers` to prevent later refresh-token failures through the `common` authority.
 
-## Why this approach
+Preview the change, apply it to the current user's Codex config, and inspect the result:
 
-- Microsoft Graph provides first-party To Do list/task APIs. Delegated `Tasks.Read` is sufficient for reads; task updates require `Tasks.ReadWrite`.
-- Device-code authentication works well for a local CLI and does not require storing a client secret in the repository.
-- Unlike a general-purpose MCP server, this client allows only `/v1.0/me/todo/`, keeping its reachable API surface easy to audit.
-- Separate write and delete gates prevent an ordinary read operation from mutating tasks accidentally.
+```bash
+workstation init codex.microsoft-todo-mcp
+workstation init codex.microsoft-todo-mcp --yes
+codex mcp get microsoft-todo
+```
+
+Open a new Codex task after configuration so the client reloads its MCP servers. Follow the Microsoft sign-in prompt on the first To Do tool call; OAuth tokens remain local. The `npx` command and pinned npm version make the same configuration reusable on macOS, Linux, and Windows.
+
+To Do authentication does not use 1Password, and rotating access or refresh tokens should not be copied into a long-lived secret item. The pinned server encrypts its MSAL cache in the user configuration directory and, on macOS, keeps only the cache-encryption key in the system Keychain. MSAL can therefore refresh tokens without making the repository, Codex configuration, or 1Password responsible for their lifecycle.
+
+APM remains the source of truth for public Skills and project-scoped MCP servers. APM 0.26 currently installs self-defined MCP servers only at project scope, so it cannot generate this user-level Codex configuration directly. The explicit workstation init task therefore manages this global server and replaces only `mcp_servers.microsoft-todo`, never the complete `~/.codex/config.toml`.
+
+The existing local Graph client remains available as the more auditable fallback for scripts, dry-run updates, and deletion with a second confirmation. Its implementation lives in [`packages/microsoft-todo-graph`](https://github.com/YunYouJun/workstation/tree/main/packages/microsoft-todo-graph).
+
+## Why this split
+
+- MCP is the agent execution interface and is discovered directly by compatible clients. Add a Skill only when a fixed workflow, extra validation, or an approval policy becomes necessary.
+- Microsoft Graph provides first-party To Do list/task APIs. Delegated `Tasks.Read` is sufficient for reads; this MCP uses `Tasks.ReadWrite` to support creation and updates.
+- Startup arguments narrow both tools and scopes at the server boundary, and the package is pinned instead of following `latest`.
+- The local Graph CLI still permits only `/v1.0/me/todo/` and retains separate write, `--apply`, and deletion gates.
 
 ## Install and authorize
 
