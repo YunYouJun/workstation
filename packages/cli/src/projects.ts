@@ -5,12 +5,14 @@ import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 import * as p from '@clack/prompts'
+import { colors } from 'consola/utils'
 import { parse as parseYaml } from 'yaml'
 import { getHomeDir, getRepoRoot } from './config'
 
 const DEFAULT_OWNER = 'YunYouJun'
 const DEFAULT_LIMIT = 50
 const DEFAULT_ROOT = '~/repos'
+const DEFAULT_PULL_ROOT = '~/repos/github.com'
 const DEFAULT_STATUS_MAX_DEPTH = 6
 const ACTIVE_PROJECT_LIMIT_ENV = 'WORKSTATION_ACTIVE_PROJECT_LIMIT'
 const PROJECT_MANIFEST_CACHE_ENV = 'WORKSTATION_PROJECTS_CACHE'
@@ -96,6 +98,13 @@ export interface ProjectStatusOptions {
   maxDepth: number
 }
 
+export interface PullProjectsOptions {
+  root: string
+  dryRun: boolean
+  yes: boolean
+  maxDepth: number
+}
+
 export interface ProjectMigrateLayoutOptions {
   root: string
   all: boolean
@@ -159,6 +168,12 @@ interface ProjectMigrationPlan {
 interface ProjectMigrationResult {
   status: 'moved' | 'skipped' | 'error'
   plan: ProjectMigrationPlan
+  message: string
+}
+
+interface ProjectPullResult {
+  path: string
+  status: 'updated' | 'unchanged' | 'skipped' | 'error'
   message: string
 }
 
@@ -1266,6 +1281,117 @@ function formatInspectionDetails(inspection: ProjectInspection): string {
   return details.join(', ')
 }
 
+function getProjectPullAttention(inspection: ProjectInspection): string | null {
+  if (hasProjectError(inspection))
+    return formatInspectionDetails(inspection)
+
+  if (!inspection.hasHead)
+    return 'no commits'
+
+  if (inspection.detached)
+    return 'detached HEAD'
+
+  if (hasProjectAttention(inspection))
+    return formatInspectionDetails(inspection)
+
+  return null
+}
+
+function getGitHead(repositoryPath: string): string | null {
+  const result = runCommand('git', ['-C', repositoryPath, 'rev-parse', '--verify', 'HEAD'])
+  if (result.error || result.status !== 0)
+    return null
+
+  return result.stdout.trim() || null
+}
+
+function pullProjectRepository(repositoryPath: string, dryRun: boolean): ProjectPullResult {
+  const inspection = inspectGitRepository(repositoryPath)
+  const attention = getProjectPullAttention(inspection)
+  if (attention) {
+    return {
+      path: repositoryPath,
+      status: 'skipped',
+      message: `Needs attention before pull: ${attention}`,
+    }
+  }
+
+  if (dryRun) {
+    return {
+      path: repositoryPath,
+      status: 'updated',
+      message: `[dry-run] Would pull --ff-only from ${inspection.upstream}`,
+    }
+  }
+
+  const beforeHead = getGitHead(repositoryPath)
+  const pullArgs = ['-C', repositoryPath, 'pull', '--ff-only']
+  const pullResult = runCommand('git', pullArgs, {
+    GIT_TERMINAL_PROMPT: '0',
+  }, {
+    timeout: 60_000,
+  })
+
+  if (pullResult.error || pullResult.status !== 0) {
+    return {
+      path: repositoryPath,
+      status: 'error',
+      message: getCommandErrorMessage('git', pullArgs, pullResult),
+    }
+  }
+
+  const afterHead = getGitHead(repositoryPath)
+  if (!beforeHead || !afterHead) {
+    return {
+      path: repositoryPath,
+      status: 'error',
+      message: 'Could not verify repository HEAD after pull',
+    }
+  }
+
+  return {
+    path: repositoryPath,
+    status: beforeHead === afterHead ? 'unchanged' : 'updated',
+    message: beforeHead === afterHead ? 'Already up to date' : 'Updated with fast-forward pull',
+  }
+}
+
+function printProjectPullResults(root: string, results: ProjectPullResult[], dryRun: boolean) {
+  for (const result of results) {
+    const label = dryRun && result.status === 'updated'
+      ? colors.cyan('PULL'.padEnd(7))
+      : result.status === 'updated'
+        ? colors.green('UPDATED'.padEnd(7))
+        : result.status === 'unchanged'
+          ? colors.dim('CURRENT'.padEnd(7))
+          : result.status === 'skipped'
+            ? colors.yellow('SKIP'.padEnd(7))
+            : colors.red('ERROR'.padEnd(7))
+    const message = dryRun && result.status === 'updated'
+      ? colors.cyan(result.message)
+      : result.status === 'updated'
+        ? colors.green(result.message)
+        : result.status === 'unchanged'
+          ? colors.dim(result.message)
+          : result.status === 'skipped'
+            ? colors.yellow(result.message)
+            : colors.red(result.message)
+    const repositoryPath = colors.bold(formatInspectionPath(root, result.path))
+    console.log(`  ${label} ${repositoryPath}  ${message}`)
+  }
+
+  return {
+    updated: results.filter(result => result.status === 'updated').length,
+    unchanged: results.filter(result => result.status === 'unchanged').length,
+    skipped: results.filter(result => result.status === 'skipped').length,
+    errors: results.filter(result => result.status === 'error').length,
+  }
+}
+
+function canPromptForProjectPull(): boolean {
+  return Boolean(process.stdin.isTTY && process.stdout.isTTY && !process.env.CI)
+}
+
 function getVisibleProjectInspections(inspections: ProjectInspection[], showAll: boolean) {
   return showAll
     ? inspections
@@ -2239,6 +2365,98 @@ export async function projectStatus(rawOptions: Partial<ProjectStatusOptions> = 
     p.outro(`Done! ${repositories.length} repositories, ${attention} need attention, ${errors} errors`)
 
   if (errors > 0 || (options.check && attention > 0))
+    process.exitCode = 1
+}
+
+export async function pullProjects(rawOptions: Partial<PullProjectsOptions> = {}) {
+  let options: PullProjectsOptions
+  try {
+    options = {
+      root: rawOptions.root || DEFAULT_PULL_ROOT,
+      dryRun: rawOptions.dryRun ?? false,
+      yes: rawOptions.yes ?? false,
+      maxDepth: parseMaxDepth(rawOptions.maxDepth ?? DEFAULT_STATUS_MAX_DEPTH),
+    }
+  }
+  catch (error) {
+    console.error(error instanceof Error ? error.message : String(error))
+    process.exitCode = 1
+    return
+  }
+
+  const resolvedRoot = resolveProjectRoot(options.root)
+  const canPrompt = !options.dryRun && !options.yes && canPromptForProjectPull()
+
+  p.intro(`Pull local projects under ${resolvedRoot}`)
+  if (options.dryRun)
+    console.log('Dry-run mode: repositories will not be pulled')
+  else if (!options.yes && canPrompt)
+    console.log('Review the pull plan, then confirm to continue')
+  else if (!options.yes)
+    console.log('Dry-run mode: pass --yes in non-interactive environments')
+
+  if (!fs.existsSync(resolvedRoot)) {
+    console.error(`Project root does not exist: ${resolvedRoot}`)
+    p.outro('No repositories pulled')
+    process.exitCode = 1
+    return
+  }
+
+  if (!commandExists('git')) {
+    console.error('git is not installed or is not available in PATH')
+    p.outro('No repositories pulled')
+    process.exitCode = 1
+    return
+  }
+
+  const s = p.spinner()
+  s.start('Scanning local repositories...')
+  const repositories = discoverGitRepositories(resolvedRoot, options.maxDepth)
+  s.stop(`Found ${repositories.length} repositories`)
+
+  if (repositories.length === 0) {
+    p.outro('No git repositories found')
+    return
+  }
+
+  let repositoriesToPull = repositories
+  let previewSkipped = 0
+
+  if (options.dryRun || !options.yes) {
+    const previewResults = repositories.map(repository => pullProjectRepository(repository, true))
+    const previewSummary = printProjectPullResults(resolvedRoot, previewResults, true)
+    repositoriesToPull = previewResults
+      .filter(result => result.status === 'updated')
+      .map(result => result.path)
+    previewSkipped = previewSummary.skipped
+
+    if (options.dryRun || !canPrompt) {
+      p.outro(`Done! ${previewSummary.updated} would pull, ${previewSummary.skipped} skipped, ${previewSummary.errors} errors`)
+      return
+    }
+
+    if (repositoriesToPull.length === 0) {
+      p.outro(`Done! 0 would pull, ${previewSummary.skipped} skipped, ${previewSummary.errors} errors`)
+      return
+    }
+
+    const confirmed = await p.confirm({
+      message: `Pull ${repositoriesToPull.length} repositories with git pull --ff-only?`,
+      initialValue: false,
+    })
+    if (p.isCancel(confirmed) || !confirmed) {
+      p.cancel('Pull cancelled')
+      return
+    }
+
+    console.log('')
+  }
+
+  const results = repositoriesToPull.map(repository => pullProjectRepository(repository, false))
+  const { updated, unchanged, skipped, errors } = printProjectPullResults(resolvedRoot, results, false)
+  p.outro(`Done! ${updated} updated, ${unchanged} unchanged, ${previewSkipped + skipped} skipped, ${errors} errors`)
+
+  if (errors > 0)
     process.exitCode = 1
 }
 

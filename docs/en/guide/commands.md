@@ -326,6 +326,15 @@ Configure the default count through the script entry:
 WORKSTATION_ACTIVE_PROJECT_LIMIT=20 pnpm projects:clone-active
 ```
 
+Preview and then bulk-pull safe repositories under `~/repos/github.com`:
+
+```bash
+workstation projects pull
+workstation projects pull --dry-run
+workstation projects pull --yes
+pnpm projects:pull --yes
+```
+
 Check local projects for uncommitted, unpushed, or stashed work:
 
 ```bash

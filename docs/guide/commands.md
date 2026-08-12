@@ -318,6 +318,15 @@ wst p m --file projects.local.yaml -g common --repository git.example.com/exampl
 WORKSTATION_ACTIVE_PROJECT_LIMIT=20 pnpm projects:clone-active
 ```
 
+预览并批量拉取 `~/repos/github.com` 下工作区干净的仓库：
+
+```bash
+workstation projects pull
+workstation projects pull --dry-run
+workstation projects pull --yes
+pnpm projects:pull --yes
+```
+
 检查本地项目是否有未提交、未 push 或 stash：
 
 ```bash

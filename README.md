@@ -144,11 +144,15 @@ workstation projects clone-active --limit 20       # preview latest 20
 workstation projects clone-active --limit 50 -i    # select repositories interactively
 workstation projects clone-active --update --yes   # update existing checkouts too
 workstation projects clone-active --https --yes    # use HTTPS clone URLs
+workstation projects pull                          # review colored plan and confirm in a terminal
+workstation projects pull --dry-run                # preview only, never prompt
+workstation projects pull --yes                    # apply without confirmation
 workstation projects status                        # show local repos with dirty/unpushed/stashed work
 wst p status --check                               # fail when any repo needs attention
 wst p status --max-depth 8                         # scan deeper nested checkout layouts
 wst p active --limit 20                            # short entrypoint
 pnpm projects:clone-active                         # script alias, dry-run
+pnpm projects:pull --yes                           # script alias, apply safe pulls
 pnpm projects:status                               # script alias, local repo audit
 ```
 
@@ -190,6 +194,15 @@ Interactive manifest selection shows each repository's local state (`new`,
 Repositories that would be skipped or need attention are not selected by default,
 and non-interactive `--update --yes` skips unsafe updates instead of pulling into
 dirty or invalid checkouts.
+
+Use `workstation projects pull` to review a colored update plan for all local
+repositories under `~/repos/github.com` and confirm it interactively. Use
+`--dry-run` to preview without prompting or `--yes` to apply without confirmation;
+non-interactive environments remain preview-only unless `--yes` is present. The
+command skips repositories with uncommitted files, unpushed commits, stashes,
+detached HEADs, or missing upstreams, and runs `git pull --ff-only` for the rest.
+This synchronizes committed and pushed history only; it does not transfer
+uncommitted files or stashes between machines.
 
 Use `workstation projects status` before switching machines to scan local
 repositories under `~/repos`. It reports uncommitted files, unpushed commits,

@@ -22,6 +22,7 @@
     "software:open": "pnpm software open",
     "software:status": "pnpm software status",
     "projects:clone-active": "pnpm --filter @yunyoujun/workstation exec tsx src/cli.ts p active",
+    "projects:pull": "pnpm --filter @yunyoujun/workstation exec tsx src/cli.ts p pull",
     "projects:status": "pnpm --filter @yunyoujun/workstation exec tsx src/cli.ts p status",
     "private": "pnpm --filter @yunyoujun/workstation exec tsx src/cli.ts private",
     "private:apply": "pnpm private apply",

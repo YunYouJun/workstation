@@ -211,6 +211,39 @@ gh auth login
 ~/repos/github.com/<owner>/<repo>
 ```
 
+## 批量拉取本地仓库
+
+在另一台电脑 push 完代码后，可以检查 `~/repos/github.com` 下所有本地仓库，并在彩色计划列表后确认是否拉取：
+
+```bash
+workstation projects pull
+```
+
+交互终端中默认答案是 `No`。只预览、不显示确认提示时，显式使用 `--dry-run`：
+
+```bash
+workstation projects pull --dry-run
+```
+
+脚本、CI 或已经确认计划后，使用 `--yes` 跳过提示：
+
+```bash
+workstation projects pull --yes
+pnpm projects:pull --yes
+```
+
+日常终端也可以使用短别名 `wst p pull`。非交互环境没有 `--yes` 时只输出计划，不会等待输入。列表使用 `PULL`、`UPDATED`、`CURRENT`、`SKIP` 和 `ERROR` 标签区分状态，并自动遵守 `NO_COLOR`。
+
+命令递归发现本地 Git 仓库，不依赖 GitHub API 或仓库清单。它只更新当前分支有 upstream、工作区干净、没有未 push commit 或 stash 的仓库，并使用 `git pull --ff-only`，不会自动创建 merge commit。需要关注的仓库会跳过，某个仓库拉取失败也不会阻止检查后续仓库。
+
+默认根目录专门限定为 `~/repos/github.com`。也可以覆盖目录或扫描深度：
+
+```bash
+workstation projects pull --root ~/repos/git.example.com --max-depth 8
+```
+
+Git 只能在多台电脑之间同步已经 commit 并 push 的历史；未提交文件、stash 和未 push 的本地分支不会被这个命令传输。换机前先运行 `wst p status --check`，可以找出这些只存在于本机的状态。
+
 ## 本地状态巡检
 
 换机或清理旧机器前，检查 `~/repos` 下本地 Git 仓库是否还有需要处理的内容：

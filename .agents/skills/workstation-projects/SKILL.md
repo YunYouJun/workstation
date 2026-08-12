@@ -70,11 +70,24 @@ wst p active --limit 50 --yes
 wst p active YunLeFun --limit 20 --yes
 ```
 
-5. For existing checkouts, update only when requested:
+5. For the active GitHub subset, update only when requested:
 
 ```bash
 wst p active --limit 50 --update --yes
 ```
+
+To pull every safe local checkout under `~/repos/github.com`, review the colored
+plan and confirm in an interactive terminal:
+
+```bash
+workstation projects pull
+workstation projects pull --dry-run
+workstation projects pull --yes
+```
+
+The bulk pull skips repositories with uncommitted files, unpushed commits,
+stashes, detached HEADs, or missing/gone upstreams. It uses `git pull --ff-only`.
+Non-interactive runs remain preview-only unless `--yes` is present.
 
 6. Before switching machines or cleaning up old checkouts, audit local Git
    repositories through the CLI:
@@ -100,7 +113,8 @@ wst p status --max-depth 8
 
 ## Safety Rules
 
-- Keep clone commands defaulting to dry-run in docs and examples.
+- Keep clone commands defaulting to dry-run. Bulk pulls must preview before
+  writes and require either interactive confirmation or `--yes`.
 - Keep status/audit commands read-only.
 - Prefer `gh` for GitHub authentication and repository discovery.
 - Prefer `ghq` layout under `~/repos/github.com/<owner>/<repo>`.
@@ -119,6 +133,8 @@ Preferred commands:
 workstation projects clone-active
 workstation p active --limit 50
 wst p active --limit 50
+workstation projects pull
+workstation projects pull --yes
 wst p status
 wst p status --check
 ```

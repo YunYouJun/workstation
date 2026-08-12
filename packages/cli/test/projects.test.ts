@@ -215,6 +215,39 @@ function createStatusFixture() {
   }
 }
 
+function createRemoteTrackingRepo(
+  fixture: ReturnType<typeof createStatusFixture>,
+  name: string,
+) {
+  const safeName = name.replaceAll('/', '-')
+  const remoteRoot = path.join(fixture.tempDir, 'remotes')
+  const remotePath = path.join(remoteRoot, `${safeName}.git`)
+  const seedPath = path.join(fixture.tempDir, 'seeds', safeName)
+  const repositoryPath = path.join(fixture.projectsRoot, ...name.split('/'))
+  fs.mkdirSync(remoteRoot, { recursive: true })
+  fs.mkdirSync(seedPath, { recursive: true })
+  fs.mkdirSync(path.dirname(repositoryPath), { recursive: true })
+
+  runGit(['init', '--bare', remotePath], fixture.tempDir)
+  runGit(['init', '--initial-branch=main'], seedPath)
+  runGit(['config', 'user.name', 'Workstation Test'], seedPath)
+  runGit(['config', 'user.email', 'workstation@example.com'], seedPath)
+  writeFile(path.join(seedPath, 'README.md'), 'initial\n')
+  runGit(['add', 'README.md'], seedPath)
+  runGit(['commit', '-m', 'initial'], seedPath)
+  runGit(['remote', 'add', 'origin', remotePath], seedPath)
+  runGit(['push', '-u', 'origin', 'main'], seedPath)
+  runGit(['symbolic-ref', 'HEAD', 'refs/heads/main'], remotePath)
+  runGit(['clone', remotePath, repositoryPath], fixture.tempDir)
+
+  writeFile(path.join(seedPath, 'README.md'), 'updated\n')
+  runGit(['add', 'README.md'], seedPath)
+  runGit(['commit', '-m', 'update'], seedPath)
+  runGit(['push'], seedPath)
+
+  return repositoryPath
+}
+
 afterEach(() => {
   removePath(tempDir)
   tempDir = undefined
@@ -663,6 +696,84 @@ describe('projects CLI', () => {
       'get',
       'git@github.com:YunYouJun/workstation.git',
     ])
+  })
+
+  it('previews pulling every safe local repository by default', () => {
+    const fixture = createStatusFixture()
+    const githubRoot = path.join(fixture.projectsRoot, 'github.com')
+    const repositoryPath = createRemoteTrackingRepo(fixture, 'github.com/YunYouJun/workstation')
+
+    const result = runCli(['p', 'pull', '--root', githubRoot], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /\[dry-run\] Would pull --ff-only from origin\/main/)
+    assert.match(`${result.stdout}\n${result.stderr}`, /YunYouJun\/workstation/)
+    assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /Pull 1 repositories with git pull/)
+    assert.equal(fs.readFileSync(path.join(repositoryPath, 'README.md'), 'utf-8'), 'initial\n')
+  })
+
+  it('colors pull plans when terminal colors are forced', () => {
+    const fixture = createStatusFixture()
+    const githubRoot = path.join(fixture.projectsRoot, 'github.com')
+    createRemoteTrackingRepo(fixture, 'github.com/YunYouJun/workstation')
+
+    const result = runCli(['p', 'pull', '--root', githubRoot], fixture.repoRoot, fixture.homeRoot, {
+      FORCE_COLOR: '1',
+      NO_COLOR: undefined,
+    })
+
+    const output = `${result.stdout}\n${result.stderr}`
+    assert.equal(result.status, 0, output)
+    assert.equal(output.includes('\u001B[36mPULL   \u001B[39m'), true)
+    assert.equal(output.includes('\u001B[1mYunYouJun/workstation\u001B[22m'), true)
+  })
+
+  it('keeps explicit dry-run read-only even when yes is also passed', () => {
+    const fixture = createStatusFixture()
+    const githubRoot = path.join(fixture.projectsRoot, 'github.com')
+    const repositoryPath = createRemoteTrackingRepo(fixture, 'github.com/YunYouJun/workstation')
+
+    const result = runCli(['p', 'pull', '--root', githubRoot, '--dry-run', '--yes'], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /\[dry-run\] Would pull --ff-only/)
+    assert.equal(fs.readFileSync(path.join(repositoryPath, 'README.md'), 'utf-8'), 'initial\n')
+  })
+
+  it('documents project actions and pull examples in help', () => {
+    const fixture = createStatusFixture()
+
+    const result = runCli(['projects', 'pull', '--help'], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Actions:/)
+    assert.match(`${result.stdout}\n${result.stderr}`, /pull\s+Preview and fast-forward safe local repositories/)
+    assert.match(`${result.stdout}\n${result.stderr}`, /workstation projects pull --dry-run/)
+  })
+
+  it('fast-forwards safe local repositories when confirmed', () => {
+    const fixture = createStatusFixture()
+    const githubRoot = path.join(fixture.projectsRoot, 'github.com')
+    const repositoryPath = createRemoteTrackingRepo(fixture, 'github.com/YunYouJun/workstation')
+
+    const result = runCli(['projects', 'update', '--root', githubRoot, '--yes'], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Updated with fast-forward pull/)
+    assert.equal(fs.readFileSync(path.join(repositoryPath, 'README.md'), 'utf-8'), 'updated\n')
+  })
+
+  it('skips local repositories with uncommitted work', () => {
+    const fixture = createStatusFixture()
+    const githubRoot = path.join(fixture.projectsRoot, 'github.com')
+    const repositoryPath = createRemoteTrackingRepo(fixture, 'github.com/YunYouJun/workstation')
+    writeFile(path.join(repositoryPath, 'notes.md'), 'draft\n')
+
+    const result = runCli(['p', 'pull', '--root', githubRoot, '--yes'], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Needs attention before pull: 1 untracked/)
+    assert.equal(fs.readFileSync(path.join(repositoryPath, 'README.md'), 'utf-8'), 'initial\n')
   })
 
   it('reports local repositories with uncommitted files', () => {

@@ -6,7 +6,7 @@ import { runChezmoi } from './chezmoi'
 import { doctor } from './doctor'
 import { runInit } from './init'
 import { runPrivateCommand } from './private'
-import { cloneActiveProjects, cloneManifestProjects, projectMigrateLayout, projectStatus } from './projects'
+import { cloneActiveProjects, cloneManifestProjects, projectMigrateLayout, projectStatus, pullProjects } from './projects'
 import { diff, status, sync, syncInteractive } from './sync'
 
 function getCliName() {
@@ -26,6 +26,9 @@ function parseProjectAction(action: string | undefined) {
 
   if (['status', 'dirty', 'check'].includes(projectAction))
     return 'status'
+
+  if (['pull', 'pull-all', 'update', 'update-all'].includes(projectAction))
+    return 'pull'
 
   if (['migrate-layout', 'migrate', 'layout'].includes(projectAction))
     return 'migrate-layout'
@@ -85,6 +88,16 @@ async function runProjectsCommand(action: string | undefined, target: string | u
     return
   }
 
+  if (projectAction === 'pull') {
+    await pullProjects({
+      root: options.root,
+      yes: options.yes,
+      dryRun: options.dryRun,
+      maxDepth: options.maxDepth === undefined ? undefined : Number(options.maxDepth),
+    })
+    return
+  }
+
   if (projectAction === 'migrate-layout') {
     await projectMigrateLayout({
       root: options.root,
@@ -114,7 +127,7 @@ function registerProjectsCommand(name: string, description: string) {
   cli
     .command(`${name} [action] [target]`, description)
     .option('--limit <number>', 'Number of repositories to fetch (default: 50, max: 100)')
-    .option('--root <path>', 'Project root directory (default: ~/repos)')
+    .option('--root <path>', 'Project root directory (defaults: ~/repos; pull: ~/repos/github.com)')
     .option('--https', 'Use HTTPS clone URLs instead of SSH', { default: false })
     .option('--include-forks', 'Include forked repositories', { default: false })
     .option('--include-archived', 'Include archived repositories', { default: false })
@@ -128,11 +141,16 @@ function registerProjectsCommand(name: string, description: string) {
     .option('--check', 'Exit non-zero when projects status finds repositories needing attention', { default: false })
     .option('--json', 'Print projects status output as JSON', { default: false })
     .option('--fetch', 'Fetch remote refs before projects status inspection', { default: false })
-    .option('--max-depth <number>', 'Maximum directory depth for projects status scan (default: 6)')
+    .option('--max-depth <number>', 'Maximum directory depth for local repository scans (default: 6)')
     .option('--update', 'Update repositories that already exist', { default: false })
-    .option('--yes', 'Apply clone/update operations (defaults to dry-run)', { default: false })
-    .option('--dry-run', 'Preview operations without writing', { default: false })
+    .option('--yes', 'Apply clone/update/pull operations without confirmation', { default: false })
+    .option('--dry-run', 'Preview operations without writing or prompting', { default: false })
     .option('-i, --interactive', 'Select repositories interactively', { default: false })
+    .example(bin => [
+      `  $ ${bin} ${name} pull`,
+      `  $ ${bin} ${name} pull --dry-run`,
+      `  $ ${bin} ${name} pull --yes`,
+    ].join('\n'))
     .action(async (action: string | undefined, target: string | undefined, options) => {
       await runProjectsCommand(action, target, options)
     })
@@ -318,6 +336,23 @@ cli
     await syncInteractive()
   })
 
-cli.help()
+cli.help((sections) => {
+  if (!['projects', 'p'].includes(cli.matchedCommand?.name || ''))
+    return sections
+
+  const actions = {
+    title: 'Actions',
+    body: [
+      '  pull                    Preview and fast-forward safe local repositories',
+      '  clone-active [owner]    Clone or update recently active GitHub repositories',
+      '  manifest [source]       Clone or update repositories from a project manifest',
+      '  status                  Audit local repositories for machine-local state',
+      '  migrate-layout          Preview or apply canonical checkout paths',
+    ].join('\n'),
+  }
+  const optionsIndex = sections.findIndex(section => section.title === 'Options')
+  sections.splice(optionsIndex === -1 ? sections.length : optionsIndex, 0, actions)
+  return sections
+})
 cli.version(version)
 cli.parse()

@@ -230,6 +230,53 @@ When `ghq` is installed and the primary `ghq.root` matches the requested
 ~/repos/github.com/<owner>/<repo>
 ```
 
+## Pull Local Repositories in Bulk
+
+After pushing code from another machine, inspect every local repository under
+`~/repos/github.com`, review the colored plan, and confirm the pull:
+
+```bash
+workstation projects pull
+```
+
+The default answer in an interactive terminal is `No`. To preview without a
+confirmation prompt, use `--dry-run` explicitly:
+
+```bash
+workstation projects pull --dry-run
+```
+
+For scripts, CI, or an already-reviewed plan, use `--yes` to skip confirmation:
+
+```bash
+workstation projects pull --yes
+pnpm projects:pull --yes
+```
+
+The shorter `wst p pull` alias remains convenient for daily terminal use. Without
+`--yes`, non-interactive environments only print the plan and never wait for
+input. The list uses `PULL`, `UPDATED`, `CURRENT`, `SKIP`, and `ERROR` labels and
+automatically honors `NO_COLOR`.
+
+The command discovers local Git repositories recursively, without a GitHub API
+request or project manifest. It only updates repositories whose current branch
+has an upstream and whose working tree has no uncommitted files, unpushed commits,
+or stashes. Every update uses `git pull --ff-only`, so the command never creates a
+merge commit automatically. Repositories that need attention are skipped, and a
+failed pull does not prevent later repositories from being checked.
+
+The default root is intentionally scoped to `~/repos/github.com`. Override the
+directory or scan depth when needed:
+
+```bash
+workstation projects pull --root ~/repos/git.example.com --max-depth 8
+```
+
+Git only synchronizes history that has been committed and pushed. Uncommitted
+files, stashes, and unpushed local branches are not transferred by this command.
+Run `wst p status --check` before switching machines to find that machine-local
+state.
+
 ## Local Status Audit
 
 Before switching machines or cleaning up an old machine, inspect local Git
