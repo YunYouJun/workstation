@@ -130,8 +130,11 @@
   "[html]": {
     "editor.defaultFormatter": "vscode.html-language-features"
   },
+  "[go]": {
+    "editor.defaultFormatter": "golang.go",
+    "editor.formatOnSave": true
+  },
   "go.formatTool": "goimports",
-  "go.useLanguageServer": true,
   "[ignore]": {
     "editor.defaultFormatter": "foxundermoon.shell-format"
   },

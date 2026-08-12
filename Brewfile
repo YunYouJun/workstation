@@ -20,5 +20,13 @@ brew "chezmoi"
 brew "gitleaks"
 brew "microsoft/apm/apm"
 
+# Go toolchain
+brew "go"
+brew "gopls"
+brew "goimports"
+brew "delve"
+brew "golangci-lint"
+brew "govulncheck"
+
 # Prompt glyphs and terminal icons
 cask "font-hack-nerd-font"
