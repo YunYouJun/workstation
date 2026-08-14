@@ -625,20 +625,10 @@ describe('private CLI', () => {
   it('applies only private Skill installs and invocation policies with skills-apply', () => {
     const fixture = createPrivateFixture()
     const manifest = readJsonFile(fixture.manifestPath)
-    manifest.skills.policies = [
-      {
-        id: 'shared-explicit-only',
-        root: 'shared',
-        path: 'shared-skill',
-        allowImplicitInvocation: false,
-      },
-      {
-        id: 'codex-explicit-only',
-        root: 'codex',
-        path: 'codex-skill',
-        allowImplicitInvocation: false,
-      },
-    ]
+    manifest.skills.explicitOnly = {
+      codex: ['codex-skill'],
+      shared: ['shared-skill'],
+    }
     writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
     const sharedConfig = path.join(fixture.homeRoot, '.agents', 'skills', 'shared-skill', 'agents', 'openai.yaml')
     const codexConfig = path.join(fixture.homeRoot, '.codex', 'skills', 'codex-skill', 'agents', 'openai.yaml')

@@ -40,6 +40,7 @@ export interface PrivateManifest {
     fileBundles?: SecretFileBundle[]
   }
   skills?: {
+    explicitOnly?: Partial<Record<'codex' | 'shared', string[]>>
     install?: PrivateSkill[]
     policies?: PrivateSkillPolicy[]
     roots?: SkillRoot[]

@@ -105,7 +105,10 @@ policy:
   allow_implicit_invocation: false
 ```
 
-私有 overlay 可用 `skills.policies` 记录这些选择，并通过 `wst private skills-apply --yes` 幂等重放，避免直接复制或接管第三方 Skill 内容。
+私有 overlay 可在 `skills.explicitOnly.shared` 或 `skills.explicitOnly.codex`
+中紧凑记录仅显式调用的路径，并通过 `wst private skills-apply --yes` 幂等重放，
+避免直接复制或接管第三方 Skill 内容。只有策略需要独立 ID 或值不为 `false` 时，
+才使用 `skills.policies`。
 
 ## 本机审计
 

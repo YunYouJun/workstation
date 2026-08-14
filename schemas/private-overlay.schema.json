@@ -143,6 +143,18 @@
             "$ref": "#/$defs/skillPolicy"
           }
         },
+        "explicitOnly": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "codex": {
+              "$ref": "#/$defs/skillPaths"
+            },
+            "shared": {
+              "$ref": "#/$defs/skillPaths"
+            }
+          }
+        },
         "exportDestinations": {
           "type": "array",
           "items": {
@@ -365,15 +377,25 @@
           "enum": ["shared", "codex"]
         },
         "path": {
-          "type": "string",
-          "pattern": "^[^/\\\\]+(?:/[^/\\\\]+)*$",
-          "not": {
-            "pattern": "(^|/)\\.\\.?(/|$)"
-          }
+          "$ref": "#/$defs/skillPath"
         },
         "allowImplicitInvocation": {
           "type": "boolean"
         }
+      }
+    },
+    "skillPath": {
+      "type": "string",
+      "pattern": "^[^/\\\\]+(?:/[^/\\\\]+)*$",
+      "not": {
+        "pattern": "(^|/)\\.\\.?(/|$)"
+      }
+    },
+    "skillPaths": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/skillPath"
       }
     },
     "mcpFragment": {

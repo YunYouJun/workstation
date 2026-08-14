@@ -116,9 +116,11 @@ policy:
   allow_implicit_invocation: false
 ```
 
-A private overlay can record these choices in `skills.policies` and replay them
+A private overlay can record explicit-only paths compactly in
+`skills.explicitOnly.shared` or `skills.explicitOnly.codex` and replay them
 idempotently with `wst private skills-apply --yes`, without copying or taking
-ownership of third-party Skill content.
+ownership of third-party Skill content. Use `skills.policies` only when a policy
+needs its own ID or a value other than `false`.
 
 ## Local audit
 

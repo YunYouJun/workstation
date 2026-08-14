@@ -132,7 +132,7 @@ export function validatePrivateManifest(manifest: PrivateManifest): string[] {
   }
 
   const policyTargets = new Set<string>()
-  for (const policy of manifest.skills?.policies || []) {
+  for (const policy of privateSkillPolicies(manifest)) {
     if (policy.root !== 'shared' && policy.root !== 'codex')
       errors.push(`unsupported Skill policy root for ${policy.id}: ${policy.root}`)
     if (!isSafeRelativeSkillPath(policy.path))
@@ -201,7 +201,15 @@ export function privateSkillInstalls(manifest: PrivateManifest): PrivateSkill[] 
 }
 
 export function privateSkillPolicies(manifest: PrivateManifest): PrivateSkillPolicy[] {
-  return manifest.skills?.policies || []
+  const expanded = (['codex', 'shared'] as const).flatMap(root =>
+    (manifest.skills?.explicitOnly?.[root] || []).map(path => ({
+      allowImplicitInvocation: false,
+      id: `explicit-${root}-${path.replaceAll('/', '-')}`,
+      path,
+      root,
+    })),
+  )
+  return [...(manifest.skills?.policies || []), ...expanded]
 }
 
 function isHomeOutputPath(value: string | undefined): boolean {
