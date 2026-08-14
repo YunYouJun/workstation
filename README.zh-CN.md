@@ -58,6 +58,7 @@ workstation p active --limit 20
 wst init -i
 wst df pull --dry-run
 wst p active --limit 20
+wst skills audit
 ```
 
 这里刻意使用 `wst`，而不是 `ws`，以避开常见的 WebSocket / workspace

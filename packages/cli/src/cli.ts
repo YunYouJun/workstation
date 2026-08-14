@@ -7,6 +7,7 @@ import { doctor } from './doctor'
 import { runInit } from './init'
 import { runPrivateCommand } from './private'
 import { cloneActiveProjects, cloneManifestProjects, projectMigrateLayout, projectStatus, pullProjects } from './projects'
+import { runSkillsAudit } from './skills'
 import { diff, status, sync, syncInteractive } from './sync'
 
 function getCliName() {
@@ -247,6 +248,27 @@ registerProjectsCommand('projects', 'Manage project checkouts')
 registerProjectsCommand('p', 'Alias for projects')
 registerDotfilesNamespace('dotfiles', 'Manage dotfiles')
 registerDotfilesNamespace('df', 'Alias for dotfiles')
+
+cli
+  .command('skills [action]', 'Audit workstation Agent Skills')
+  .option('--project-root <path>', 'Project root containing .agents/skills (defaults to cwd)')
+  .option('--codex-home <path>', 'Codex home containing skills (defaults to $CODEX_HOME or ~/.codex)')
+  .option('--json', 'Print machine-readable JSON output', { default: false })
+  .option('--check', 'Exit non-zero when audit errors are found', { default: false })
+  .action((action: string | undefined, options) => {
+    const skillsAction = action || 'audit'
+    if (skillsAction !== 'audit') {
+      console.error(`Unknown skills action: ${skillsAction}`)
+      process.exitCode = 1
+      return
+    }
+    runSkillsAudit({
+      check: options.check,
+      codexHome: options.codexHome,
+      json: options.json,
+      projectRoot: options.projectRoot,
+    })
+  })
 
 cli
   .command('private [action]', 'Manage private dotfiles overlay manifests')

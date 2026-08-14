@@ -8,12 +8,14 @@ export type PrivateAction
     | 'ios-run'
     | 'ios-secrets-import'
     | 'list'
+    | 'mcp-apply'
     | 'mcp-export'
     | 'mcp-inject'
     | 'mcp-run'
     | 'secret-scan'
     | 'secrets-check'
     | 'secrets-import'
+    | 'skills-apply'
     | 'status'
 
 export type InventorySection = 'all' | 'mcp' | 'skills'
@@ -39,6 +41,7 @@ export interface PrivateManifest {
   }
   skills?: {
     install?: PrivateSkill[]
+    policies?: PrivateSkillPolicy[]
     roots?: SkillRoot[]
   }
   workstationOverlay?: OverlayContract
@@ -141,7 +144,15 @@ export interface PrivateSkill {
     repo?: string
     type: string
   }
+  root?: 'codex' | 'shared'
   targetName?: string
+}
+
+export interface PrivateSkillPolicy {
+  allowImplicitInvocation: boolean
+  id: string
+  path: string
+  root: 'codex' | 'shared'
 }
 
 export interface PrivateOptions {

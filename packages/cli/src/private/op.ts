@@ -200,13 +200,21 @@ export function runMcpCommand(manifestPath: string, manifest: PrivateManifest, o
     throw new Error('1Password CLI was not found. Install op before running MCP commands.')
 
   const context = loadOpContext(manifestPath, manifest)
-  const envFile = secretEnvFilePath(manifestPath, manifest, options.envFile)
-  const result = spawnSync('op', ['run', '--env-file', envFile, '--', ...command], {
-    env: opEnv(context),
-    stdio: 'inherit',
-  })
+  const sourceEnvFile = secretEnvFilePath(manifestPath, manifest, options.envFile)
+  const tempDir = createTempWorkspace()
+  try {
+    const optionalMissingRefs = missingOptionalSecretReferences(manifestPath, manifest, context, options.envFile)
+    const envFile = pruneOptionalEnvFile(sourceEnvFile, optionalMissingRefs, tempDir)
+    const result = spawnSync('op', ['run', '--env-file', envFile, '--', ...command], {
+      env: opEnv(context),
+      stdio: 'inherit',
+    })
 
-  process.exitCode = result.status ?? 1
+    process.exitCode = result.status ?? 1
+  }
+  finally {
+    removeTempWorkspace(tempDir)
+  }
 }
 
 function opState(context?: OpContext): 'available' | 'missing' | 'unavailable' {
@@ -291,8 +299,8 @@ function checkSecretReference(context: OpContext, ref: SecretReference): { ok: b
   }
 }
 
-function missingOptionalSecretReferences(manifestPath: string, manifest: PrivateManifest, context: OpContext): Set<string> {
-  const refs = readSecretReferences(secretEnvFilePath(manifestPath, manifest))
+function missingOptionalSecretReferences(manifestPath: string, manifest: PrivateManifest, context: OpContext, envFileOverride?: string): Set<string> {
+  const refs = readSecretReferences(secretEnvFilePath(manifestPath, manifest, envFileOverride))
     .filter(ref => ref.optional)
   const missing = new Set<string>()
 
@@ -302,6 +310,31 @@ function missingOptionalSecretReferences(manifestPath: string, manifest: Private
   }
 
   return missing
+}
+
+function pruneOptionalEnvFile(source: string, optionalMissingRefs: Set<string>, tempDir: string): string {
+  if (optionalMissingRefs.size === 0)
+    return source
+
+  const omittedEnvNames = new Set(
+    readSecretReferences(source)
+      .filter(ref => ref.optional && optionalMissingRefs.has(ref.ref))
+      .map(ref => ref.envName),
+  )
+  if (omittedEnvNames.size === 0)
+    return source
+
+  const lines = fs.readFileSync(source, 'utf8').split(/\r?\n/)
+  const output = path.join(tempDir, `${path.basename(source)}.optional-pruned`)
+  const contents = lines
+    .filter((line) => {
+      const assignment = parseEnvAssignment(line)
+      return !assignment || !omittedEnvNames.has(assignment.key)
+    })
+    .join('\n')
+  writePrivateFile(output, contents)
+  console.log(`[skip] omitted ${omittedEnvNames.size} optional missing secret${omittedEnvNames.size === 1 ? '' : 's'} from ${source}`)
+  return output
 }
 
 function pruneOptionalMcpJsonTemplate(source: string, optionalMissingRefs: Set<string>, tempDir: string): string {

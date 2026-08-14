@@ -139,11 +139,16 @@ function readFragment(manifestPath: string, manifest: PrivateManifest, fragment:
     throw new Error(`Unsupported private MCP fragment format for ${fragment.id}: ${fragment.format}`)
 
   assertAllowedRead(fragment.path, manifest.workstationOverlay || {})
-  const source = resolveRepoPath(repoRootFromManifest(manifestPath), fragment.path)
+  const repoRoot = repoRootFromManifest(manifestPath)
+  const source = resolveRepoPath(repoRoot, fragment.path)
   if (!fs.existsSync(source))
     throw new Error(`Private MCP fragment not found: ${source}`)
 
-  const content = normalizeContent(fs.readFileSync(source, 'utf8'))
+  const escapedRepoRoot = JSON.stringify(repoRoot).slice(1, -1)
+  const content = normalizeContent(
+    fs.readFileSync(source, 'utf8')
+      .replaceAll('{{WORKSTATION_PRIVATE_REPO_ROOT}}', escapedRepoRoot),
+  )
   validateFragment(content, source)
   return content
 }

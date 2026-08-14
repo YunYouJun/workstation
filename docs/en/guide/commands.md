@@ -89,6 +89,14 @@ apm install --global --frozen
 apm deps list --global
 ```
 
+Audit local Skills without changing them; use `--check` for migrations or CI:
+
+```bash
+wst skills audit
+wst skills audit --json
+wst skills audit --check
+```
+
 Read a private dotfiles overlay and preview the local ignored config that would
 be generated:
 
@@ -97,8 +105,15 @@ wst private connect
 wst private status
 wst private file-restore --bundle wecom-cli --dry-run
 wst private mcp-export --server gongfeng,iwiki,knot --dry-run
+wst private mcp-apply --dry-run
+wst private skills-apply --dry-run
 wst private apply --dry-run
 ```
+
+`wst private` and `wst private status` are passive checks: they validate the
+manifest and whether the 1Password CLI is installed without accessing an
+account or requesting authorization. Run `wst private check` explicitly when
+you need to verify account access and secret readability.
 
 Connect a private repository non-interactively:
 
@@ -109,13 +124,19 @@ wst private connect --repo git@example.com:user/dotfiles.git --target-dir ~/repo
 After confirming 1Password is signed in, apply it explicitly:
 
 ```bash
+wst private mcp-apply --yes
+wst private skills-apply --yes
 wst private apply --yes
 wst private file-restore --bundle wecom-cli --yes
 ```
 
+Use `mcp-apply` when only the Codex MCP managed block should change, and
+`skills-apply` to replay only private Skill installs and implicit-invocation
+policies. `apply` runs every operation declared by the manifest.
+
 Export installed Codex MCP servers from the old machine into the private
-overlay. After committing the private dotfiles, a new machine can read the same
-overlay with `wst private apply --yes`:
+overlay. After committing the private dotfiles, a new machine can apply only the
+MCP overlay with `wst private mcp-apply --yes`:
 
 ```bash
 wst private mcp-export --server gongfeng,iwiki,knot --yes

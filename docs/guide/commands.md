@@ -86,6 +86,14 @@ apm install --global --frozen
 apm deps list --global
 ```
 
+只读审计本机 Skills；迁移或 CI 校验时使用 `--check`：
+
+```bash
+wst skills audit
+wst skills audit --json
+wst skills audit --check
+```
+
 读取私有 dotfiles overlay，并只预览会生成的本地 ignored 配置：
 
 ```bash
@@ -93,8 +101,14 @@ wst private connect
 wst private status
 wst private file-restore --bundle wecom-cli --dry-run
 wst private mcp-export --server gongfeng,iwiki,knot --dry-run
+wst private mcp-apply --dry-run
+wst private skills-apply --dry-run
 wst private apply --dry-run
 ```
+
+`wst private` 和 `wst private status` 是被动检查：只验证 manifest 和
+1Password CLI 是否存在，不会读取账户或请求授权。需要验证账户及密钥可读性时，
+再显式运行 `wst private check`。
 
 非交互连接私有仓库：
 
@@ -105,12 +119,16 @@ wst private connect --repo git@example.com:user/dotfiles.git --target-dir ~/repo
 确认 1Password 已登录后，再显式应用：
 
 ```bash
+wst private mcp-apply --yes
+wst private skills-apply --yes
 wst private apply --yes
 wst private file-restore --bundle wecom-cli --yes
 ```
 
+只需要更新 Codex MCP managed block 时使用 `mcp-apply`；只需要重放私有 Skill 安装与隐式调用策略时使用 `skills-apply`；`apply` 会执行 manifest 声明的全部操作。
+
 从旧机器把已安装的 Codex MCP server 导出到私有 overlay，提交私有
-dotfiles 后，新机器只需要 `wst private apply --yes` 读取该 overlay：
+dotfiles 后，新机器可用 `wst private mcp-apply --yes` 只应用 MCP overlay：
 
 ```bash
 wst private mcp-export --server gongfeng,iwiki,knot --yes

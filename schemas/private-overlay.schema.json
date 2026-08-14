@@ -137,6 +137,12 @@
             "$ref": "#/$defs/skillInstall"
           }
         },
+        "policies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/skillPolicy"
+          }
+        },
         "exportDestinations": {
           "type": "array",
           "items": {
@@ -297,6 +303,9 @@
         "targetName": {
           "type": "string"
         },
+        "root": {
+          "enum": ["shared", "codex"]
+        },
         "description": {
           "type": "string"
         },
@@ -341,6 +350,29 @@
               }
             }
           ]
+        }
+      }
+    },
+    "skillPolicy": {
+      "type": "object",
+      "required": ["id", "root", "path", "allowImplicitInvocation"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "root": {
+          "enum": ["shared", "codex"]
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^[^/\\\\]+(?:/[^/\\\\]+)*$",
+          "not": {
+            "pattern": "(^|/)\\.\\.?(/|$)"
+          }
+        },
+        "allowImplicitInvocation": {
+          "type": "boolean"
         }
       }
     },

@@ -101,11 +101,20 @@ workstation dotfiles chezmoi apply
       {
         "id": "internal-example",
         "targetName": "internal-example",
+        "root": "shared",
         "description": "Private internal workflow.",
         "source": {
           "type": "local",
           "path": "skills/install/internal-example"
         }
+      }
+    ],
+    "policies": [
+      {
+        "id": "internal-example-explicit-only",
+        "root": "shared",
+        "path": "internal-example",
+        "allowImplicitInvocation": false
       }
     ]
   },
@@ -149,6 +158,10 @@ wst private status
 wst private check
 wst private mcp-export --server gongfeng,iwiki,knot --dry-run
 wst private mcp-export --server gongfeng,iwiki,knot --yes
+wst private mcp-apply --dry-run
+wst private mcp-apply --yes
+wst private skills-apply --dry-run
+wst private skills-apply --yes
 wst private apply --dry-run
 wst private apply --yes
 wst private inventory --section skills
@@ -159,14 +172,22 @@ wst private secrets-check
 wst private secret-scan
 ```
 
+`wst private` 和 `wst private status` 不访问 1Password 账户，只报告 CLI
+是否安装。`wst private check` 会读取一个代表性的密钥引用来验证账户与读取权限，
+因此可能触发一次 1Password 授权；自动化只在确实需要认证验证时使用它。
+`wst private mcp-run` 会在临时 env 文件中省略缺失的 optional secret，避免一个未配置的
+可选服务阻塞其他 MCP；required secret 仍会让 `op run` 失败。
+
 `apply` 只能处理 manifest 声明的模板、MCP fragment、显式 installable skill、本地 ignored 输出和 `op-file-restore` 文件包，不能把私有仓库里的任意文件复制到 `$HOME`。没有 `--yes` 时即使使用 `apply` 也只会 dry-run。
+`mcp-apply` 的范围更窄：它只更新 Codex 的私有 MCP managed block，不执行模板注入、密钥文件恢复或 Skill 安装。fragment 中的 `{{WORKSTATION_PRIVATE_REPO_ROOT}}` 会按已连接 manifest 的仓库根目录展开，供受管本地 wrapper 使用，避免绑定某台机器的绝对 checkout 路径。
+`skills-apply` 只安装 manifest 声明的私有 Skill，并安全合并每个 Skill 的 `agents/openai.yaml` 隐式调用策略；`install[].root` 可选择 `shared` 或 `codex`（默认 `codex`），相对路径不能逃逸 discovery root。成功应用后会原子更新 `~/.agents/.wst-skill-lock.json`，以 SHA-256 校验私有部署是否缺失或被修改。
 
 `mcp-export` 从 manifest 中的 Codex TOML source（通常是
 `~/.codex/config.toml`）读取指定 server，并写入声明的
 `mcp/codex-mcp.overlay.toml`。它不会导出完整 Codex 配置；`env` 里的明文值
 会被转换成 `${ENV_NAME}` 引用，遇到 header/token 这类不能安全推断的明文
 secret 会拒绝写入。旧机器导出并提交私有 dotfiles 后，新机器运行
-`wst private apply --yes` 即可把 overlay 合并进 Codex managed block。
+`wst private mcp-apply --yes` 即可只把 MCP overlay 合并进 Codex managed block。
 
 `wst private connect --yes` 会把私有 manifest 路径记到
 `~/.config/workstation/private.json`，后续命令可省略 `--manifest`。如果没有

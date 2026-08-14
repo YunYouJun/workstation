@@ -331,6 +331,30 @@ describe('private CLI', () => {
     assert.match(result.stdout, /\[ok\] 1Password CLI is available and signed in/)
   })
 
+  it('keeps private status passive when 1Password CLI is installed', () => {
+    const fixture = createPrivateFixture()
+    const callsPath = path.join(fixture.repoRoot, 'unexpected-op-call')
+    writeExecutable(path.join(fixture.binDir, 'op'), [
+      'const fs = require("node:fs")',
+      'fs.writeFileSync(process.env.FAKE_OP_CALLS, "called")',
+      'process.exit(1)',
+    ])
+
+    for (const args of [
+      ['private', '--manifest', fixture.manifestPath],
+      ['private', 'status', '--manifest', fixture.manifestPath],
+    ]) {
+      const result = runCli(args, fixture.repoRoot, fixture.homeRoot, {
+        FAKE_OP_CALLS: callsPath,
+        PATH: testPath(fixture.binDir),
+      })
+
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+      assert.match(result.stdout, /\[ok\] 1Password CLI is installed \(authentication not checked\)/)
+      assert.equal(fs.existsSync(callsPath), false)
+    }
+  })
+
   it('passes manifest env files and commands through mcp-run', () => {
     const fixture = createPrivateFixture()
     const callsPath = path.join(fixture.repoRoot, 'op-calls.json')
@@ -341,6 +365,8 @@ describe('private CLI', () => {
       'const calls = fs.existsSync(callsPath) ? JSON.parse(fs.readFileSync(callsPath, "utf-8")) : []',
       'calls.push(args)',
       'fs.writeFileSync(callsPath, JSON.stringify(calls))',
+      'if (args[0] === "run" && args[1] === "--")',
+      '  process.stdout.write("[true]")',
       'process.exit(0)',
     ])
 
@@ -351,7 +377,7 @@ describe('private CLI', () => {
 
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
     const calls = readJsonFile(callsPath)
-    assert.deepEqual(calls[0], [
+    assert.deepEqual(calls.at(-1), [
       'run',
       '--env-file',
       path.join(fixture.repoRoot, 'mcp', 'mcp.env.example'),
@@ -360,6 +386,33 @@ describe('private CLI', () => {
       '-e',
       'console.log("ok")',
     ])
+  })
+
+  it('omits missing optional secrets from the mcp-run env file', () => {
+    const fixture = createPrivateFixture()
+    const capturedEnvPath = path.join(fixture.repoRoot, 'captured-mcp.env')
+    writeExecutable(path.join(fixture.binDir, 'op'), [
+      'const fs = require("node:fs")',
+      'const args = process.argv.slice(2)',
+      'if (args[0] === "run" && args[1] === "--") {',
+      '  process.stdout.write("[false]")',
+      '  process.exit(0)',
+      '}',
+      'const envFileIndex = args.indexOf("--env-file")',
+      'if (envFileIndex !== -1)',
+      '  fs.writeFileSync(process.env.FAKE_ENV_CAPTURE, fs.readFileSync(args[envFileIndex + 1], "utf-8"))',
+      'process.exit(0)',
+    ])
+
+    const result = runCli(['private', 'mcp-run', '--manifest', fixture.manifestPath, '--', 'node', '-e', 'console.log("ok")'], fixture.repoRoot, fixture.homeRoot, {
+      FAKE_ENV_CAPTURE: capturedEnvPath,
+      PATH: testPath(fixture.binDir),
+    })
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    const envFile = fs.readFileSync(capturedEnvPath, 'utf8')
+    assert.match(envFile, /^GONGFENG_TOKEN=/m)
+    assert.doesNotMatch(envFile, /^GITHUB_PERSONAL_ACCESS_TOKEN=/m)
   })
 
   it('restores declared secret file bundles from 1Password attachments', () => {
@@ -504,6 +557,723 @@ describe('private CLI', () => {
     const codexConfig = fs.readFileSync(path.join(fixture.homeRoot, '.codex', 'config.toml'), 'utf-8')
     assert.match(codexConfig, /# >>> workstation managed private mcp/)
     assert.match(codexConfig, /\[mcp_servers\.private_docs\]/)
+  })
+
+  it('applies only the Codex MCP managed block with mcp-apply', () => {
+    const fixture = createPrivateFixture()
+    const manifest = readJsonFile(fixture.manifestPath)
+    manifest.skills.install = [
+      {
+        id: 'private-review',
+        targetName: 'private-review',
+        description: 'Private review workflow.',
+        source: {
+          type: 'local',
+          path: 'skills/install/private-review',
+        },
+      },
+    ]
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    writeFile(path.join(fixture.repoRoot, 'skills', 'install', 'private-review', 'SKILL.md'), '# Private review\n')
+    writeFile(path.join(fixture.repoRoot, 'mcp', 'codex-mcp.overlay.toml'), [
+      '[mcp_servers.private_docs]',
+      'url = "https://docs.example.com/mcp"',
+      '',
+    ].join('\n'))
+
+    const result = runCli([
+      'private',
+      'mcp-apply',
+      '--manifest',
+      fixture.manifestPath,
+      '--yes',
+    ], fixture.repoRoot, fixture.homeRoot, {
+      PATH: fixture.binDir,
+    })
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.equal(fs.existsSync(path.join(fixture.repoRoot, 'mcp', 'mcp.local.json')), false)
+    assert.equal(fs.existsSync(path.join(fixture.homeRoot, '.codex', 'skills', 'private-review')), false)
+    const codexConfig = fs.readFileSync(path.join(fixture.homeRoot, '.codex', 'config.toml'), 'utf-8')
+    assert.match(codexConfig, /\[mcp_servers\.private_docs\]/)
+  })
+
+  it('resolves private MCP repository placeholders from the connected manifest', () => {
+    const fixture = createPrivateFixture()
+    writeFile(path.join(fixture.repoRoot, 'mcp', 'codex-mcp.overlay.toml'), [
+      '[mcp_servers.private_wrapper]',
+      'command = "{{WORKSTATION_PRIVATE_REPO_ROOT}}/mcp/bin/private-wrapper"',
+      '',
+    ].join('\n'))
+
+    const result = runCli([
+      'private',
+      'mcp-apply',
+      '--manifest',
+      fixture.manifestPath,
+      '--yes',
+    ], fixture.repoRoot, fixture.homeRoot, {
+      PATH: fixture.binDir,
+    })
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    const codexConfig = fs.readFileSync(path.join(fixture.homeRoot, '.codex', 'config.toml'), 'utf8')
+    assert.match(codexConfig, new RegExp(escapeRegExp(`command = "${fixture.repoRoot}/mcp/bin/private-wrapper"`)))
+    assert.doesNotMatch(codexConfig, /WORKSTATION_PRIVATE_REPO_ROOT/)
+  })
+
+  it('applies only private Skill installs and invocation policies with skills-apply', () => {
+    const fixture = createPrivateFixture()
+    const manifest = readJsonFile(fixture.manifestPath)
+    manifest.skills.policies = [
+      {
+        id: 'shared-explicit-only',
+        root: 'shared',
+        path: 'shared-skill',
+        allowImplicitInvocation: false,
+      },
+      {
+        id: 'codex-explicit-only',
+        root: 'codex',
+        path: 'codex-skill',
+        allowImplicitInvocation: false,
+      },
+    ]
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    const sharedConfig = path.join(fixture.homeRoot, '.agents', 'skills', 'shared-skill', 'agents', 'openai.yaml')
+    const codexConfig = path.join(fixture.homeRoot, '.codex', 'skills', 'codex-skill', 'agents', 'openai.yaml')
+    writeFile(path.join(fixture.homeRoot, '.agents', 'skills', 'shared-skill', 'SKILL.md'), '# Shared\n')
+    writeFile(sharedConfig, 'interface:\n  display_name: "Shared"\n')
+    writeFile(path.join(fixture.homeRoot, '.codex', 'skills', 'codex-skill', 'SKILL.md'), '# Codex\n')
+
+    const result = runCli([
+      'private',
+      'skills-apply',
+      '--manifest',
+      fixture.manifestPath,
+      '--yes',
+    ], fixture.repoRoot, fixture.homeRoot, {
+      PATH: fixture.binDir,
+    })
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(fs.readFileSync(sharedConfig, 'utf8'), /display_name: "?Shared"?/)
+    assert.match(fs.readFileSync(sharedConfig, 'utf8'), /allow_implicit_invocation: false/)
+    assert.match(fs.readFileSync(codexConfig, 'utf8'), /allow_implicit_invocation: false/)
+    assert.equal(fs.existsSync(path.join(fixture.repoRoot, 'mcp', 'mcp.local.json')), false)
+    assert.equal(fs.existsSync(path.join(fixture.homeRoot, '.codex', 'config.toml')), false)
+  })
+
+  it('installs shared private Skills with auditable provenance', () => {
+    const fixture = createPrivateFixture()
+    const manifest = readJsonFile(fixture.manifestPath)
+    manifest.skills.install = [
+      {
+        id: 'private-shared',
+        targetName: 'private-shared',
+        root: 'shared',
+        description: 'Private shared workflow.',
+        source: {
+          type: 'local',
+          path: 'skills/install/private-shared',
+        },
+      },
+    ]
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    writeFile(path.join(fixture.repoRoot, 'skills', 'install', 'private-shared', 'SKILL.md'), [
+      '---',
+      'name: private-shared',
+      'description: Private shared workflow.',
+      '---',
+      '',
+      '# Private shared',
+      '',
+    ].join('\n'))
+
+    const apply = runCli([
+      'private',
+      'skills-apply',
+      '--manifest',
+      fixture.manifestPath,
+      '--yes',
+    ], fixture.repoRoot, fixture.homeRoot, {
+      PATH: fixture.binDir,
+    })
+
+    assert.equal(apply.status, 0, `${apply.stdout}\n${apply.stderr}`)
+    assert.equal(
+      fs.existsSync(path.join(fixture.homeRoot, '.agents', 'skills', 'private-shared', 'SKILL.md')),
+      true,
+    )
+    const lockPath = path.join(fixture.homeRoot, '.agents', '.wst-skill-lock.json')
+    const lock = readJsonFile(lockPath)
+    assert.equal(lock.version, 1)
+    assert.equal(lock.skills['private-shared'].root, 'shared')
+    assert.match(lock.skills['private-shared'].digest, /^sha256:[a-f0-9]{64}$/)
+
+    const audit = runCli([
+      'skills',
+      'audit',
+      '--project-root',
+      fixture.repoRoot,
+      '--check',
+      '--json',
+    ], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(audit.status, 0, `${audit.stdout}\n${audit.stderr}`)
+    const report = JSON.parse(audit.stdout)
+    assert.equal(report.workstation.lockExists, true)
+    assert.equal(report.workstation.managedSkillCount, 1)
+    assert.equal(report.summary.unmanagedSharedSkillCount, 0)
+    assert.equal(report.summary.errorCount, 0)
+  })
+
+  it('detects modified workstation-managed private Skills', () => {
+    const fixture = createPrivateFixture()
+    const manifest = readJsonFile(fixture.manifestPath)
+    manifest.skills.install = [
+      {
+        id: 'private-shared',
+        targetName: 'private-shared',
+        root: 'shared',
+        description: 'Private shared workflow.',
+        source: {
+          type: 'local',
+          path: 'skills/install/private-shared',
+        },
+      },
+    ]
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    const source = path.join(fixture.repoRoot, 'skills', 'install', 'private-shared', 'SKILL.md')
+    writeFile(source, [
+      '---',
+      'name: private-shared',
+      'description: Private shared workflow.',
+      '---',
+      '',
+      '# Private shared',
+      '',
+    ].join('\n'))
+    const apply = runCli([
+      'private',
+      'skills-apply',
+      '--manifest',
+      fixture.manifestPath,
+      '--yes',
+    ], fixture.repoRoot, fixture.homeRoot)
+    assert.equal(apply.status, 0, `${apply.stdout}\n${apply.stderr}`)
+    writeFile(
+      path.join(fixture.homeRoot, '.agents', 'skills', 'private-shared', 'SKILL.md'),
+      `${fs.readFileSync(source, 'utf8')}modified\n`,
+    )
+
+    const audit = runCli([
+      'skills',
+      'audit',
+      '--project-root',
+      fixture.repoRoot,
+      '--check',
+      '--json',
+    ], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(audit.status, 1, `${audit.stdout}\n${audit.stderr}`)
+    const report = JSON.parse(audit.stdout)
+    assert.equal(report.findings.some((finding: { code: string }) => finding.code === 'modified-workstation-skill'), true)
+  })
+
+  it('rejects duplicate private Skill names across install roots', () => {
+    const fixture = createPrivateFixture()
+    const manifest = readJsonFile(fixture.manifestPath)
+    manifest.skills.install = [
+      {
+        id: 'private-shared',
+        targetName: 'duplicate-name',
+        root: 'shared',
+        description: 'Private shared workflow.',
+        source: {
+          type: 'local',
+          path: 'skills/install/private-shared',
+        },
+      },
+      {
+        id: 'private-codex',
+        targetName: 'duplicate-name',
+        root: 'codex',
+        description: 'Private Codex workflow.',
+        source: {
+          type: 'local',
+          path: 'skills/install/private-codex',
+        },
+      },
+    ]
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    writeFile(path.join(fixture.repoRoot, 'skills', 'install', 'private-shared', 'SKILL.md'), '# Shared\n')
+    writeFile(path.join(fixture.repoRoot, 'skills', 'install', 'private-codex', 'SKILL.md'), '# Codex\n')
+
+    const result = runCli([
+      'private',
+      'skills-apply',
+      '--manifest',
+      fixture.manifestPath,
+      '--dry-run',
+    ], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Duplicate private skill name: duplicate-name/)
+  })
+
+  it('does not mutate private Skills when the existing provenance lock is invalid', () => {
+    const fixture = createPrivateFixture()
+    const manifest = readJsonFile(fixture.manifestPath)
+    manifest.skills.install = [{
+      id: 'private-shared',
+      targetName: 'private-shared',
+      root: 'shared',
+      description: 'Private shared workflow.',
+      source: {
+        type: 'local',
+        path: 'skills/install/private-shared',
+      },
+    }]
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    writeFile(path.join(fixture.repoRoot, 'skills', 'install', 'private-shared', 'SKILL.md'), '# New\n')
+    const destination = path.join(fixture.homeRoot, '.agents', 'skills', 'private-shared', 'SKILL.md')
+    writeFile(destination, '# Existing\n')
+    writeFile(
+      path.join(fixture.homeRoot, '.agents', '.wst-skill-lock.json'),
+      `${JSON.stringify({ skills: {}, version: 2 }, null, 2)}\n`,
+    )
+
+    const result = runCli([
+      'private',
+      'skills-apply',
+      '--manifest',
+      fixture.manifestPath,
+      '--yes',
+    ], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /provenance lock is invalid/)
+    assert.equal(fs.readFileSync(destination, 'utf8'), '# Existing\n')
+  })
+
+  it.runIf(process.platform !== 'win32')('validates every local private Skill before replacing any target', () => {
+    const fixture = createPrivateFixture()
+    const manifest = readJsonFile(fixture.manifestPath)
+    manifest.skills.install = [
+      {
+        id: 'first',
+        root: 'shared',
+        description: 'First private workflow.',
+        source: {
+          type: 'local',
+          path: 'skills/install/first',
+        },
+      },
+      {
+        id: 'second',
+        root: 'shared',
+        description: 'Second private workflow.',
+        source: {
+          type: 'local',
+          path: 'skills/install/second',
+        },
+      },
+    ]
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    writeFile(path.join(fixture.repoRoot, 'skills', 'install', 'first', 'SKILL.md'), '# New\n')
+    const firstDestination = path.join(fixture.homeRoot, '.agents', 'skills', 'first', 'SKILL.md')
+    writeFile(firstDestination, '# Existing\n')
+    const secondSource = path.join(fixture.repoRoot, 'skills', 'install', 'second')
+    writeFile(path.join(secondSource, 'SKILL.md'), '# Second\n')
+    const outside = path.join(tempDir!, 'outside-file')
+    writeFile(outside, 'outside\n')
+    fs.symlinkSync(outside, path.join(secondSource, 'linked-file'))
+
+    const result = runCli([
+      'private',
+      'skills-apply',
+      '--manifest',
+      fixture.manifestPath,
+      '--yes',
+    ], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /must not contain symbolic links/)
+    assert.equal(fs.readFileSync(firstDestination, 'utf8'), '# Existing\n')
+  })
+
+  it('validates every private Skill policy before replacing install targets', () => {
+    const fixture = createPrivateFixture()
+    const manifest = readJsonFile(fixture.manifestPath)
+    manifest.skills.install = [{
+      id: 'private-shared',
+      root: 'shared',
+      description: 'Private shared workflow.',
+      source: {
+        type: 'local',
+        path: 'skills/install/private-shared',
+      },
+    }]
+    manifest.skills.policies = [{
+      id: 'broken-policy',
+      root: 'shared',
+      path: 'existing-skill',
+      allowImplicitInvocation: false,
+    }]
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    writeFile(path.join(fixture.repoRoot, 'skills', 'install', 'private-shared', 'SKILL.md'), '# New\n')
+    const destination = path.join(fixture.homeRoot, '.agents', 'skills', 'private-shared', 'SKILL.md')
+    writeFile(destination, '# Existing\n')
+    writeFile(path.join(fixture.homeRoot, '.agents', 'skills', 'existing-skill', 'SKILL.md'), '# Existing Skill\n')
+    writeFile(path.join(fixture.homeRoot, '.agents', 'skills', 'existing-skill', 'agents', 'openai.yaml'), 'policy: [\n')
+
+    const result = runCli([
+      'private',
+      'skills-apply',
+      '--manifest',
+      fixture.manifestPath,
+      '--yes',
+    ], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /agents\/openai.yaml is invalid/)
+    assert.equal(fs.readFileSync(destination, 'utf8'), '# Existing\n')
+  })
+
+  it('materializes every GitHub private Skill before replacing local targets', () => {
+    const fixture = createPrivateFixture()
+    const manifest = readJsonFile(fixture.manifestPath)
+    manifest.skills.install = [
+      {
+        id: 'local-first',
+        root: 'shared',
+        description: 'Local private workflow.',
+        source: {
+          type: 'local',
+          path: 'skills/install/local-first',
+        },
+      },
+      {
+        id: 'github-second',
+        root: 'shared',
+        description: 'GitHub private workflow.',
+        source: {
+          type: 'github',
+          repo: 'owner/private-skill',
+          path: 'skills/github-second',
+          ref: 'main',
+        },
+      },
+    ]
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    writeFile(path.join(fixture.repoRoot, 'skills', 'install', 'local-first', 'SKILL.md'), '# New\n')
+    const destination = path.join(fixture.homeRoot, '.agents', 'skills', 'local-first', 'SKILL.md')
+    writeFile(destination, '# Existing\n')
+    writeExecutable(path.join(fixture.binDir, 'git'), [
+      'process.stderr.write("simulated clone failure\\n");',
+      'process.exit(1);',
+    ])
+
+    const result = runCli([
+      'private',
+      'skills-apply',
+      '--manifest',
+      fixture.manifestPath,
+      '--yes',
+    ], fixture.repoRoot, fixture.homeRoot, {
+      PATH: testPath(fixture.binDir),
+    })
+
+    assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /simulated clone failure/)
+    assert.equal(fs.readFileSync(destination, 'utf8'), '# Existing\n')
+  })
+
+  it('keeps installed private Skills idempotent when a policy augments their source', () => {
+    const fixture = createPrivateFixture()
+    const manifest = readJsonFile(fixture.manifestPath)
+    manifest.skills.install = [{
+      id: 'private-shared',
+      root: 'shared',
+      description: 'Private shared workflow.',
+      source: {
+        type: 'local',
+        path: 'skills/install/private-shared',
+      },
+    }]
+    manifest.skills.policies = [{
+      id: 'private-shared-explicit',
+      root: 'shared',
+      path: 'private-shared',
+      allowImplicitInvocation: false,
+    }]
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    writeFile(path.join(fixture.repoRoot, 'skills', 'install', 'private-shared', 'SKILL.md'), '# Private\n')
+
+    const first = runCli([
+      'private',
+      'skills-apply',
+      '--manifest',
+      fixture.manifestPath,
+      '--yes',
+    ], fixture.repoRoot, fixture.homeRoot)
+    const second = runCli([
+      'private',
+      'skills-apply',
+      '--manifest',
+      fixture.manifestPath,
+      '--yes',
+    ], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(first.status, 0, `${first.stdout}\n${first.stderr}`)
+    assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`)
+    assert.match(second.stdout, /\[skip\] private skill private-shared is already up to date/)
+    assert.match(second.stdout, /\[skip\] private Skill policy private-shared-explicit is already up to date/)
+    assert.doesNotMatch(second.stdout, /\[ok\] installed private skill/)
+  })
+
+  it('previews install-bound private Skill policies on a clean home', () => {
+    const fixture = createPrivateFixture()
+    const manifest = readJsonFile(fixture.manifestPath)
+    manifest.skills.install = [{
+      id: 'private-shared',
+      root: 'shared',
+      description: 'Private shared workflow.',
+      source: {
+        type: 'local',
+        path: 'skills/install/private-shared',
+      },
+    }]
+    manifest.skills.policies = [{
+      id: 'private-shared-explicit',
+      root: 'shared',
+      path: 'private-shared',
+      allowImplicitInvocation: false,
+    }]
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    writeFile(path.join(fixture.repoRoot, 'skills', 'install', 'private-shared', 'SKILL.md'), '# Private\n')
+
+    const result = runCli([
+      'private',
+      'skills-apply',
+      '--manifest',
+      fixture.manifestPath,
+      '--dry-run',
+    ], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.match(result.stdout, /\[dry-run\] private skill private-shared/)
+    assert.match(result.stdout, /\[dry-run\] private Skill policy private-shared-explicit/)
+    assert.equal(fs.existsSync(path.join(fixture.homeRoot, '.agents', 'skills', 'private-shared')), false)
+  })
+
+  it.runIf(process.platform !== 'win32')('rejects local private Skill sources that escape through a symbolic link', () => {
+    const fixture = createPrivateFixture()
+    const manifest = readJsonFile(fixture.manifestPath)
+    manifest.skills.install = [
+      {
+        id: 'linked-source',
+        root: 'shared',
+        description: 'Linked private workflow.',
+        source: {
+          type: 'local',
+          path: 'skills/install/linked-source',
+        },
+      },
+    ]
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    const outside = path.join(tempDir!, 'outside-skill')
+    writeFile(path.join(outside, 'SKILL.md'), '# Outside\n')
+    const source = path.join(fixture.repoRoot, 'skills', 'install', 'linked-source')
+    fs.mkdirSync(path.dirname(source), { recursive: true })
+    fs.symlinkSync(outside, source)
+
+    const result = runCli([
+      'private',
+      'skills-apply',
+      '--manifest',
+      fixture.manifestPath,
+      '--dry-run',
+    ], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /escapes private overlay repository|must be a real directory/)
+  })
+
+  it.runIf(process.platform !== 'win32')('refuses to replace a private Skill destination symbolic link', () => {
+    const fixture = createPrivateFixture()
+    const manifest = readJsonFile(fixture.manifestPath)
+    manifest.skills.install = [
+      {
+        id: 'linked-destination',
+        root: 'shared',
+        description: 'Linked private workflow.',
+        source: {
+          type: 'local',
+          path: 'skills/install/linked-destination',
+        },
+      },
+    ]
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    writeFile(path.join(fixture.repoRoot, 'skills', 'install', 'linked-destination', 'SKILL.md'), '# Source\n')
+    const outside = path.join(tempDir!, 'outside-destination')
+    writeFile(path.join(outside, 'SKILL.md'), '# Outside\n')
+    const destination = path.join(fixture.homeRoot, '.agents', 'skills', 'linked-destination')
+    fs.mkdirSync(path.dirname(destination), { recursive: true })
+    fs.symlinkSync(outside, destination)
+
+    const result = runCli([
+      'private',
+      'skills-apply',
+      '--manifest',
+      fixture.manifestPath,
+      '--yes',
+    ], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /destination must be a real directory/)
+    assert.equal(fs.readFileSync(path.join(outside, 'SKILL.md'), 'utf8'), '# Outside\n')
+  })
+
+  it.runIf(process.platform !== 'win32')('refuses to replace a broken private Skill destination symbolic link', () => {
+    const fixture = createPrivateFixture()
+    const manifest = readJsonFile(fixture.manifestPath)
+    manifest.skills.install = [{
+      id: 'broken-destination',
+      root: 'shared',
+      description: 'Broken destination workflow.',
+      source: {
+        type: 'local',
+        path: 'skills/install/broken-destination',
+      },
+    }]
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    writeFile(path.join(fixture.repoRoot, 'skills', 'install', 'broken-destination', 'SKILL.md'), '# Source\n')
+    const destination = path.join(fixture.homeRoot, '.agents', 'skills', 'broken-destination')
+    fs.mkdirSync(path.dirname(destination), { recursive: true })
+    fs.symlinkSync(path.join(tempDir!, 'missing-destination'), destination)
+
+    const result = runCli([
+      'private',
+      'skills-apply',
+      '--manifest',
+      fixture.manifestPath,
+      '--yes',
+    ], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /destination must be a real directory/)
+    assert.equal(fs.lstatSync(destination).isSymbolicLink(), true)
+  })
+
+  it.runIf(process.platform !== 'win32')('rejects private Skill policy targets that escape through a symbolic link', () => {
+    const fixture = createPrivateFixture()
+    const manifest = readJsonFile(fixture.manifestPath)
+    manifest.skills.policies = [{
+      id: 'linked-policy',
+      root: 'shared',
+      path: 'linked-policy',
+      allowImplicitInvocation: false,
+    }]
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    const outside = path.join(tempDir!, 'outside-policy')
+    writeFile(path.join(outside, 'SKILL.md'), '# Outside\n')
+    const outsideConfig = path.join(outside, 'agents', 'openai.yaml')
+    writeFile(outsideConfig, 'interface:\n  display_name: Outside\n')
+    const linked = path.join(fixture.homeRoot, '.agents', 'skills', 'linked-policy')
+    fs.mkdirSync(path.dirname(linked), { recursive: true })
+    fs.symlinkSync(outside, linked)
+
+    const result = runCli([
+      'private',
+      'skills-apply',
+      '--manifest',
+      fixture.manifestPath,
+      '--yes',
+    ], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /escapes its discovery root/)
+    assert.equal(fs.readFileSync(outsideConfig, 'utf8'), 'interface:\n  display_name: Outside\n')
+  })
+
+  it.runIf(process.platform !== 'win32')('rejects broken agents/openai.yaml policy symbolic links', () => {
+    const fixture = createPrivateFixture()
+    const manifest = readJsonFile(fixture.manifestPath)
+    manifest.skills.policies = [{
+      id: 'broken-config-link',
+      root: 'shared',
+      path: 'linked-config',
+      allowImplicitInvocation: false,
+    }]
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    const skillDirectory = path.join(fixture.homeRoot, '.agents', 'skills', 'linked-config')
+    writeFile(path.join(skillDirectory, 'SKILL.md'), '# Linked Config\n')
+    const configPath = path.join(skillDirectory, 'agents', 'openai.yaml')
+    fs.mkdirSync(path.dirname(configPath), { recursive: true })
+    fs.symlinkSync(path.join(tempDir!, 'missing-config.yaml'), configPath)
+
+    const result = runCli([
+      'private',
+      'skills-apply',
+      '--manifest',
+      fixture.manifestPath,
+      '--yes',
+    ], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /agents\/openai.yaml must not be a symbolic link/)
+    assert.equal(fs.lstatSync(configPath).isSymbolicLink(), true)
+  })
+
+  it('rejects private Skill policy paths that escape their discovery root', () => {
+    const fixture = createPrivateFixture()
+    const manifest = readJsonFile(fixture.manifestPath)
+    manifest.skills.policies = [{
+      id: 'unsafe',
+      root: 'shared',
+      path: '../escape',
+      allowImplicitInvocation: false,
+    }]
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+
+    const result = runCli([
+      'private',
+      'skills-apply',
+      '--manifest',
+      fixture.manifestPath,
+      '--dry-run',
+    ], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /unsafe Skill policy path/)
+  })
+
+  it('validates existing agents/openai.yaml during a Skill policy dry-run', () => {
+    const fixture = createPrivateFixture()
+    const manifest = readJsonFile(fixture.manifestPath)
+    manifest.skills.policies = [{
+      id: 'broken-config',
+      root: 'shared',
+      path: 'broken-config',
+      allowImplicitInvocation: false,
+    }]
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    const skillRoot = path.join(fixture.homeRoot, '.agents', 'skills', 'broken-config')
+    writeFile(path.join(skillRoot, 'SKILL.md'), '# Broken config\n')
+    writeFile(path.join(skillRoot, 'agents', 'openai.yaml'), 'policy: [\n')
+
+    const result = runCli([
+      'private',
+      'skills-apply',
+      '--manifest',
+      fixture.manifestPath,
+      '--dry-run',
+    ], fixture.repoRoot, fixture.homeRoot)
+
+    assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`)
+    assert.match(`${result.stdout}\n${result.stderr}`, /agents\/openai.yaml is invalid/)
   })
 
   it('removes the managed private MCP block when no fragments remain', () => {

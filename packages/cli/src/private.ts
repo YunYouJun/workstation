@@ -36,9 +36,11 @@ export function privateUsage(): string {
   wst private secret-scan [--manifest <path>] [--all|--staged]
   wst private secrets-check [--manifest <path>]
   wst private secrets-import [--manifest <path>] [--dry-run|--yes]
+  wst private mcp-apply [--manifest <path>] [--dry-run|--yes]
   wst private mcp-export [--manifest <path>] --server <name[,name...]> [--source <path>] [--output <path>] [--dry-run|--yes]
   wst private mcp-inject [--manifest <path>] [--dry-run|--yes]
   wst private mcp-run [--manifest <path>] -- <command...>
+  wst private skills-apply [--manifest <path>] [--dry-run|--yes]
 
 Environment:
   WORKSTATION_PRIVATE_MANIFEST  Default manifest path
@@ -105,6 +107,10 @@ async function runParsedPrivateCommand({ action, options }: ParsedCommand): Prom
   else if (action === 'secrets-import') {
     importMcpSecrets(options.manifest, manifest, options.envFile, options.dryRun || !options.yes)
   }
+  else if (action === 'mcp-apply') {
+    assertValidPrivateManifest(manifest)
+    applyPrivateCodexMcp(options.manifest, manifest, options.dryRun || !options.yes)
+  }
   else if (action === 'mcp-export') {
     exportMcpServers(options.manifest, manifest, options)
   }
@@ -113,6 +119,10 @@ async function runParsedPrivateCommand({ action, options }: ParsedCommand): Prom
   }
   else if (action === 'mcp-run') {
     runMcpCommand(options.manifest, manifest, options)
+  }
+  else if (action === 'skills-apply') {
+    assertValidPrivateManifest(manifest)
+    applyPrivateCodexSkills(options.manifest, manifest, options.dryRun || !options.yes)
   }
   else {
     status(options.manifest, manifest, action === 'check')
@@ -140,7 +150,7 @@ function parsePrivateAction(value: string | undefined): PrivateAction {
   if (!value)
     return 'status'
 
-  if (['apply', 'check', 'connect', 'file-restore', 'inventory', 'ios-materialize', 'ios-run', 'ios-secrets-import', 'list', 'mcp-export', 'mcp-inject', 'mcp-run', 'status'].includes(value))
+  if (['apply', 'check', 'connect', 'file-restore', 'inventory', 'ios-materialize', 'ios-run', 'ios-secrets-import', 'list', 'mcp-apply', 'mcp-export', 'mcp-inject', 'mcp-run', 'skills-apply', 'status'].includes(value))
     return value as PrivateAction
 
   if (['files-restore', 'restore-files'].includes(value))
@@ -357,6 +367,10 @@ function list(manifestPath: string, manifest: PrivateManifest): void {
     const source = skill.source.path || skill.source.repo || '<missing source>'
     console.log(`  - ${skill.id}${target}: ${skill.source.type}:${source}`)
   }
+
+  console.log('\nCodex skill policies:')
+  for (const policy of manifest.skills?.policies || [])
+    console.log(`  - ${policy.id}: ${policy.root}:${policy.path} implicit=${policy.allowImplicitInvocation}`)
 }
 
 function status(manifestPath: string, manifest: PrivateManifest, check: boolean): void {
@@ -364,20 +378,20 @@ function status(manifestPath: string, manifest: PrivateManifest, check: boolean)
   console.log(`Manifest: ${manifestPath}`)
   printValidation(errors, check)
 
-  const opContext = tryLoadOpContext(manifestPath, manifest)
-  const state = opReadinessState(manifestPath, manifest, opContext)
-  if (state === 'available') {
-    console.log('[ok] 1Password CLI is available and signed in')
-  }
-  else if (state === 'missing') {
+  if (!commandExists('op')) {
     console.log('[missing] 1Password CLI is not installed')
     if (check)
       process.exitCode = 1
   }
+  else if (!check) {
+    console.log('[ok] 1Password CLI is installed (authentication not checked)')
+  }
+  else if (opReadinessState(manifestPath, manifest, tryLoadOpContext(manifestPath, manifest)) === 'available') {
+    console.log('[ok] 1Password CLI is available and signed in')
+  }
   else {
     console.log('[auth] 1Password CLI is installed but not signed in or locked')
-    if (check)
-      process.exitCode = 1
+    process.exitCode = 1
   }
 
   const repoRoot = repoRootFromManifest(manifestPath)
@@ -476,9 +490,7 @@ function applyCodexOverlay(manifestPath: string, manifest: PrivateManifest, dryR
 }
 
 function apply(manifestPath: string, manifest: PrivateManifest, dryRun: boolean): void {
-  const errors = validatePrivateManifest(manifest)
-  if (errors.length > 0)
-    throw new Error(`Invalid private overlay manifest:\n${errors.map(error => `- ${error}`).join('\n')}`)
+  assertValidPrivateManifest(manifest)
 
   injectMcpTemplates(manifestPath, manifest, {
     dryRun,
@@ -499,6 +511,12 @@ function apply(manifestPath: string, manifest: PrivateManifest, dryRun: boolean)
     yes: !dryRun,
   })
   applyCodexOverlay(manifestPath, manifest, dryRun)
+}
+
+function assertValidPrivateManifest(manifest: PrivateManifest): void {
+  const errors = validatePrivateManifest(manifest)
+  if (errors.length > 0)
+    throw new Error(`Invalid private overlay manifest:\n${errors.map(error => `- ${error}`).join('\n')}`)
 }
 
 function shouldPrompt(): boolean {

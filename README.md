@@ -58,6 +58,7 @@ workstation p active --limit 20
 wst init -i
 wst df pull --dry-run
 wst p active --limit 20
+wst skills audit
 ```
 
 `wst` is intentionally used instead of `ws` to avoid common WebSocket/workspace

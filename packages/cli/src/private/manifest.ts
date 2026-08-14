@@ -1,4 +1,4 @@
-import type { McpFragment, McpTemplate, OverlayContract, PrivateManifest, PrivateSkill, SecretEnvTemplate, SecretFileBundle } from './types'
+import type { McpFragment, McpTemplate, OverlayContract, PrivateManifest, PrivateSkill, PrivateSkillPolicy, SecretEnvTemplate, SecretFileBundle } from './types'
 import fs from 'node:fs'
 import { matchesAny } from './paths'
 
@@ -108,6 +108,8 @@ export function validatePrivateManifest(manifest: PrivateManifest): string[] {
   }
 
   for (const skill of manifest.skills?.install || []) {
+    if (skill.root !== undefined && skill.root !== 'shared' && skill.root !== 'codex')
+      errors.push(`unsupported skill install root for ${skill.id}: ${skill.root}`)
     if (skill.source.type === 'local') {
       if (!skill.source.path) {
         errors.push(`local skill ${skill.id} has no source.path`)
@@ -116,9 +118,31 @@ export function validatePrivateManifest(manifest: PrivateManifest): string[] {
         errors.push(`skill source path is not allowlisted for ${skill.id}: ${skill.source.path}`)
       }
     }
-    else if (skill.source.type !== 'github') {
+    else if (skill.source.type === 'github') {
+      if (!skill.source.repo)
+        errors.push(`GitHub skill ${skill.id} has no source.repo`)
+      if (!skill.source.path)
+        errors.push(`GitHub skill ${skill.id} has no source.path`)
+      else if (!isSafeRelativeSkillPath(skill.source.path))
+        errors.push(`unsafe GitHub skill source path for ${skill.id}: ${skill.source.path}`)
+    }
+    else {
       errors.push(`unsupported skill source type for ${skill.id}: ${skill.source.type}`)
     }
+  }
+
+  const policyTargets = new Set<string>()
+  for (const policy of manifest.skills?.policies || []) {
+    if (policy.root !== 'shared' && policy.root !== 'codex')
+      errors.push(`unsupported Skill policy root for ${policy.id}: ${policy.root}`)
+    if (!isSafeRelativeSkillPath(policy.path))
+      errors.push(`unsafe Skill policy path for ${policy.id}: ${policy.path}`)
+    if (typeof policy.allowImplicitInvocation !== 'boolean')
+      errors.push(`Skill policy allowImplicitInvocation must be boolean for ${policy.id}`)
+    const target = `${policy.root}:${policy.path}`
+    if (policyTargets.has(target))
+      errors.push(`duplicate Skill policy target: ${target}`)
+    policyTargets.add(target)
   }
 
   return errors
@@ -176,10 +200,24 @@ export function privateSkillInstalls(manifest: PrivateManifest): PrivateSkill[] 
   return manifest.skills?.install || []
 }
 
+export function privateSkillPolicies(manifest: PrivateManifest): PrivateSkillPolicy[] {
+  return manifest.skills?.policies || []
+}
+
 function isHomeOutputPath(value: string | undefined): boolean {
   return Boolean(value && (value.startsWith('~/') || value.startsWith('$HOME/')))
 }
 
 function isOctalMode(value: string): boolean {
   return /^[0-7]{3,4}$/.test(value)
+}
+
+function isSafeRelativeSkillPath(value: string): boolean {
+  if (!value || value === '.' || value.includes('\\') || pathIsAbsolute(value))
+    return false
+  return !value.split('/').some(segment => segment === '..' || segment === '')
+}
+
+function pathIsAbsolute(value: string): boolean {
+  return value.startsWith('/') || /^[A-Z]:[\\/]/i.test(value)
 }

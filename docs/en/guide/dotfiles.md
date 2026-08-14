@@ -111,11 +111,20 @@ A private repository can expose `config/sync-manifest.json`:
       {
         "id": "internal-example",
         "targetName": "internal-example",
+        "root": "shared",
         "description": "Private internal workflow.",
         "source": {
           "type": "local",
           "path": "skills/install/internal-example"
         }
+      }
+    ],
+    "policies": [
+      {
+        "id": "internal-example-explicit-only",
+        "root": "shared",
+        "path": "internal-example",
+        "allowImplicitInvocation": false
       }
     ]
   },
@@ -161,6 +170,10 @@ wst private status
 wst private check
 wst private mcp-export --server gongfeng,iwiki,knot --dry-run
 wst private mcp-export --server gongfeng,iwiki,knot --yes
+wst private mcp-apply --dry-run
+wst private mcp-apply --yes
+wst private skills-apply --dry-run
+wst private skills-apply --yes
 wst private apply --dry-run
 wst private apply --yes
 wst private inventory --section skills
@@ -171,10 +184,29 @@ wst private secrets-check
 wst private secret-scan
 ```
 
+`wst private` and `wst private status` do not access a 1Password account; they
+only report whether the CLI is installed. `wst private check` reads one
+representative secret reference to verify the account and read access, so it
+may trigger a 1Password authorization prompt. Automation should use it only
+when authenticated readiness is required.
+`wst private mcp-run` omits missing optional secrets through a temporary env
+file so one unconfigured optional service cannot block the other MCP servers;
+missing required secrets still cause `op run` to fail.
+
 `apply` may only process templates, MCP fragments, explicit installable skills,
 local ignored outputs, and `op-file-restore` file bundles declared in the
 manifest. It must not copy arbitrary files from the private repository into
 `$HOME`. Without `--yes`, `apply` still runs as a dry-run.
+`mcp-apply` is narrower: it only updates the private Codex MCP managed block and
+does not inject templates, restore secret files, or install Skills. It expands
+`{{WORKSTATION_PRIVATE_REPO_ROOT}}` in fragments from the connected manifest's
+repository root so managed local wrappers do not bind to one checkout path.
+`skills-apply` only installs declared private Skills and safely merges each
+Skill's `agents/openai.yaml` implicit-invocation policy. `install[].root`
+selects `shared` or `codex` (default: `codex`), and relative paths cannot escape
+the selected discovery root. A successful apply atomically updates
+`~/.agents/.wst-skill-lock.json`, whose SHA-256 digests detect missing or
+modified private deployments.
 
 `mcp-export` reads selected servers from the manifest's Codex TOML source
 (usually `~/.codex/config.toml`) and writes the declared
@@ -182,7 +214,8 @@ manifest. It must not copy arbitrary files from the private repository into
 `env` values are converted to `${ENV_NAME}` references, and literal
 header/token values that cannot be safely inferred are refused. After exporting
 and committing private dotfiles on the old machine, a new machine can run
-`wst private apply --yes` to merge that overlay into the Codex managed block.
+`wst private mcp-apply --yes` to merge only that MCP overlay into the Codex
+managed block.
 
 `wst private connect --yes` stores the private manifest path in
 `~/.config/workstation/private.json`, so later commands can omit `--manifest`.
