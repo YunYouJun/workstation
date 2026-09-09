@@ -1,0 +1,21 @@
+{
+  "$schema": "https://raw.githubusercontent.com/YunYouJun/craft-hub/main/packages/craft-hub/schema/dotfiles-v1.schema.json",
+  "version": 1,
+  "name": "Workstation",
+  "adapter": "command",
+  "platforms": ["darwin"],
+  "operations": {
+    "check": {
+      "command": "pnpm",
+      "args": ["--filter", "@yunyoujun/workstation", "exec", "tsx", "src/cli.ts", "df", "doctor"]
+    },
+    "status": {
+      "command": "pnpm",
+      "args": ["--filter", "@yunyoujun/workstation", "exec", "tsx", "src/cli.ts", "df", "status"]
+    },
+    "diff": {
+      "command": "pnpm",
+      "args": ["--filter", "@yunyoujun/workstation", "exec", "tsx", "src/cli.ts", "df", "diff"]
+    }
+  }
+}
