@@ -5,6 +5,7 @@ import path from 'node:path'
 import process from 'node:process'
 import { createInterface } from 'node:readline/promises'
 import { getHomeDir } from './config'
+import { syncGitRepository } from './git-sync'
 import { applyPrivateCodexMcp } from './private/codex-mcp'
 import { applyPrivateCodexSkills } from './private/codex-skills'
 import { commandExists, commandOutput } from './private/exec'
@@ -23,6 +24,8 @@ const helpFlags = new Set(['--help', '-h'])
 
 export function privateUsage(): string {
   return `Usage:
+  wst private fetch [--manifest <path>] [--dry-run|--yes]
+  wst private publish [--manifest <path>] [--dry-run|--yes]
   wst private status [--manifest <path>]
   wst private list [--manifest <path>]
   wst private check [--manifest <path>]
@@ -37,7 +40,7 @@ export function privateUsage(): string {
   wst private secrets-check [--manifest <path>]
   wst private secrets-import [--manifest <path>] [--dry-run|--yes]
   wst private mcp-apply [--manifest <path>] [--dry-run|--yes]
-  wst private mcp-export [--manifest <path>] --server <name[,name...]> [--source <path>] [--output <path>] [--dry-run|--yes]
+  wst private mcp-export [--manifest <path>] --server <name[,name...]> [--source <path>] [--output <path>] [--replace] [--dry-run|--yes]
   wst private mcp-inject [--manifest <path>] [--dry-run|--yes]
   wst private mcp-run [--manifest <path>] -- <command...>
   wst private skills-apply [--manifest <path>] [--dry-run|--yes]
@@ -83,7 +86,11 @@ async function runParsedPrivateCommand({ action, options }: ParsedCommand): Prom
 
   const manifest = readPrivateManifest(options.manifest)
 
-  if (action === 'list') {
+  if (action === 'fetch' || action === 'publish') {
+    assertValidPrivateManifest(manifest)
+    syncGitRepository(repoRootFromManifest(options.manifest), action, options.dryRun || !options.yes)
+  }
+  else if (action === 'list') {
     list(options.manifest, manifest)
   }
   else if (action === 'apply') {
@@ -150,7 +157,7 @@ function parsePrivateAction(value: string | undefined): PrivateAction {
   if (!value)
     return 'status'
 
-  if (['apply', 'check', 'connect', 'file-restore', 'inventory', 'ios-materialize', 'ios-run', 'ios-secrets-import', 'list', 'mcp-apply', 'mcp-export', 'mcp-inject', 'mcp-run', 'skills-apply', 'status'].includes(value))
+  if (['fetch', 'publish', 'apply', 'check', 'connect', 'file-restore', 'inventory', 'ios-materialize', 'ios-run', 'ios-secrets-import', 'list', 'mcp-apply', 'mcp-export', 'mcp-inject', 'mcp-run', 'skills-apply', 'status'].includes(value))
     return value as PrivateAction
 
   if (['files-restore', 'restore-files'].includes(value))
@@ -210,6 +217,9 @@ function parsePrivateOptions(args: string[]): PrivateOptions {
     else if (arg === '--dry-run') {
       options.dryRun = true
       options.yes = false
+    }
+    else if (arg === '--replace') {
+      options.replace = true
     }
     else if (arg === '--yes') {
       options.yes = true
@@ -491,6 +501,8 @@ function applyCodexOverlay(manifestPath: string, manifest: PrivateManifest, dryR
 
 function apply(manifestPath: string, manifest: PrivateManifest, dryRun: boolean): void {
   assertValidPrivateManifest(manifest)
+  // Fail on MCP conflicts before materializing secrets or changing skills.
+  applyPrivateCodexMcp(manifestPath, manifest, true)
 
   injectMcpTemplates(manifestPath, manifest, {
     dryRun,

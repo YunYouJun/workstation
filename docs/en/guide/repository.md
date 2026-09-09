@@ -88,3 +88,16 @@ workstation/
 ```
 
 As the repository grows, prefer adding a documented module over mixing unrelated setup logic into one large script.
+
+## Canonical CLI maintenance
+
+Maintain CLI code, sync behavior and releases in `YunYouJun/workstation`, under
+`packages/cli`. `YunYouJun/dotfiles` redirects to workstation via HTTP 301; the `dotfiles`
+executable remains a compatibility alias. Private configuration repositories
+contain manifests, fragments, private skills and secret references, without a
+second CLI or copy of the synchronization scripts.
+
+On 2026-09-09, both GitHub URLs returned remote HEAD
+`d821b672111eca2908bfa7ec47e6aa982438d8e4`. The older local `dotfiles` checkout at
+`8b0e587` was 12 commits behind workstation with no unique commits. Preserve and
+review its uncommitted changes separately before considering checkout removal.

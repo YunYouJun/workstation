@@ -4,6 +4,8 @@ import path from 'node:path'
 import process from 'node:process'
 import { assertAllowedRead, privateMcpFragments } from './manifest'
 import { expandHome, repoRootFromManifest, resolveManifestRelativePath, resolveRepoPath } from './paths'
+import { atomicWrite, withFileLock } from './safe-file'
+import { parseTomlDocument } from './toml'
 
 interface ExportBlock {
   lines: string[]
@@ -14,6 +16,11 @@ const secretLikeKeyPattern = /api[_-]?key|authorization|bearer|cookie|password|s
 const secretValueHintPattern = /--?(?:api[-_]?key|auth|authorization|bearer|cookie|password|secret|token)\b|[?&](?:api[-_]?key|password|secret|token)=|bearer\s+/i
 
 export function exportMcpServers(manifestPath: string, manifest: PrivateManifest, options: PrivateOptions): void {
+  const output = resolveMcpExportOutput(manifestPath, manifest, options)
+  withFileLock(output, options.dryRun || !options.yes, () => exportUnlocked(manifestPath, manifest, options))
+}
+
+function exportUnlocked(manifestPath: string, manifest: PrivateManifest, options: PrivateOptions): void {
   const servers = normalizeServerOptions(options.servers)
   if (servers.length === 0)
     throw new Error('Pass at least one MCP server name with --server <name>[,<name>]')
@@ -21,6 +28,7 @@ export function exportMcpServers(manifestPath: string, manifest: PrivateManifest
   const source = resolveMcpExportSource(manifest, options)
   const output = resolveMcpExportOutput(manifestPath, manifest, options)
   const sourceContent = readSourceContent(source)
+  parseTomlDocument(sourceContent)
   const blocks = extractMcpServerBlocks(sourceContent, servers)
   const exportedServers = new Set(blocks.map(block => block.server))
   const missing = servers.filter(server => !exportedServers.has(server))
@@ -30,7 +38,10 @@ export function exportMcpServers(manifestPath: string, manifest: PrivateManifest
   if (missing.length > 1)
     throw new Error(`Requested MCP servers were not found: ${missing.join(', ')}`)
 
-  const content = composeExportContent(blocks)
+  const existing = fs.existsSync(output) ? fs.readFileSync(output, 'utf8') : ''
+  const preserved = options.replace ? '' : preserveOtherServers(existing, servers)
+  const content = `${preserved.trimEnd()}${preserved.trim() ? '\n\n' : ''}${composeExportContent(blocks)}`
+  parseTomlDocument(content)
   const dryRun = options.dryRun || !options.yes
   const label = servers.join(', ')
 
@@ -42,9 +53,33 @@ export function exportMcpServers(manifestPath: string, manifest: PrivateManifest
   }
 
   fs.mkdirSync(path.dirname(output), { recursive: true })
-  fs.writeFileSync(output, content, 'utf-8')
+  if (existing === content) {
+    console.log('[skip] MCP overlay is already up to date')
+    return
+  }
+  // Backups stay outside the checkout so an accidental git add cannot publish them.
+  atomicWrite(output, content, existing)
   console.log(`[export] wrote MCP overlay ${output}`)
   console.log(`[export] servers: ${label}`)
+}
+
+function preserveOtherServers(content: string, servers: string[]): string {
+  const requested = new Set(servers)
+  let keep = true
+  const lines: string[] = []
+  for (const line of content.split('\n')) {
+    const header = parseTableHeader(line)
+    if (header)
+      keep = !requested.has(mcpServerNameFromSection(header) || '')
+    if (keep)
+      lines.push(line)
+  }
+  // The generated header is recreated below; retain user comments and top-level keys.
+  return lines.filter(line => ![
+    '# Private Codex MCP fragment.',
+    '# Exported by `wst private mcp-export`.',
+    '# Keep real tokens in 1Password or local environment variables.',
+  ].includes(line)).join('\n')
 }
 
 function normalizeServerOptions(values: string[] | undefined): string[] {
@@ -120,6 +155,8 @@ function extractMcpServerBlocks(content: string, servers: string[]): ExportBlock
   let current: ExportBlock | undefined
 
   for (const line of content.split('\n')) {
+    if (/^# (?:>>>|<<<) workstation managed private mcp$/.test(line.trim()))
+      continue
     const header = parseTableHeader(line)
     if (header) {
       const server = mcpServerNameFromSection(header)

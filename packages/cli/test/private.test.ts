@@ -1269,7 +1269,6 @@ describe('private CLI', () => {
   it('removes the managed private MCP block when no fragments remain', () => {
     const fixture = createPrivateFixture()
     const manifest = readJsonFile(fixture.manifestPath)
-    manifest.mcp.fragments = []
     manifest.mcp.templates = []
     manifest.secrets.envTemplates = []
     writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
@@ -1282,6 +1281,12 @@ describe('private CLI', () => {
       '# <<< workstation managed private mcp',
       '',
     ].join('\n'))
+
+    writeFile(path.join(fixture.repoRoot, 'mcp', 'codex-mcp.overlay.toml'), '[mcp_servers.private_docs]\nurl = "https://docs.example.com/mcp"\n')
+    const baseline = runCli(['private', 'mcp-apply', '--manifest', fixture.manifestPath, '--yes'], fixture.repoRoot, fixture.homeRoot)
+    assert.equal(baseline.status, 0, baseline.stderr)
+    manifest.mcp.fragments = []
+    writeFile(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
 
     const result = runCli(['private', 'apply', '--manifest', fixture.manifestPath, '--yes'], fixture.repoRoot, fixture.homeRoot, {
       PATH: fixture.binDir,
@@ -1616,6 +1621,87 @@ describe('private CLI', () => {
     assert.doesNotMatch(result.stdout, /real-token-value/)
     assert.doesNotMatch(result.stdout, /\[mcp_servers\.other\]/)
     assert.equal(fs.readFileSync(overlayPath, 'utf-8'), originalOverlay)
+  })
+
+  it('merges one exported server without dropping other servers or top-level settings', () => {
+    const fixture = createPrivateFixture()
+    const overlay = path.join(fixture.repoRoot, 'mcp', 'codex-mcp.overlay.toml')
+    const original = 'mcp_oauth_callback_port = 1234\n# Keep docs\n[mcp_servers.docs]\nurl = "https://docs.example.com"\n[mcp_servers.target]\ncommand = "old"\n[mcp_servers.target.env]\nOLD = "remove"\n'
+    writeFile(overlay, original)
+    writeFile(path.join(fixture.homeRoot, '.codex', 'config.toml'), '[mcp_servers.target]\ncommand = "new"\n')
+    const args = ['private', 'mcp-export', '--manifest', fixture.manifestPath, '--server', 'target']
+    const preview = runCli(args, fixture.repoRoot, fixture.homeRoot)
+    assert.equal(preview.status, 0, preview.stderr)
+    assert.equal(fs.readFileSync(overlay, 'utf8'), original)
+    const applied = runCli([...args, '--yes'], fixture.repoRoot, fixture.homeRoot)
+    assert.equal(applied.status, 0, applied.stderr)
+    const result = fs.readFileSync(overlay, 'utf8')
+    assert.match(result, /mcp_oauth_callback_port = 1234/)
+    assert.match(result, /Keep docs/)
+    assert.match(result, /mcp_servers.docs/)
+    assert.match(result, /command = "new"/)
+    assert.doesNotMatch(result, /OLD|command = "old"/)
+    const repeated = runCli([...args, '--yes'], fixture.repoRoot, fixture.homeRoot)
+    assert.equal(repeated.status, 0, repeated.stderr)
+    assert.equal(fs.readFileSync(overlay, 'utf8'), result)
+    const replaced = runCli([...args, '--replace', '--yes'], fixture.repoRoot, fixture.homeRoot)
+    assert.equal(replaced.status, 0, replaced.stderr)
+    assert.doesNotMatch(fs.readFileSync(overlay, 'utf8'), /mcp_servers.docs|mcp_oauth_callback_port/)
+    assert.equal(fs.readdirSync(path.dirname(overlay)).some(name => name.includes('backup')), false)
+  })
+
+  it('protects local managed edits while permitting source updates and explicit reconciliation', () => {
+    const fixture = createPrivateFixture()
+    const overlay = path.join(fixture.repoRoot, 'mcp', 'codex-mcp.overlay.toml')
+    const destination = path.join(fixture.homeRoot, '.codex', 'config.toml')
+    const args = ['private', 'mcp-apply', '--manifest', fixture.manifestPath, '--yes']
+    writeFile(overlay, '[mcp_servers.docs]\ncommand = "v1"\n')
+    writeFile(destination, 'model = "local"\n')
+    assert.equal(runCli(args, fixture.repoRoot, fixture.homeRoot).status, 0)
+    writeFile(overlay, '[mcp_servers.docs]\ncommand = "v2"\n')
+    assert.equal(runCli(args, fixture.repoRoot, fixture.homeRoot).status, 0)
+    const local = fs.readFileSync(destination, 'utf8').replace('"v2"', '"edited"')
+    writeFile(destination, local)
+    for (const flags of [['--dry-run'], ['--yes']]) {
+      const conflict = runCli([...args.slice(0, -1), ...flags], fixture.repoRoot, fixture.homeRoot)
+      assert.equal(conflict.status, 1)
+      assert.match(conflict.stderr, /Private MCP conflict/)
+      assert.equal(fs.readFileSync(destination, 'utf8'), local)
+    }
+    writeFile(overlay, '[mcp_servers.docs]\ncommand = "v3"\n')
+    assert.equal(runCli(args, fixture.repoRoot, fixture.homeRoot).status, 1)
+    assert.equal(fs.readFileSync(destination, 'utf8'), local)
+    const fullApply = runCli(['private', 'apply', '--manifest', fixture.manifestPath, '--yes'], fixture.repoRoot, fixture.homeRoot, { PATH: fixture.binDir })
+    assert.equal(fullApply.status, 1)
+    assert.match(fullApply.stderr, /Private MCP conflict/)
+    assert.equal(fs.existsSync(path.join(fixture.repoRoot, 'mcp', 'mcp.local.json')), false)
+    const exported = runCli(['private', 'mcp-export', '--manifest', fixture.manifestPath, '--server', 'docs', '--yes'], fixture.repoRoot, fixture.homeRoot)
+    assert.equal(exported.status, 0, exported.stderr)
+    assert.doesNotMatch(fs.readFileSync(overlay, 'utf8'), /<<<|>>>/)
+    assert.equal(runCli(args, fixture.repoRoot, fixture.homeRoot).status, 0)
+    writeFile(overlay, '[mcp_servers.docs]\ncommand = "v4"\n')
+    assert.equal(runCli(args, fixture.repoRoot, fixture.homeRoot).status, 0)
+    assert.match(fs.readFileSync(destination, 'utf8'), /model = "local"/)
+    assert.match(fs.readFileSync(destination, 'utf8'), /command = "v4"/)
+    writeFile(destination, 'model = "local"\n')
+    const deleted = runCli(args, fixture.repoRoot, fixture.homeRoot)
+    assert.equal(deleted.status, 1)
+    assert.match(deleted.stderr, /Private MCP conflict/)
+  })
+
+  it('refuses unknown legacy baselines and duplicate managed blocks without writing', () => {
+    const fixture = createPrivateFixture()
+    const destination = path.join(fixture.homeRoot, '.codex', 'config.toml')
+    const block = '# >>> workstation managed private mcp\n[mcp_servers.docs]\ncommand = "old"\n# <<< workstation managed private mcp\n'
+    writeFile(destination, block)
+    const args = ['private', 'mcp-apply', '--manifest', fixture.manifestPath, '--yes']
+    assert.equal(runCli(args, fixture.repoRoot, fixture.homeRoot).status, 1)
+    assert.equal(fs.readFileSync(destination, 'utf8'), block)
+    writeFile(destination, block + block)
+    const duplicate = runCli(args, fixture.repoRoot, fixture.homeRoot)
+    assert.equal(duplicate.status, 1)
+    assert.match(duplicate.stderr, /Duplicate or nested/)
+    assert.equal(fs.readFileSync(destination, 'utf8'), block + block)
   })
 
   it('writes selected Codex MCP servers to the private overlay when confirmed', () => {

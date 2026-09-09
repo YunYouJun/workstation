@@ -5,6 +5,8 @@ import process from 'node:process'
 import { getHomeDir } from '../config'
 import { assertAllowedRead, privateMcpFragments } from './manifest'
 import { repoRootFromManifest, resolveRepoPath } from './paths'
+import { atomicWrite, localStatePath, withFileLock } from './safe-file'
+import { parseTomlDocument, tomlHash } from './toml'
 
 interface MarkerPair {
   end: string
@@ -153,19 +155,23 @@ function readFragment(manifestPath: string, manifest: PrivateManifest, fragment:
   return content
 }
 
-function stripManagedBlock(content: string, markers: MarkerPair): { content: string, removed: boolean } {
+function stripManagedBlock(content: string, markers: MarkerPair): { content: string, removed: boolean, managed: string } {
+  const managed: string[] = []
   const result: string[] = []
   let inside = false
   let removed = false
 
   for (const line of content.replace(/\r\n/g, '\n').split('\n')) {
     if (line.trim() === markers.start) {
-      if (inside)
-        throw new Error(`Nested managed MCP block: ${markers.start}`)
+      if (inside || removed)
+        throw new Error(`Duplicate or nested managed MCP block: ${markers.start}`)
       inside = true
       removed = true
       continue
     }
+
+    if (!inside && line.trim() === markers.end)
+      throw new Error(`Unexpected managed MCP end marker: ${markers.end}`)
 
     if (inside && line.trim() === markers.end) {
       inside = false
@@ -174,6 +180,8 @@ function stripManagedBlock(content: string, markers: MarkerPair): { content: str
 
     if (!inside)
       result.push(line)
+    else
+      managed.push(line)
   }
 
   if (inside)
@@ -182,6 +190,7 @@ function stripManagedBlock(content: string, markers: MarkerPair): { content: str
   return {
     content: `${result.join('\n').trimEnd()}\n`,
     removed,
+    managed: managed.join('\n').trim(),
   }
 }
 
@@ -201,6 +210,10 @@ function composeConfig(existing: string, fragment: string): string {
 }
 
 export function applyPrivateCodexMcp(manifestPath: string, manifest: PrivateManifest, dryRun: boolean): void {
+  withFileLock(configPath(), dryRun, () => applyUnlocked(manifestPath, manifest, dryRun))
+}
+
+function applyUnlocked(manifestPath: string, manifest: PrivateManifest, dryRun: boolean): void {
   const fragments = privateMcpFragments(manifest)
   const fragment = fragments
     .map(item => readFragment(manifestPath, manifest, item).trim())
@@ -208,9 +221,29 @@ export function applyPrivateCodexMcp(manifestPath: string, manifest: PrivateMani
     .join('\n\n')
   const destination = configPath()
   const existing = fs.existsSync(destination) ? fs.readFileSync(destination, 'utf8') : ''
+  const statePath = path.join(localStatePath(destination), 'mcp-baseline.json')
+  const current = stripManagedBlock(existing, privateMarkers)
+  const currentHash = tomlHash(current.managed)
+  const desiredHash = tomlHash(fragment.trim())
+  let baseline: string | undefined
+  if (fs.existsSync(statePath)) {
+    const state = JSON.parse(fs.readFileSync(statePath, 'utf8'))
+    if (state.version !== 1 || typeof state.hash !== 'string')
+      throw new Error(`Invalid MCP baseline: ${statePath}`)
+    baseline = state.hash
+  }
+  if (currentHash !== desiredHash && (baseline ? currentHash !== baseline : current.removed))
+    throw new Error(`Private MCP conflict: local managed content changed or has no baseline. Local config and source fragments are preserved. Export/reconcile the local edits before applying: ${destination}`)
   const next = composeConfig(existing, fragment)
+  parseTomlDocument(next)
+  const saveBaseline = () => {
+    if (!dryRun)
+      atomicWrite(statePath, `${JSON.stringify({ version: 1, hash: desiredHash })}\n`)
+  }
 
   if (next === existing) {
+    if (baseline !== desiredHash)
+      saveBaseline()
     console.log('[skip] private Codex MCP config is already up to date')
     return
   }
@@ -219,20 +252,7 @@ export function applyPrivateCodexMcp(manifestPath: string, manifest: PrivateMani
   if (dryRun)
     return
 
-  fs.mkdirSync(path.dirname(destination), { recursive: true })
-  if (fs.existsSync(destination)) {
-    const backup = `${destination}.backup.${Date.now()}`
-    fs.copyFileSync(destination, backup)
-    console.log(`[backup] ${backup}`)
-  }
-
-  const temporary = `${destination}.tmp.${process.pid}`
-  try {
-    fs.writeFileSync(temporary, next, 'utf8')
-    fs.renameSync(temporary, destination)
-  }
-  finally {
-    fs.rmSync(temporary, { force: true })
-  }
+  atomicWrite(destination, next, existing)
+  saveBaseline()
   console.log('[ok] applied private Codex MCP config')
 }

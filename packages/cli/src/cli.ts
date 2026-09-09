@@ -3,7 +3,9 @@ import process from 'node:process'
 import cac from 'cac'
 import { version } from '../package.json'
 import { runChezmoi } from './chezmoi'
+import { getRepoRoot } from './config'
 import { doctor } from './doctor'
+import { syncGitRepository } from './git-sync'
 import { runInit } from './init'
 import { runPrivateCommand } from './private'
 import { cloneActiveProjects, cloneManifestProjects, projectMigrateLayout, projectStatus, pullProjects } from './projects'
@@ -169,6 +171,17 @@ function getArgsAfter(commandName: string, action?: string) {
 async function runDotfilesAction(action: string | undefined, options: any, commandName?: string) {
   const dotfilesAction = action || 'sync'
 
+  if (dotfilesAction === 'fetch' || dotfilesAction === 'publish') {
+    try {
+      syncGitRepository(getRepoRoot(), dotfilesAction, options.dryRun || !options.yes)
+    }
+    catch (error) {
+      console.error(error instanceof Error ? error.message : String(error))
+      process.exitCode = 1
+    }
+    return
+  }
+
   if (dotfilesAction === 'push') {
     await sync({
       direction: 'push',
@@ -233,6 +246,7 @@ async function runDotfilesAction(action: string | undefined, options: any, comma
 function registerDotfilesNamespace(name: string, description: string) {
   cli
     .command(`${name} [action] [...args]`, description)
+    .option('--yes', 'Apply remote fetch/publish operations (defaults to dry-run)', { default: false })
     .option('--direction <dir>', 'Sync direction: push or pull', { default: 'pull' })
     .option('--mode <mode>', 'Sync mode: link or copy', { default: 'copy' })
     .option('--force', 'Overwrite existing files (with backup)', { default: false })

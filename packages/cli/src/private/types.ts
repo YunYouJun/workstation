@@ -2,6 +2,8 @@ export type PrivateAction
   = | 'apply'
     | 'check'
     | 'connect'
+    | 'fetch'
+    | 'publish'
     | 'file-restore'
     | 'inventory'
     | 'ios-materialize'
@@ -165,6 +167,7 @@ export interface PrivateOptions {
   passthrough: string[]
   positionals: string[]
   repo?: string
+  replace?: boolean
   scanMode: SecretScanMode
   section: InventorySection
   servers?: string[]

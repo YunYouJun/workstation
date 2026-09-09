@@ -195,3 +195,43 @@ secret 会拒绝写入。旧机器导出并提交私有 dotfiles 后，新机器
 仍然可以传 `--manifest <path>` 覆盖默认路径。
 
 `wst private connect` 会在 TTY 中询问是否连接私有 Git dotfiles 仓库，并允许粘贴 Git URL。非交互环境必须传 `--repo`；没有 `--yes` 时只预览 `git clone`。
+
+## 远端同步与冲突保护
+
+公开、私有配置复用同一套 Git 同步实现。以下命令默认预览，不访问远端；
+`--yes` 才执行远端操作。旧 `df push/pull` 仍表示 HOME 与本地配置源之间的导出/应用。
+
+```sh
+wst df fetch                     # 预览公开配置仓库拉取
+wst df fetch --yes               # fetch 后仅快进，不应用到 HOME
+wst private fetch --yes          # 对已连接的私有配置仓库执行同样流程
+wst private mcp-export --server docs --yes  # 按 server 合并，保留其他 server
+wst private mcp-export --server docs --replace --dry-run # 预览全量替换
+wst private mcp-apply --dry-run
+wst private mcp-apply --yes
+# 在对应仓库审阅 diff、显式 git add / git commit 后：
+wst private publish --dry-run
+wst private publish --yes
+wst df publish --yes             # 对公开配置仓库执行同样流程
+```
+
+`fetch` 要求工作区干净且配置了远端 upstream，仅允许快进；分支分叉时保留双方提交并停止。
+`publish` 只发布当前分支中已经提交的内容，要求工作区干净且不落后远端，并使用
+`gitleaks git` 扫描待发布的整个提交范围。扫描器缺失或扫描失败时不推送。
+命令不会自动 add、commit、stash、rebase、强推或应用 HOME 配置。首次发布新分支需要先显式设置远端 upstream。
+不支持 fetch/push URL 不同或多个 URL 的远端。离线或鉴权失败后可重新执行；不会丢弃本机文件。
+
+`mcp-export` 默认按选中的 server 更新，保留其他 server 和顶层设置；只有显式
+`--replace` 才替换整个 overlay。写入使用备份和原子替换。
+
+MCP 应用会解析 TOML，在本机记录上次应用配置值的 SHA-256 基线，忽略注释、键顺序和格式差异。托管区与基线不同且与新配置
+也不一致时，预览和应用都会报冲突，原配置和源片段保持不变。没有基线的旧托管区
+只有与源片段一致时才能自动建立基线，避免第一次升级就覆盖未知修改。
+解决冲突时，先审阅本机修改，再通过导出或编辑源片段使双方一致，重新应用后继续同步。
+删除托管区也视为本机修改；无本机修改时，移除 manifest fragment 可以正常删除受管内容。
+
+基线、备份与文件操作锁保存在 `~/.local/state/workstation/private/`，不会进入配置仓库。
+备份文件权限为 `0600`；输出会显示备份路径，可用它恢复后重新核对源配置。
+远端同步锁保存在 Git 目录。进程异常退出留下锁时，先确认进程已停止再移除锁。
+完整 `private apply` 会先检查 MCP 冲突，但跨密钥恢复、skills 和 MCP 的所有步骤不构成统一事务；
+发生其他步骤错误时按输出检查已完成操作，再修复重试。

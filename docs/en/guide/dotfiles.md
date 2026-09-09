@@ -226,3 +226,54 @@ Without that config, the CLI discovers common
 `wst private connect` asks in a TTY whether to connect a private Git dotfiles
 repository and lets the user paste the Git URL. Non-interactive environments
 must pass `--repo`; without `--yes`, it only previews `git clone`.
+
+## Remote synchronization and conflict protection
+
+Public and private configuration repositories share the same Git transport.
+Remote commands default to a preview without network access; `--yes` executes them.
+The legacy `df push/pull` commands still export/apply between HOME and the local source.
+
+```sh
+wst df fetch                     # preview public repository transport
+wst df fetch --yes               # fetch and fast-forward, without applying HOME
+wst private fetch --yes          # same transport for the connected private repository
+wst private mcp-export --server docs --yes # merge selected servers
+wst private mcp-export --server docs --replace --dry-run # preview full replacement
+wst private mcp-apply --dry-run
+wst private mcp-apply --yes
+# Review the diff and explicitly git add / git commit in the relevant repository:
+wst private publish --dry-run
+wst private publish --yes
+wst df publish --yes             # same transport for the public repository
+```
+
+`fetch` requires a clean checkout and remote upstream and only fast-forwards.
+Divergence stops the operation with both histories intact. `publish` requires a
+clean checkout that is not behind the remote, and scans the entire outgoing commit
+range using `gitleaks git`. A missing scanner or failed scan prevents pushing.
+Only committed changes on the current branch are published. Neither command
+stages, commits, stashes, rebases, force-pushes or applies HOME configuration.
+Set an upstream explicitly before the first publication of a new branch.
+Multiple remote URLs or differing fetch/push URLs are unsupported. Offline and
+authentication failures leave local files intact; retry once connectivity is restored.
+
+`mcp-export` updates selected servers while retaining other servers and top-level
+settings. Only explicit `--replace` replaces the whole overlay. Writes use backups
+and atomic replacement.
+
+MCP apply parses TOML and stores a SHA-256 baseline of the last applied values locally,
+ignoring comments, key order and formatting.
+When local managed content differs from both the baseline and desired content,
+preview and apply stop with a conflict, preserving the config and source fragments.
+A legacy managed block without a baseline can be adopted only when it matches the
+source. Review local edits, reconcile them through export or source editing, then
+apply again to establish the baseline. Removing the local managed block counts as
+a local edit; removing source fragments deletes managed content only if it is unmodified.
+
+Baselines, backups and file locks live under `~/.local/state/workstation/private/`,
+outside the config checkout. Backups have mode `0600`; output reports the recovery
+path. Restore a backup and reconcile the source before reapplying. Git transport
+uses a lock in the Git directory. After a crash, verify the process has stopped
+before removing a stale lock. Full `private apply` checks MCP conflicts before other
+operations, but secret restoration, skills and MCP application are not a single
+transaction: inspect completed steps if another operation fails, then fix and retry.

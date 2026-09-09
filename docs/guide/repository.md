@@ -81,3 +81,13 @@ workstation/
 ```
 
 仓库继续增长时，优先添加带文档的模块，而不是把无关设置逻辑混在一个大型脚本里。
+
+## 唯一的 CLI 维护入口
+
+CLI 代码、同步实现和发布流程统一维护在 `YunYouJun/workstation` 的 `packages/cli`。
+`YunYouJun/dotfiles` 已通过 HTTP 301 重定向到 workstation，是历史入口；`dotfiles` 可执行命令继续作为兼容别名。
+私有配置仓库只保存 manifest、配置片段、私有 skills 和密钥引用，不复制 CLI 或同步脚本。
+
+2026-09-09 核对时，两个 GitHub 地址的远端 HEAD 均为
+`d821b672111eca2908bfa7ec47e6aa982438d8e4`。本机旧 `dotfiles` checkout 位于
+`8b0e587`，相对 workstation 落后 12 个提交、没有独有提交；未提交改动应单独保留和审阅，不能据此直接删除旧目录。
