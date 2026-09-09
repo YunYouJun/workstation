@@ -7,7 +7,7 @@ import { expandHome, repoRootFromManifest, resolveManifestRelativePath, resolveR
 import { atomicWrite, withFileLock } from './safe-file'
 import { parseTomlDocument } from './toml'
 
-interface ExportBlock {
+export interface ExportBlock {
   lines: string[]
   server: string
 }
@@ -63,7 +63,7 @@ function exportUnlocked(manifestPath: string, manifest: PrivateManifest, options
   console.log(`[export] servers: ${label}`)
 }
 
-function preserveOtherServers(content: string, servers: string[]): string {
+export function preserveOtherServers(content: string, servers: string[]): string {
   const requested = new Set(servers)
   let keep = true
   const lines: string[] = []
@@ -149,7 +149,7 @@ function readSourceContent(source: string): string {
   return fs.readFileSync(source, 'utf-8').replace(/\r\n/g, '\n')
 }
 
-function extractMcpServerBlocks(content: string, servers: string[]): ExportBlock[] {
+export function extractMcpServerBlocks(content: string, servers: string[]): ExportBlock[] {
   const requested = new Set(servers)
   const blocks: ExportBlock[] = []
   let current: ExportBlock | undefined
@@ -236,7 +236,7 @@ function parseDottedTomlName(value: string): string[] {
   return parts
 }
 
-function composeExportContent(blocks: ExportBlock[]): string {
+export function composeExportContent(blocks: ExportBlock[]): string {
   const lines = [
     '# Private Codex MCP fragment.',
     '# Exported by `wst private mcp-export`.',

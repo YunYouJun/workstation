@@ -33,7 +33,7 @@ export function withFileLock<T>(destination: string, dryRun: boolean, operation:
   }
 }
 
-export function atomicWrite(destination: string, content: string, expected?: string): void {
+export function atomicWrite(destination: string, content: string, expected?: string, beforeReplace?: () => void): void {
   if (fs.existsSync(destination) && fs.lstatSync(destination).isSymbolicLink())
     throw new Error(`Refusing to replace a symbolic link: ${destination}`)
   const current = fs.existsSync(destination) ? fs.readFileSync(destination, 'utf8') : ''
@@ -50,6 +50,7 @@ export function atomicWrite(destination: string, content: string, expected?: str
   const temporary = `${destination}.tmp.${randomUUID()}`
   try {
     fs.writeFileSync(temporary, content, { mode: 0o600, flag: 'wx' })
+    beforeReplace?.()
     fs.renameSync(temporary, destination)
   }
   finally {

@@ -1,9 +1,11 @@
 import type { SyncDirection, SyncMode } from './sync'
+import fs from 'node:fs'
 import process from 'node:process'
 import cac from 'cac'
 import { version } from '../package.json'
 import { runChezmoi } from './chezmoi'
 import { getRepoRoot } from './config'
+import { configurationRequest } from './configuration/protocol'
 import { doctor } from './doctor'
 import { syncGitRepository } from './git-sync'
 import { runInit } from './init'
@@ -18,6 +20,26 @@ function getCliName() {
 }
 
 const cli = cac(getCliName())
+
+cli.command('configuration', 'Versioned local configuration API; reads one JSON request from stdin')
+  .action(() => {
+    const log = console.log
+    try {
+      // Existing workstation helpers log backup paths; protocol stdout contains JSON only.
+      console.log = () => {}
+      const text = fs.readFileSync(0, 'utf8')
+      if (text.length > 1024 * 1024)
+        throw new Error('Request exceeds limit')
+      const result = configurationRequest(JSON.parse(text))
+      process.stdout.write(`${JSON.stringify({ ok: true, result })}\n`)
+    }
+    catch (error) {
+      const safe = error instanceof Error && /^(?:Git operation failed|Repository has|Git fetch failed|Secret scan|Only declared|Unknown repository|Provide a bounded|Existing staged|Branches diverged|Remote is ahead|Configure a single|Sync requires|Repository changed|Unsupported configuration|Select configuration|Configuration changed|Configuration is not|Invalid decision|Duplicate decision|Choose a side|Replace literal credentials|Plan |File changed|Baseline changed|Later configuration)/.test(error.message)
+      process.stdout.write(`${JSON.stringify({ ok: false, error: safe ? (error as Error).message : 'Configuration operation failed. Check local permissions, source syntax and recovery history.' })}\n`)
+      process.exitCode = 1
+    }
+    finally { console.log = log }
+  })
 
 function parseProjectAction(action: string | undefined) {
   const projectAction = action || 'clone-active'

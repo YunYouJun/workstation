@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 /** Repository transport only: never stages files, commits, applies HOME files or forces a push. */
-export function syncGitRepository(repoRoot: string, action: 'fetch' | 'publish', dryRun: boolean): void {
+export function syncGitRepository(repoRoot: string, action: 'fetch' | 'publish', dryRun: boolean, quiet = false): void {
   function git(args: string[], operation = args[0]): string {
     const result = spawnSync('git', args, { cwd: repoRoot, encoding: 'utf8' })
     if (result.status !== 0)
@@ -75,7 +75,7 @@ export function syncGitRepository(repoRoot: string, action: 'fetch' | 'publish',
     }
     const scan = spawnSync('gitleaks', ['git', '--redact', '--no-banner', `--log-opts=${upstream}..${head}`, '.'], {
       cwd: repoRoot,
-      stdio: 'inherit',
+      stdio: quiet ? 'pipe' : 'inherit',
     })
     if (scan.status !== 0)
       throw new Error('Outgoing secret scan failed or gitleaks is unavailable. Nothing was pushed.')
