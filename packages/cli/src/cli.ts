@@ -1,4 +1,5 @@
 import type { SyncDirection, SyncMode } from './sync'
+import { Buffer } from 'node:buffer'
 import fs from 'node:fs'
 import process from 'node:process'
 import cac from 'cac'
@@ -12,6 +13,7 @@ import { runInit } from './init'
 import { runPrivateCommand } from './private'
 import { cloneActiveProjects, cloneManifestProjects, projectMigrateLayout, projectStatus, pullProjects } from './projects'
 import { runSkillsAudit } from './skills'
+import { runSoftwareWorker, softwareOperationRequest } from './software'
 import { diff, status, sync, syncInteractive } from './sync'
 
 function getCliName() {
@@ -20,6 +22,51 @@ function getCliName() {
 }
 
 const cli = cac(getCliName())
+
+cli.command('software-json', 'Versioned software catalog and confirmed installation API; reads one JSON request from stdin')
+  .action(async () => {
+    try {
+      if (cli.args.length > 0)
+        throw new Error('Invalid software request')
+      let text = ''
+      let bytes = 0
+      process.stdin.setEncoding('utf8')
+      for await (const chunk of process.stdin) {
+        bytes += Buffer.byteLength(chunk)
+        if (bytes > 1024 * 1024)
+          throw new Error('Invalid software request')
+        text += chunk
+      }
+      const result = await softwareOperationRequest(JSON.parse(text))
+      process.stdout.write(`${JSON.stringify({ ok: true, result })}\n`)
+    }
+    catch (error) {
+      const message = error instanceof Error ? error.message : ''
+      const codes: [RegExp, string][] = [
+        [/^Invalid software request$/, 'INVALID_REQUEST'],
+        [/^Unsupported software protocol version$/, 'UNSUPPORTED_VERSION'],
+        [/^Unsupported software operation$/, 'UNSUPPORTED_OPERATION'],
+        [/^Software installation requires an explicit confirmed plan$/, 'CONFIRMATION_REQUIRED'],
+        [/^Software catalog changed; preview the installation again$/, 'PLAN_STALE'],
+        [/^Software installation plan expired; preview the installation again$/, 'PLAN_EXPIRED'],
+        [/^Another software (?:installation is already active|operation is updating state; retry shortly)$/, 'INSTALL_BUSY'],
+        [/^(?:Software installation (?:plan|run) was not found|Unknown software id)$/, 'NOT_FOUND'],
+        [/^(?:Homebrew is unavailable; complete the prerequisite and preview again|Software state is unavailable or invalid|Software worker could not start|Software application (?:could not open|was not detected; refresh the catalog or use its official download page))$/, 'UNAVAILABLE'],
+        [/^Software installer processes could not stop; finish or stop them manually before retrying$/, 'INSTALL_BUSY'],
+      ]
+      const matched = codes.find(([pattern]) => pattern.test(message))
+      process.stdout.write(`${JSON.stringify({ ok: false, code: matched?.[1] ?? 'UNAVAILABLE', error: matched ? message : 'Software operation failed. Check the local CLI version, permissions and installation history.' })}\n`)
+      process.exitCode = 1
+    }
+  })
+
+cli.command('software-worker <runId>', 'Internal worker for a previously confirmed software installation')
+  .action(async (runId: string) => {
+    try {
+      await runSoftwareWorker(runId)
+    }
+    catch { process.exitCode = 1 }
+  })
 
 cli.command('configuration', 'Versioned local configuration API; reads one JSON request from stdin')
   .action(() => {

@@ -21,8 +21,20 @@ export interface SoftwareItem {
   aliases?: string[]
   bin?: string
   cask?: string
+  /** Fixed Homebrew formula name. Never substitute installCommand into the software API. */
+  formula?: string
   defaultInstall?: boolean
   downloadUrl?: string
+  /** Official source repository, when the product publishes one. */
+  repositoryUrl?: string
+  /** Official application artwork, served as an image without recoloring. */
+  iconUrl?: string
+  /** Complete macOS application artwork, including its transparent margins and shadows. */
+  macosIconUrl?: string
+  /** Only opt full-bleed square website artwork into rounding. */
+  iconStyle?: 'original' | 'rounded'
+  /** Optical scale for the preferred artwork, compensating for its transparent canvas margins. */
+  iconScale?: number
   favicon?: string
   iconColor?: string
   iconify?: string
@@ -53,10 +65,12 @@ export const softwareGroups: SoftwareGroup[] = [
     items: [
       {
         id: 'homebrew',
+        iconUrl: 'https://brew.sh/assets/img/homebrew.svg',
         name: {
           en: 'Homebrew',
         },
         url: 'https://brew.sh/',
+        bin: 'brew',
         iconColor: '#fbb040',
         iconify: 'i-logos-homebrew',
         note: 'Install this manually before running Homebrew manifests.',
@@ -84,11 +98,13 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'vscode',
+        iconUrl: 'https://code.visualstudio.com/assets/apple-touch-icon.png',
         name: {
           en: 'Visual Studio Code',
         },
         url: 'https://code.visualstudio.com/',
         downloadUrl: 'https://code.visualstudio.com/download',
+        repositoryUrl: 'https://github.com/microsoft/vscode',
         cask: 'visual-studio-code',
         app: 'Visual Studio Code.app',
         iconColor: '#007acc',
@@ -116,6 +132,63 @@ export const softwareGroups: SoftwareGroup[] = [
     },
     items: [
       {
+        id: 'magpie',
+        iconScale: 1.25,
+        iconUrl: 'https://usemagpie.ai/img/icon-256.png',
+        name: {
+          en: 'magpie',
+        },
+        url: 'https://usemagpie.ai/',
+        downloadUrl: 'https://github.com/yetone/magpie-releases/releases/latest',
+        repositoryUrl: 'https://github.com/yetone/magpie',
+        app: 'magpie.app',
+        bin: 'magpie',
+        defaultInstall: false,
+        note: 'Manage the models and providers used by local AI agents from the menu bar. Download the native app from the official releases.',
+      },
+      {
+        id: 'orca',
+        iconScale: 1.24,
+        macosIconUrl: 'https://raw.githubusercontent.com/stablyai/orca/1b9a408b8c0f7de5125f4bad8d89eb8419a29a88/resources/icon.png',
+        iconStyle: 'rounded',
+        iconUrl: 'https://www.onorca.dev/icon.png',
+        name: {
+          en: 'Orca',
+        },
+        url: 'https://www.onorca.dev/',
+        downloadUrl: 'https://www.onorca.dev/docs/install',
+        repositoryUrl: 'https://github.com/stablyai/orca',
+        cask: 'stablyai/orca/orca',
+        app: 'Orca.app',
+        defaultInstall: false,
+        note: 'Desktop workspace for running coding agents in parallel. Agent configuration and projects stay managed by Orca.',
+      },
+      {
+        id: 'codebuddy-cn',
+        iconUrl: 'https://download.codebuddy.cn/web/website/41d9f07cb6de7881ba06d46982d3876c0cbc1a98/assets/logo.svg',
+        name: {
+          en: 'CodeBuddy CN',
+          zh: 'CodeBuddy 中国版',
+        },
+        url: 'https://www.codebuddy.cn/',
+        downloadUrl: 'https://www.codebuddy.cn/downloads/',
+        app: 'CodeBuddy CN.app',
+        defaultInstall: false,
+        note: 'CodeBuddy desktop IDE for the China region. Download from the official page.',
+      },
+      {
+        id: 'codebuddy-vscode',
+        iconUrl: 'https://download.codebuddy.cn/web/website/41d9f07cb6de7881ba06d46982d3876c0cbc1a98/assets/logo.svg',
+        name: {
+          en: 'CodeBuddy for VS Code',
+          zh: 'CodeBuddy VS Code 插件',
+        },
+        url: 'https://www.codebuddy.cn/',
+        downloadUrl: 'https://www.codebuddy.cn/setup/',
+        defaultInstall: false,
+        note: 'Install the CodeBuddy extension separately in VS Code. Detecting VS Code does not verify that this extension is installed.',
+      },
+      {
         id: 'codex',
         name: {
           en: 'Codex App',
@@ -138,6 +211,7 @@ export const softwareGroups: SoftwareGroup[] = [
     items: [
       {
         id: 'raycast',
+        iconUrl: 'https://www.raycast.com/favicon-production.png',
         name: {
           en: 'Raycast',
         },
@@ -150,6 +224,7 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'chrome',
+        iconUrl: 'https://www.google.com/chrome/static/images/favicons/android-icon-192x192.png',
         name: {
           en: 'Google Chrome',
           zh: '谷歌浏览器',
@@ -171,6 +246,7 @@ export const softwareGroups: SoftwareGroup[] = [
     items: [
       {
         id: 'neteasemusic',
+        iconUrl: 'https://s1.music.126.net/style/favicon.ico?v20180823',
         name: {
           en: 'NetEase Cloud Music',
           zh: '网易云音乐',
@@ -194,6 +270,7 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'wechat',
+        iconUrl: 'https://res.wx.qq.com/a/wx_fed/assets/res/NTI4MWU5.ico',
         name: {
           en: 'WeChat',
           zh: '微信',
@@ -228,6 +305,7 @@ export const softwareGroups: SoftwareGroup[] = [
     items: [
       {
         id: 'wetype',
+        iconUrl: 'https://cdn.weread.qq.com/web/wetype/favicon/icon-152.png',
         name: {
           en: 'WeType',
           zh: '微信输入法',
@@ -250,6 +328,7 @@ export const softwareGroups: SoftwareGroup[] = [
     items: [
       {
         id: 'orbstack',
+        iconUrl: 'https://orbstack.dev/img/icon128.png',
         name: {
           en: 'OrbStack',
         },
@@ -281,6 +360,7 @@ export const softwareGroups: SoftwareGroup[] = [
     items: [
       {
         id: 'termius',
+        iconUrl: 'https://framerusercontent.com/images/RaVfXKUnfCfHvsZac7elxD7jVtc.png',
         name: {
           en: 'Termius',
         },
@@ -293,6 +373,8 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'cyberduck',
+        iconScale: 1.14,
+        iconUrl: 'https://cdn.cyberduck.io/img/cyberduck-icon-rect-32.png',
         name: {
           en: 'Cyberduck',
         },
@@ -306,6 +388,8 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'proxyman',
+        iconStyle: 'rounded',
+        iconUrl: 'https://proxyman.com/favicon/apple-touch-icon.png?v=4',
         name: {
           en: 'Proxyman',
         },
@@ -318,19 +402,9 @@ export const softwareGroups: SoftwareGroup[] = [
         note: 'HTTP debugging proxy for macOS and device debugging.',
       },
       {
-        id: 'stats',
-        name: {
-          en: 'Stats',
-        },
-        url: 'https://github.com/exelban/stats',
-        cask: 'stats',
-        app: 'Stats.app',
-        defaultInstall: false,
-        iconColor: '#22c55e',
-        note: 'Menu bar system monitor from the old macOS app note.',
-      },
-      {
         id: 'hiddenbar',
+        iconScale: 1.02,
+        iconUrl: 'https://raw.githubusercontent.com/dwarvesf/hidden/develop/img/icon_512%402x.png',
         name: {
           en: 'Hidden Bar',
         },
@@ -343,6 +417,8 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'xbar',
+        iconScale: 1.15,
+        iconUrl: 'https://xbarapp.com/public/img/xbar-2048.png',
         name: {
           en: 'xbar',
         },
@@ -352,6 +428,50 @@ export const softwareGroups: SoftwareGroup[] = [
         defaultInstall: false,
         iconColor: '#111827',
         note: 'Runs scripts in the macOS menu bar. Archive-era BitBar replacement; install only when needed.',
+      },
+    ],
+  },
+  {
+    id: 'system-utilities',
+    label: {
+      en: 'System tools',
+      zh: '系统工具',
+    },
+    items: [
+      {
+        id: 'stats',
+        iconScale: 1.25,
+        macosIconUrl: 'https://raw.githubusercontent.com/exelban/stats/88d5359ad3466efaa16985646a0bb15c6599109f/Stats/Supporting%20Files/Assets.xcassets/AppIcon.appiconset/icon_128x128.png',
+        iconUrl: 'https://mac-stats.com/apple-touch-icon.png',
+        name: {
+          en: 'Stats',
+        },
+        url: 'https://github.com/exelban/stats',
+        downloadUrl: 'https://github.com/exelban/stats/releases/latest',
+        repositoryUrl: 'https://github.com/exelban/stats',
+        cask: 'stats',
+        app: 'Stats.app',
+        defaultInstall: false,
+        iconColor: '#22c55e',
+        note: 'Open-source macOS menu bar monitor for CPU, memory, disk and network usage.',
+      },
+      {
+        id: 'tencent-lemon',
+        iconScale: 1.22,
+        iconUrl: 'https://lemon.qq.com/images/lemon/logo.png',
+        name: {
+          en: 'Tencent Lemon Cleaner',
+          zh: '腾讯柠檬清理',
+        },
+        aliases: ['腾讯柠檬', '柠檬清理', 'lemon cleaner'],
+        url: 'https://lemon.qq.com/',
+        downloadUrl: 'https://lemon.qq.com/',
+        repositoryUrl: 'https://github.com/Tencent/lemon-cleaner',
+        cask: 'tencent-lemon',
+        app: 'Tencent Lemon.app',
+        defaultInstall: false,
+        iconColor: '#facc15',
+        note: 'macOS cleanup and system status tool with application removal, large-file discovery and disk space analysis.',
       },
     ],
   },
@@ -390,6 +510,8 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'obsidian',
+        iconStyle: 'rounded',
+        iconUrl: 'https://obsidian.md/apple-touch-icon.png',
         name: {
           en: 'Obsidian',
         },
@@ -402,6 +524,8 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'notion',
+        iconStyle: 'rounded',
+        iconUrl: 'https://www.notion.com/front-static/logo-ios.png',
         name: {
           en: 'Notion',
         },
@@ -414,6 +538,7 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'ima',
+        iconUrl: 'https://fe-static.ima.myqcloud.com/ima/assets/chat/favicon.svg',
         name: {
           en: 'ima.copilot',
           zh: '腾讯 ima',
