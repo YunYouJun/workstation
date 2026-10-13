@@ -1,0 +1,19 @@
+name: Configuration test prerequisites
+description: Install Zsh and a verified Gitleaks binary for configuration tests on Ubuntu
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install --yes --no-install-recommends zsh
+        curl --fail --silent --show-error --location \
+          https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
+          --output "$RUNNER_TEMP/gitleaks.tar.gz"
+        echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum --check
+        tar --extract --gzip --file "$RUNNER_TEMP/gitleaks.tar.gz" --directory "$RUNNER_TEMP" gitleaks
+        sudo install --mode=0755 "$RUNNER_TEMP/gitleaks" /usr/local/bin/gitleaks
+        zsh --version
+        gitleaks version
+        gitleaks dir --help > /dev/null
