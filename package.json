@@ -6,7 +6,7 @@
   "packageManager": "pnpm@11.21.0",
   "scripts": {
     "build": "pnpm -r run build",
-    "ci": "pnpm run vscode:extensions:check && pnpm run lint && pnpm run typecheck && pnpm test && pnpm run build && pnpm run docs:build",
+    "ci": "pnpm run vscode:extensions:check && pnpm run projects:schema:check && pnpm run lint && pnpm run typecheck && pnpm test && pnpm run build && pnpm run docs:build",
     "dev": "pnpm -r run dev",
     "docs:build": "pnpm docs:generate && vitepress build docs",
     "docs:dev": "pnpm docs:generate && vitepress dev docs",
@@ -45,7 +45,9 @@
     "todo:tasks": "pnpm --filter @yunyoujun/microsoft-todo-graph tasks",
     "typecheck": "tsc --noEmit && pnpm -r run typecheck",
     "vscode:extensions": "pnpm docs:generate",
-    "vscode:extensions:check": "tsx scripts/vscode-extensions.ts check"
+    "vscode:extensions:check": "tsx scripts/vscode-extensions.ts check",
+    "projects:schema": "tsx scripts/projects-schema.ts",
+    "projects:schema:check": "tsx scripts/projects-schema.ts check"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^9.3.0",

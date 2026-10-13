@@ -6,9 +6,10 @@ import cac from 'cac'
 import { version } from '../package.json'
 import { runChezmoi } from './chezmoi'
 import { getRepoRoot } from './config'
-import { configurationRequest } from './configuration/protocol'
+import { configurationErrorMessage, configurationRequest } from './configuration/protocol'
 import { doctor } from './doctor'
 import { syncGitRepository } from './git-sync'
+import { hostError, hostRequest } from './host-protocol'
 import { runInit } from './init'
 import { runPrivateCommand } from './private'
 import { cloneActiveProjects, cloneManifestProjects, projectMigrateLayout, projectStatus, pullProjects } from './projects'
@@ -22,6 +23,34 @@ function getCliName() {
 }
 
 const cli = cac(getCliName())
+
+cli.command('host-json', 'Versioned host capabilities and read-only doctor API; reads one JSON request from stdin')
+  .action(async () => {
+    try {
+      if (cli.args.length > 0)
+        throw new Error('Invalid host request')
+      let text = ''
+      let bytes = 0
+      process.stdin.setEncoding('utf8')
+      for await (const chunk of process.stdin) {
+        bytes += Buffer.byteLength(chunk)
+        if (bytes > 1024 * 1024)
+          throw new Error('Invalid host request')
+        text += chunk
+      }
+      let input: unknown
+      try {
+        input = JSON.parse(text)
+      }
+      catch { throw new Error('Invalid host request') }
+      const result = hostRequest(input)
+      process.stdout.write(`${JSON.stringify({ ok: true, result })}\n`)
+    }
+    catch (error) {
+      process.stdout.write(`${JSON.stringify(hostError(error))}\n`)
+      process.exitCode = 1
+    }
+  })
 
 cli.command('software-json', 'Versioned software catalog and confirmed installation API; reads one JSON request from stdin')
   .action(async () => {
@@ -81,8 +110,7 @@ cli.command('configuration', 'Versioned local configuration API; reads one JSON 
       process.stdout.write(`${JSON.stringify({ ok: true, result })}\n`)
     }
     catch (error) {
-      const safe = error instanceof Error && /^(?:Git operation failed|Repository has|Git fetch failed|Secret scan|Only declared|Unknown repository|Provide a bounded|Existing staged|Branches diverged|Remote is ahead|Configure a single|Sync requires|Repository changed|Unsupported configuration|Select configuration|Configuration changed|Configuration is not|Invalid decision|Duplicate decision|Choose a side|Replace literal credentials|Plan |File changed|Baseline changed|Later configuration)/.test(error.message)
-      process.stdout.write(`${JSON.stringify({ ok: false, error: safe ? (error as Error).message : 'Configuration operation failed. Check local permissions, source syntax and recovery history.' })}\n`)
+      process.stdout.write(`${JSON.stringify({ ok: false, error: configurationErrorMessage(error) })}\n`)
       process.exitCode = 1
     }
     finally { console.log = log }

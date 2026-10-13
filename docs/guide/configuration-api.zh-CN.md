@@ -8,6 +8,10 @@ printf '%s\n' '{"version":1,"operation":"inspect"}' | workstation configuration
 
 操作：`inspect` 只读检查；`preview` 接收逐项决定并生成冻结方案；`apply` 应用方案；`history` 查看结果；`restore` 恢复；`git-status` 查看 Git 状态；`git-action` 明确执行拉取、提交或发布。字段定义见 [英文接口文档](./configuration-api.md)。`apply` 返回 `state: failed` 时必须展示失败及恢复入口，不能按成功处理。
 
+`inspect` 新增客户端 `client`、作用域 `scope`、管理器 `manager`、来源证据 `provenance: { label, path? }` 和只读 `skillsAudit`。报告复用既有 Skills 审计，展示检查时间、数量及有界诊断。全局检查不扫描 CLI 当前项目；只有宿主提供已注册 `projectPath` 时才检查项目 Skills。磁盘观察不代表运行中的 Agent 已加载，审计失败单独返回错误，不覆盖原有配置和恢复记录。旧 v1 CLI 缺少这些字段时应显示不支持。
+
+APM、Skills CLI 和 Workstation 归属依据既有记录，不能按同名推断；原生插件、外部链接和项目资产保持只读。私有用户 Skill 树继续使用原有预览流程，并冻结归属控制文件。应用和恢复都会拒绝后续安装器接管，即使安装器只新增锁、未改文件内容；旧恢复计划也重新检查当前归属。检查和配置同步不会改写安装器锁。
+
 逐项决定为 `local`（保留本机并更新源文件）、`source`（使用源配置并更新本机）、`merge`（逐字段或逐行选择后更新双方）、`skip`（暂不处理）。每项带扫描时的 `revision`；任一源文件、目标文件、manifest 或基线改变都会使旧方案失效。没有成功同步基线的差异标记为“首次接管”，不推测历史状态。
 
 公开仓库使用现有映射管理全局指令、Zsh、Starship、Ghostty；已连接的私有 manifest 管理 MCP fragment 和本地用户 skill 目录。未纳管 skill 先通过现有 manifest 声明本地来源。系统目录、插件缓存、符号链接和安装器锁记录的 skills 仅展示归属，使用原安装器管理。项目 MCP 单独展示，只读；不迁移登录态、缓存或执行授权字段。

@@ -455,6 +455,12 @@ The CLI checks manifest structure, field types, requested groups, shorthand
 paths without `host`, clone URL/target path inference, and duplicate target
 directories. Normal dry-runs and `--yes` writes run the same validation first.
 
+### Editor schema and read-only validation
+
+`projects.example.yaml` references `# yaml-language-server: $schema=./schemas/projects.schema.json`. Downstream repositories can use `https://raw.githubusercontent.com/YunYouJun/workstation/main/schemas/projects.schema.json`. Existing versionless manifests do not require migration.
+
+Terminal users can continue running `workstation projects manifest --file projects.yaml --validate`. GUI clients use the pure-content `validate-projects` request through the [Host API](./host-api.md#project-manifest-content-validation). Both share one semantic parser; GUI validation does not download manifests or read/write machine configuration. The schema is generated from its code export; `pnpm projects:schema:check` verifies the artifact.
+
 ## SSH Baseline
 
 SSH keys, `~/.ssh/config`, and remote hostnames are machine-local configuration,

@@ -15,6 +15,19 @@ export interface SkillsAuditOptions {
   home?: string
   json?: boolean
   projectRoot?: string
+  /** Keep the CLI's cwd default, but let host inventories omit an unselected project. */
+  includeProject?: boolean
+}
+
+/** Read-only deployment instances. Registry names alone never establish project ownership. */
+export interface SkillsAuditSkill {
+  name: string
+  path: string
+  rootKind: SkillsRootKind
+  client: 'codex' | 'shared'
+  scope: 'global' | 'project'
+  manager: 'apm' | 'skills-cli' | 'workstation' | 'native-plugin' | 'project' | 'external' | 'unknown'
+  provenance: { label: string, path?: string }
 }
 
 export interface SkillsAuditFinding {
@@ -33,6 +46,8 @@ export interface SkillsAuditRoot {
 }
 
 export interface SkillsAuditReport {
+  skills: SkillsAuditSkill[]
+  managedRoots: { path: string, manager: 'apm' | 'skills-cli' | 'workstation', provenance: { label: string, path: string } }[]
   apm: {
     lockExists: boolean
     managedSkillCount: number
@@ -91,6 +106,13 @@ const MAX_SKILL_DESCRIPTION_CHARACTERS = 1_024
 const RECOMMENDED_MAX_SKILL_BODY_LINES = 500
 const RECOMMENDED_MAX_SKILL_DESCRIPTION_CHARACTERS = 500
 
+/** Resolve the same global registry lock for audit and reviewed configuration plans. */
+export function skillsRegistryLockPath(home: string): string {
+  return process.env.XDG_STATE_HOME
+    ? path.join(path.resolve(process.env.XDG_STATE_HOME), 'skills', '.skill-lock.json')
+    : path.join(home, '.agents', '.skill-lock.json')
+}
+
 export function auditSkills(options: SkillsAuditOptions = {}): SkillsAuditReport {
   const home = path.resolve(options.home || getHomeDir())
   const codexHome = path.resolve(options.codexHome || process.env.CODEX_HOME || path.join(home, '.codex'))
@@ -98,7 +120,7 @@ export function auditSkills(options: SkillsAuditOptions = {}): SkillsAuditReport
   const rootSpecs: Array<{ kind: SkillsRootKind, path: string }> = [
     { kind: 'shared', path: path.join(home, '.agents', 'skills') },
     { kind: 'codex', path: path.join(codexHome, 'skills') },
-    { kind: 'project', path: path.join(projectRoot, '.agents', 'skills') },
+    ...(options.includeProject === false ? [] : [{ kind: 'project' as const, path: path.join(projectRoot, '.agents', 'skills') }]),
   ]
   const discoveryResults = rootSpecs.map(root => discoverSkills(root.kind, root.path))
   const discovered = discoveryResults.flatMap(result => result.skills)
@@ -180,9 +202,7 @@ export function auditSkills(options: SkillsAuditOptions = {}): SkillsAuditReport
   }
   const apmManifest = path.join(home, '.apm', 'apm.yml')
   const apmLock = path.join(home, '.apm', 'apm.lock.yaml')
-  const skillsRegistryLock = process.env.XDG_STATE_HOME
-    ? path.join(path.resolve(process.env.XDG_STATE_HOME), 'skills', '.skill-lock.json')
-    : path.join(home, '.agents', '.skill-lock.json')
+  const skillsRegistryLock = skillsRegistryLockPath(home)
   const workstationLockPath = workstationSkillLockPath(home)
   const apmManifestExists = pathEntryExists(apmManifest)
   const apmLockExists = pathEntryExists(apmLock)
@@ -392,7 +412,58 @@ export function auditSkills(options: SkillsAuditOptions = {}): SkillsAuditReport
   }
 
   findings.sort((a, b) => a.code.localeCompare(b.code) || a.message.localeCompare(b.message))
+  const apmPaths = [...deployedPaths.valid.values()].filter(file => file !== path.join(home, '.agents', 'skills'))
+  const managedRoots: SkillsAuditReport['managedRoots'] = [
+    ...[...new Set(apmPaths.map(file => path.join(home, '.agents', 'skills', path.relative(path.join(home, '.agents', 'skills'), file).split(path.sep)[0])))].map(root => ({ path: root, manager: 'apm' as const, provenance: { label: 'APM deployment lock', path: apmLock } })),
+    ...[...registryManaged.names].map(name => ({ path: path.join(home, '.agents', 'skills', name), manager: 'skills-cli' as const, provenance: { label: 'skills.sh registry lock', path: skillsRegistryLock } })),
+    ...Object.entries(workstationManaged.lock.skills).map(([name, entry]) => ({ path: path.join(entry.root === 'shared' ? rootSpecs[0].path : rootSpecs[1].path, name), manager: 'workstation' as const, provenance: { label: 'Workstation provenance lock', path: workstationLockPath } })),
+  ]
+  const skills = discovered.map((skill): SkillsAuditSkill => {
+    const root = rootSpecs.find(root => root.kind === skill.rootKind)!
+    const relative = path.relative(root.path, skill.path)
+    const deploymentName = relative.split(path.sep)[0]
+    const workstationEntry = workstationManaged.lock.skills[deploymentName]
+    let manager: SkillsAuditSkill['manager'] = 'unknown'
+    let provenance = { label: 'Local Skill; manager unknown', path: skill.path }
+    if (skill.rootKind === 'project') {
+      manager = 'project'
+      provenance = { label: 'Project repository', path: projectRoot }
+    }
+    else if (isPathWithin(path.join(codexHome, 'plugins', 'cache'), skill.realPath)
+      || (skill.rootKind === 'codex' && relative.startsWith(`.system${path.sep}`))) {
+      manager = 'native-plugin'
+      provenance = { label: 'Codex native plugin or bundled Skill', path: path.join(codexHome, relative.startsWith(`.system${path.sep}`) ? 'skills/.system' : 'plugins/cache') }
+    }
+    else if (!apmManaged.error && skill.rootKind === 'shared' && managedRoots.some(root => root.manager === 'apm' && isPathWithin(root.path, skill.path))) {
+      manager = 'apm'
+      provenance = { label: 'APM deployment lock', path: apmLock }
+    }
+    else if (!registryManaged.error && registryManaged.names.has(deploymentName)
+      && (skill.rootKind === 'shared' || isPathWithin(path.join(home, '.agents', 'skills', deploymentName), skill.realPath))) {
+      manager = 'skills-cli'
+      provenance = { label: 'skills.sh registry lock', path: skillsRegistryLock }
+    }
+    else if (!workstationManaged.error && workstationEntry?.root === skill.rootKind) {
+      manager = 'workstation'
+      provenance = { label: 'Workstation provenance lock', path: workstationLockPath }
+    }
+    else if (skill.path !== skill.realPath) {
+      manager = 'external'
+      provenance = { label: 'External symbolic link', path: skill.realPath }
+    }
+    return {
+      name: skill.name,
+      path: skill.path,
+      rootKind: skill.rootKind,
+      client: skill.rootKind === 'codex' ? 'codex' : 'shared',
+      scope: skill.rootKind === 'project' ? 'project' : 'global',
+      manager,
+      provenance,
+    }
+  })
   return {
+    managedRoots,
+    skills,
     apm: {
       lockExists: apmLockExists,
       managedSkillCount: apmManagedNames.size,

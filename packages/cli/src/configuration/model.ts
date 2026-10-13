@@ -13,6 +13,19 @@ export interface ConfigurationItem {
   source: string
   fields: string[]
   management?: string
+  client?: string
+  scope?: 'global' | 'project'
+  manager?: string
+  provenance?: { label: string, path?: string }
+}
+
+/** Display-safe Skills diagnostics. Audit failures do not hide the existing configuration inventory. */
+export interface ConfigurationSkillsAudit {
+  state: 'available' | 'error'
+  checkedAt: string
+  summary?: { skillFileCount: number, implicitSkillCount: number, explicitOnlySkillCount: number, warningCount: number, errorCount: number }
+  findings: { code: string, severity: 'warning' | 'error', message: string, paths: string[] }[]
+  message?: string
 }
 
 export interface ConfigurationDecision {

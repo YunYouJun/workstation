@@ -156,10 +156,8 @@ describe('sync CLI', () => {
     })
 
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
-    assert.match(`${result.stdout}\n${result.stderr}`, /Doctor checks passed/)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Doctor (?:checks passed|found 0 errors and \d+ warnings)/)
     assert.deepEqual(JSON.parse(fs.readFileSync(argsPath, 'utf-8')), [
-      '--source',
-      repoRoot,
       '--version',
     ])
   })
@@ -177,7 +175,8 @@ describe('sync CLI', () => {
     })
 
     assert.equal(result.status, 1)
-    assert.match(`${result.stdout}\n${result.stderr}`, /missing local secrets for API_TOKEN/)
+    assert.match(`${result.stdout}\n${result.stderr}`, /unresolved local secret placeholders/)
+    assert.equal(`${result.stdout}\n${result.stderr}`.includes('API_TOKEN'), false)
     assert.equal(`${result.stdout}\n${result.stderr}`.includes('secret-token-123'), false)
   })
 
@@ -196,7 +195,8 @@ describe('sync CLI', () => {
     })
 
     assert.equal(result.status, 1)
-    assert.match(`${result.stdout}\n${result.stderr}`, /APM lockfile: source missing/)
+    assert.match(`${result.stdout}\n${result.stderr}`, /Declared configuration source is missing/)
+    assert.match(`${result.stdout}\n${result.stderr}`, /private_apm\.lock\.yaml/)
   })
 
   it('push masks secrets and stores real values in .env.local', () => {

@@ -1,4 +1,5 @@
-import type { ConfigurationDecision, ConfigurationItem, ConfigurationPreview } from './model'
+import type { SkillsAuditReport } from '../skills'
+import type { ConfigurationDecision, ConfigurationItem, ConfigurationPreview, ConfigurationSkillsAudit } from './model'
 import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
@@ -11,7 +12,8 @@ import { composeExportContent, extractMcpServerBlocks, preserveOtherServers } fr
 import { defaultManifestPath, repoRootFromManifest, resolveRepoPath } from '../private/paths'
 import { atomicWrite, contentHash, withFileLock } from '../private/safe-file'
 import { parseTomlDocument } from '../private/toml'
-import { isSafeSkillName, readWorkstationSkillLock, workstationSkillLockPath } from '../skill-provenance'
+import { isSafeSkillName, workstationSkillLockPath } from '../skill-provenance'
+import { auditSkills, skillsRegistryLockPath } from '../skills'
 import { commitConfiguration, configurationGitStatus, transportConfiguration } from './git'
 
 type Value = Record<string, unknown>
@@ -25,7 +27,7 @@ interface Entry {
   sourceValue: unknown
 }
 interface Change { before: Snapshot, after: string | null, appliedRevision?: string, direction: 'to-local' | 'to-source' }
-interface Plan { version: 1, id: string, createdAt?: string, reads: Snapshot[], changes: Change[], baselines: Record<string, string>, previousBaselines: Record<string, string>, state: 'preview' | 'applying' | 'applied' | 'failed' | 'restored', error?: string }
+interface Plan { version: 1, id: string, createdAt?: string, reads: Snapshot[], skillOwnershipPaths?: string[], changes: Change[], baselines: Record<string, string>, previousBaselines: Record<string, string>, state: 'preview' | 'applying' | 'applied' | 'failed' | 'restored', error?: string }
 
 function localPath(value: string): string {
   const absolute = path.resolve(value)
@@ -201,6 +203,59 @@ function treeFiles(root: string): string[] {
   return files
 }
 
+function within(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate)
+  return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+}
+
+function linked(file: string): boolean {
+  let current = path.resolve(file)
+  while (true) {
+    try {
+      if (fs.lstatSync(current).isSymbolicLink())
+        return true
+    }
+    catch {}
+    const parent = path.dirname(current)
+    if (parent === current)
+      return false
+    current = parent
+  }
+}
+
+function auditMessage(code: string): string {
+  // Names, dependency records and parser errors may contain credential literals.
+  // Display only fixed guidance; the terminal audit retains its full diagnostics.
+  const messages: Record<string, string> = {
+    'invalid-skill-symlink': 'Skill symlink could not be followed safely.',
+    'skill-discovery-limit-exceeded': 'Skill discovery stopped at its safety limit.',
+    'unreadable-skill-directory': 'Skill directory could not be read.',
+    'invalid-skill-frontmatter': 'Invalid SKILL.md frontmatter.',
+    'nonstandard-skill-name': 'Skill names should use at most 64 lowercase letters, digits, and single hyphens.',
+    'invalid-skill-openai-config': 'Invalid agents/openai.yaml configuration.',
+    'verbose-skill-description': 'Skill descriptions exceed the recommended 500 characters and consume extra always-on context.',
+    'oversized-skill-body': 'Skill bodies exceed 500 lines; move detailed material to references/.',
+    'missing-apm-lock': 'Global APM manifest exists but apm.lock.yaml is missing.',
+    'missing-apm-manifest': 'Global APM lock exists but apm.yml is missing.',
+    'invalid-apm-manifest': 'Global APM manifest is invalid.',
+    'invalid-apm-lock': 'Global APM lock is invalid.',
+    'missing-apm-lock-dependency': 'Global APM lock is missing manifest dependencies.',
+    'invalid-apm-deployed-path': 'APM-deployed paths escape the shared Skills directory.',
+    'missing-apm-deployed-file': 'Files declared by the global APM lock are missing.',
+    'modified-apm-deployed-file': 'APM-managed files do not match the global lock.',
+    'invalid-skills-registry-lock': 'Global skills.sh lock is invalid.',
+    'invalid-workstation-skill-lock': 'Workstation Skill provenance lock is invalid.',
+    'missing-workstation-skill': 'Workstation-managed Skill deployment is missing or unreadable.',
+    'modified-workstation-skill': 'Workstation-managed Skill does not match its provenance lock.',
+    'unmanaged-shared-skill': 'Shared Skills are not declared by the global APM, skills.sh, or Workstation provenance lock.',
+    'missing-apm-deployment': 'APM-managed Skill is missing from the shared Skills directory.',
+    'skill-directory-name-mismatch': 'Skill directory names do not match their frontmatter names.',
+    'duplicate-skill-name': 'Skill name is present in multiple discovery roots.',
+    'duplicate-skill-name-in-root': 'Skill name is present multiple times in the same discovery root.',
+  }
+  return Object.hasOwn(messages, code) ? messages[code] : 'Review the affected Skill files in the original manager.'
+}
+
 /** Workstation owns plans, persistence and filesystem operations. Construct only on a trusted local host. */
 export class ConfigurationEngine {
   readonly home: string
@@ -246,7 +301,27 @@ export class ConfigurationEngine {
     return value
   }
 
-  private entries(): Entry[] {
+  private skillsAudit(projectPath?: string): { report?: SkillsAuditReport, display: ConfigurationSkillsAudit } {
+    const checkedAt = new Date().toISOString()
+    try {
+      const report = auditSkills({ home: this.home, codexHome: this.codex, includeProject: Boolean(projectPath), projectRoot: projectPath })
+      const { skillFileCount, implicitSkillCount, explicitOnlySkillCount, warningCount, errorCount } = report.summary
+      return { report, display: {
+        state: 'available',
+        checkedAt,
+        summary: { skillFileCount, implicitSkillCount, explicitOnlySkillCount, warningCount, errorCount },
+        findings: report.findings.flatMap((finding) => {
+          const chunks = Array.from({ length: Math.max(1, Math.ceil(finding.paths.length / 20)) }, (_, index) => finding.paths.slice(index * 20, index * 20 + 20))
+          return chunks.map(paths => ({ ...finding, paths, message: auditMessage(finding.code) }))
+        }).slice(0, 1000),
+      } }
+    }
+    catch {
+      return { display: { state: 'error', checkedAt, findings: [], message: 'Skills audit unavailable. Check discovery roots, permissions and lock files.' } }
+    }
+  }
+
+  private entries(audit: SkillsAuditReport | null = this.skillsAudit().report ?? null): Entry[] {
     const entries: Entry[] = []
     const baselines = this.baselines()
     const add = (id: string, title: string, kind: ConfigurationItem['kind'], local: Snapshot, source?: Snapshot, server?: string, owner: ConfigurationItem['owner'] = 'user', origin: ConfigurationItem['origin'] = 'public') => {
@@ -276,11 +351,15 @@ export class ConfigurationEngine {
         local: displayDifference(localValue, sourceValue),
         source: displayDifference(sourceValue, localValue),
         fields: server ? changedFields(localValue, sourceValue) : textFields(localValue, sourceValue),
+        scope: 'global',
+        ...(kind !== 'terminal' ? { client: kind === 'skill' && within(path.join(this.home, '.agents/skills'), local.path) ? 'shared' : 'codex' } : {}),
+        manager: owner === 'installer' ? 'unknown' : source ? 'workstation' : 'unknown',
+        provenance: { label: source ? origin === 'private' ? 'Workstation private manifest' : 'Workstation configuration source' : 'Local configuration; manager unknown', path: source ? origin === 'private' ? this.manifest : source.path : local.path },
         ...(owner !== 'user' ? { management: owner === 'installer' ? 'Use the original skill/plugin installer' : 'Manage through the project configuration' } : {}),
       } })
     }
     const errorRow = (id: string, title: string, kind: ConfigurationItem['kind'], file: string) => {
-      entries.push({ local: { path: file, content: null, revision: '' }, localValue: null, sourceValue: null, item: { id, title, kind, owner: 'user', origin: 'local', localPath: file, status: 'error', revision: '', local: '(unavailable)', source: '(unavailable)', fields: [], management: 'Scan failed. Check permissions, links and syntax; no writes are available.' } })
+      entries.push({ local: { path: file, content: null, revision: '' }, localValue: null, sourceValue: null, item: { id, title, kind, owner: 'user', origin: 'local', localPath: file, status: 'error', revision: '', local: '(unavailable)', source: '(unavailable)', fields: [], scope: 'global', client: kind === 'terminal' ? undefined : kind === 'skill' && within(path.join(this.home, '.agents/skills'), file) ? 'shared' : 'codex', manager: 'unknown', provenance: { label: 'Configuration scan unavailable', path: file }, management: 'Scan failed. Check permissions, links and syntax; no writes are available.' } })
     }
     const codex = this.codex
     for (const entry of dotfiles.filter(entry => ['.zshrc', '.config/starship.toml', '.config/ghostty/config', '.codex/AGENTS.md'].includes(entry.target))) {
@@ -335,24 +414,21 @@ export class ConfigurationEngine {
         }
       }
       for (const plugin of Object.keys(record(localDoc.plugins))) {
-        if (record(record(localDoc.plugins)[plugin]).mcp_servers)
+        if (record(record(localDoc.plugins)[plugin]).mcp_servers) {
           add(`plugin:${plugin}`, plugin, 'mcp', local, undefined, undefined, 'installer')
+          Object.assign(entries.at(-1)!.item, { manager: 'native-plugin', provenance: { label: 'Codex native plugin configuration', path: local.path } })
+        }
       }
     }
     catch {
       errorRow('mcp-scan', 'Codex MCP scan', 'mcp', path.join(codex, 'config.toml'))
     }
-    const externalSkills = new Set<string>()
-    let externalLockFailed = false
-    try {
-      const lock = snapshot(path.join(this.home, '.agents/.skill-lock.json')).content
-      if (lock) {
-        for (const name of Object.keys(record(JSON.parse(lock).skills))) externalSkills.add(name)
-      }
-    }
-    catch { externalLockFailed = true }
+    const protectedSkill = (target: string) => audit?.managedRoots.find(root => within(root.path, target))
+      ?? audit?.skills.find(skill => within(path.dirname(skill.path), target) && ['apm', 'skills-cli', 'native-plugin', 'external'].includes(skill.manager))
+    const ownershipFailed = !audit || audit.findings.some(finding => ['invalid-apm-lock', 'invalid-skills-registry-lock', 'invalid-workstation-skill-lock'].includes(finding.code))
     if (fs.existsSync(path.join(codex, 'plugins/cache'))) {
       add('installer:codex-plugins', 'Codex plugin skills', 'skill', { path: path.join(codex, 'plugins/cache'), content: null, revision: '' }, undefined, undefined, 'installer')
+      Object.assign(entries.at(-1)!.item, { client: 'codex', manager: 'native-plugin', provenance: { label: 'Codex native plugin cache', path: path.join(codex, 'plugins/cache') } })
     }
     const managedSkillRoots = new Set<string>()
     if (manifest) {
@@ -363,7 +439,7 @@ export class ConfigurationEngine {
           if (!isSafeSkillName(name) || name.startsWith('.'))
             throw new Error('Invalid skill name')
           managedSkillRoots.add(targetRoot)
-          if (externalLockFailed || externalSkills.has(name) || skill.source.type !== 'local' || !skill.source.path) {
+          if (ownershipFailed || linked(targetRoot) || (protectedSkill(targetRoot) && protectedSkill(targetRoot)?.manager !== 'workstation') || skill.source.type !== 'local' || !skill.source.path) {
             add(`installed-skill:${name}`, name, 'skill', { path: targetRoot, content: null, revision: '' }, undefined, undefined, 'installer')
             continue
           }
@@ -379,7 +455,6 @@ export class ConfigurationEngine {
         }
       }
     }
-    const skillLock = readWorkstationSkillLock(workstationSkillLockPath(this.home))
     // Inventory unmanaged user skills without following links or inspecting installer payloads.
     for (const root of [path.join(codex, 'skills'), path.join(this.home, '.agents/skills')]) {
       if (!fs.existsSync(root))
@@ -391,7 +466,7 @@ export class ConfigurationEngine {
             continue
           const target = path.join(root, entry.name, 'SKILL.md')
           const id = `skill:${path.relative(this.home, target)}`
-          if (entry.name.startsWith('.') || entry.isSymbolicLink() || externalLockFailed || externalSkills.has(entry.name) || skillLock.error || skillLock.lock.skills[entry.name]) {
+          if (entry.name.startsWith('.') || entry.isSymbolicLink() || ownershipFailed || protectedSkill(target)) {
             const blank = { path: target, content: null, revision: '' }
             add(id, entry.name, 'skill', blank, undefined, undefined, 'installer')
             continue
@@ -410,7 +485,78 @@ export class ConfigurationEngine {
         errorRow(`root:${root}`, 'Skills scan', 'skill', root)
       }
     }
+    for (const entry of entries.filter(entry => entry.item.kind === 'skill' && entry.item.manager !== 'native-plugin')) {
+      const owner = protectedSkill(entry.item.localPath)
+      const instance = audit?.skills.find(skill => skill.path === entry.item.localPath || within(path.dirname(skill.path), entry.item.localPath))
+      if (owner || instance) {
+        const metadata = owner ?? instance!
+        entry.item.manager = metadata.manager
+        entry.item.provenance = metadata.provenance
+        if (['apm', 'skills-cli', 'native-plugin', 'external'].includes(metadata.manager) || (metadata.manager === 'workstation' && owner && !entry.source)) {
+          entry.item.owner = 'installer'
+          entry.item.status = 'read-only'
+          entry.item.management = 'Use the original Skill installer; global configuration synchronization does not replace this deployment.'
+        }
+      }
+      // Private manifest ownership remains authoritative for reviewed user trees.
+      if (entry.source) {
+        entry.item.manager = 'workstation'
+        entry.item.provenance = { label: 'Workstation private manifest', path: this.manifest }
+      }
+      else if (entry.item.id.startsWith('installed-skill:') && !owner && (!instance || instance.manager === 'unknown') && !linked(entry.item.localPath)) {
+        entry.item.manager = 'workstation'
+        entry.item.provenance = { label: 'Workstation private manifest', path: this.manifest }
+      }
+      else if (entry.item.owner === 'installer' && !owner && !instance) {
+        if (within(path.join(codex, 'skills/.system'), entry.item.localPath)) {
+          entry.item.manager = 'native-plugin'
+          entry.item.provenance = { label: 'Codex bundled Skills', path: path.join(codex, 'skills/.system') }
+        }
+        else if (linked(entry.item.localPath)) {
+          entry.item.manager = 'external'
+          entry.item.provenance = { label: 'External symbolic link', path: entry.item.localPath }
+        }
+      }
+    }
     return entries
+  }
+
+  private skillOwnershipPaths(): string[] {
+    return [path.join(this.home, '.apm/apm.lock.yaml'), skillsRegistryLockPath(this.home), workstationSkillLockPath(this.home)]
+  }
+
+  private skillPlanRoots(plan: Plan): string[] {
+    const roots = new Set<string>()
+    for (const id of Object.keys(plan.baselines).filter(id => id.startsWith('skill:'))) {
+      const file = path.resolve(this.home, id.slice('skill:'.length))
+      for (const root of [path.join(this.home, '.agents/skills'), path.join(this.codex, 'skills')]) {
+        if (within(root, file)) {
+          const name = path.relative(root, file).split(path.sep)[0]
+          if (name)
+            roots.add(path.join(root, name))
+        }
+      }
+    }
+    return [...roots]
+  }
+
+  private assertSkillRecoveryOwnership(plan: Plan, roots: string[]): void {
+    if (!roots.length)
+      return
+    const frozenPaths = plan.skillOwnershipPaths ?? this.skillOwnershipPaths()
+    for (const read of plan.reads.filter(read => frozenPaths.includes(read.path))) {
+      if (snapshot(read.path).revision !== read.revision)
+        throw new Error('Skill ownership changed after application. Review the original installer before recovery.')
+    }
+    // Older plans have no ownership snapshots. Re-check current ownership without
+    // requiring restored/deleted files to still appear in the user tree inventory.
+    const audit = this.skillsAudit().report
+    if (!audit || audit.findings.some(finding => ['invalid-apm-lock', 'invalid-skills-registry-lock', 'invalid-workstation-skill-lock'].includes(finding.code)))
+      throw new Error('Skill ownership is unavailable. Check installer locks before recovery.')
+    if (roots.some(root => audit.managedRoots.some(owner => owner.manager !== 'workstation' && within(owner.path, root))
+      || audit.skills.some(skill => within(root, skill.path) && ['apm', 'skills-cli', 'native-plugin', 'external'].includes(skill.manager)))) {
+      throw new Error('Skill ownership changed after application. Review the original installer before recovery.')
+    }
   }
 
   private repositories(): { id: string, root: string }[] {
@@ -445,18 +591,24 @@ export class ConfigurationEngine {
   }
 
   /** Read-only inventory. A failed scan never becomes an empty synchronized result. */
-  inspect(projectPath?: string): { version: 1, items: ConfigurationItem[] } {
-    const items = this.entries().map(entry => entry.item)
+  inspect(projectPath?: string): { version: 1, items: ConfigurationItem[], skillsAudit: ConfigurationSkillsAudit } {
+    const audit = this.skillsAudit(projectPath)
+    const items = this.entries(audit.report ?? null).map(entry => entry.item)
     if (projectPath) {
       const file = path.join(localPath(projectPath), '.codex/config.toml')
       try {
         const state = snapshot(file)
         const servers = record(parseTomlDocument(state.content ?? '').mcp_servers)
-        for (const name of Object.keys(servers)) items.push({ id: `project-mcp:${name}`, title: name, kind: 'mcp', owner: 'project', origin: 'local', localPath: file, status: 'read-only', revision: state.revision, local: display(managedMcp(servers[name])), source: '(project-owned)', fields: [], management: 'Edit this project configuration in its repository; global synchronization does not replace project overrides.' })
+        for (const name of Object.keys(servers)) items.push({ id: `project-mcp:${name}`, title: name, kind: 'mcp', owner: 'project', origin: 'local', localPath: file, status: 'read-only', revision: state.revision, local: display(managedMcp(servers[name])), source: '(project-owned)', fields: [], client: 'codex', scope: 'project', manager: 'project', provenance: { label: 'Project repository', path: projectPath }, management: 'Edit this project configuration in its repository; global synchronization does not replace project overrides.' })
       }
-      catch { items.push({ id: 'project-scan', title: 'Project configuration scan', kind: 'mcp', owner: 'project', origin: 'local', localPath: file, status: 'error', revision: '', local: '(unavailable)', source: '(unavailable)', fields: [] }) }
+      catch { items.push({ id: 'project-scan', title: 'Project configuration scan', kind: 'mcp', owner: 'project', origin: 'local', localPath: file, status: 'error', revision: '', local: '(unavailable)', source: '(unavailable)', fields: [], client: 'codex', scope: 'project', manager: 'project', provenance: { label: 'Project repository', path: projectPath } }) }
     }
-    return { version: 1, items }
+    for (const skill of audit.report?.skills ?? []) {
+      if (items.some(item => item.kind === 'skill' && (item.localPath === skill.path || item.localPath === path.dirname(skill.path))))
+        continue
+      items.push({ id: `audit-skill:${skill.path}`, title: skill.name, kind: 'skill', owner: skill.scope === 'project' ? 'project' : 'installer', origin: 'local', localPath: skill.path, status: 'read-only', revision: '', local: '(read-only audit inventory)', source: '(managed through the original tool)', fields: [], client: skill.client, scope: skill.scope, manager: skill.manager, provenance: skill.provenance, management: skill.scope === 'project' ? 'Manage this Skill in the project repository.' : 'Use the original Skill manager; audit inventory does not authorize writes.' })
+    }
+    return { version: 1, items, skillsAudit: audit.display }
   }
 
   /** Freeze source/target revisions and keep raw contents in protected local state. */
@@ -480,6 +632,13 @@ export class ConfigurationEngine {
         throw new Error('Configuration is not writable or managed')
       if (!['local', 'source', 'merge'].includes(decision.choice))
         throw new Error('Invalid decision')
+      if (entry.item.kind === 'skill') {
+        plan.skillOwnershipPaths ??= this.skillOwnershipPaths()
+        for (const file of plan.skillOwnershipPaths) {
+          if (!plan.reads.some(read => read.path === file))
+            plan.reads.push(snapshot(file))
+        }
+      }
       plan.reads.push(entry.local, entry.source)
       let value = decision.choice === 'local' ? entry.localValue : entry.sourceValue
       if (decision.choice === 'merge') {
@@ -625,7 +784,8 @@ export class ConfigurationEngine {
   /** Restore unchanged plan outputs while preserving subsequent independent edits. */
   restore(id: string): { version: 1, planId: string, state: 'restored' } {
     const initial = this.load(id)
-    return this.locked([this.baselinePath(), this.planPath(id), ...initial.reads.map(read => read.path)], () => {
+    const skillRoots = this.skillPlanRoots(initial)
+    return this.locked([this.baselinePath(), this.planPath(id), ...initial.reads.map(read => read.path), ...(skillRoots.length ? this.skillOwnershipPaths() : [])], () => {
       const plan = this.load(id)
       if (plan.state === 'preview')
         throw new Error('Plan has not been applied')
@@ -635,6 +795,7 @@ export class ConfigurationEngine {
       const afterBaseline = { ...plan.previousBaselines, ...plan.baselines }
       if (!equal(currentBaseline, plan.previousBaselines) && !equal(currentBaseline, afterBaseline))
         throw new Error('Later configuration activity prevents recovery of this plan')
+      this.assertSkillRecoveryOwnership(plan, skillRoots)
       const changes = plan.changes.map((change) => {
         const current = snapshot(change.before.path)
         if (change.appliedRevision && current.revision !== change.appliedRevision)

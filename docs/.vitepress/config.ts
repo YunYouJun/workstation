@@ -46,6 +46,7 @@ const enNav: DefaultTheme.NavItem[] = [
       { text: 'VSCode Extensions', link: '/en/vscode/extensions' },
       { text: 'Codex Skills', link: '/en/guide/codex-skills' },
       { text: 'Microsoft To Do Graph', link: '/en/guide/microsoft-todo-graph' },
+      { text: 'Host API', link: '/en/guide/host-api' },
     ],
   },
 ]
@@ -78,6 +79,7 @@ const zhNav: DefaultTheme.NavItem[] = [
       { text: 'VSCode 扩展', link: '/vscode/extensions' },
       { text: 'Codex Skills', link: '/guide/codex-skills' },
       { text: 'Microsoft To Do Graph', link: '/guide/microsoft-todo-graph' },
+      { text: 'Host API', link: '/guide/host-api' },
     ],
   },
 ]
@@ -115,6 +117,7 @@ const enSidebar: DefaultTheme.Sidebar = [
       { text: 'VSCode Extensions', link: '/en/vscode/extensions' },
       { text: 'Codex Skills', link: '/en/guide/codex-skills' },
       { text: 'Microsoft To Do Graph', link: '/en/guide/microsoft-todo-graph' },
+      { text: 'Host API', link: '/en/guide/host-api' },
     ],
   },
 ]
@@ -152,6 +155,7 @@ const zhSidebar: DefaultTheme.Sidebar = [
       { text: 'VSCode 扩展', link: '/vscode/extensions' },
       { text: 'Codex Skills', link: '/guide/codex-skills' },
       { text: 'Microsoft To Do Graph', link: '/guide/microsoft-todo-graph' },
+      { text: 'Host API', link: '/guide/host-api' },
     ],
   },
 ]

@@ -37,6 +37,8 @@ jobs:
 
       - run: pnpm run lint
 
+      - run: pnpm run projects:schema:check
+
   typecheck:
     runs-on: ubuntu-latest
 

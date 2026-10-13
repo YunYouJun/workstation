@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/YunYouJun/workstation/main/schemas/projects.schema.json",
+  "title": "Workstation project manifest",
+  "description": "Existing versionless projects.yaml format. Use workstation host-json validate-projects for host inheritance, target inference and duplicate checks.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "host": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "Default Git host for shorthand repository paths."
+    },
+    "root": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "Default checkout root. Validation does not expand or inspect directories."
+    },
+    "repositories": {
+      "$ref": "#/$defs/repositories"
+    },
+    "groups": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "\\S"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/group"
+      }
+    }
+  },
+  "anyOf": [
+    {
+      "required": [
+        "repositories"
+      ]
+    },
+    {
+      "required": [
+        "groups"
+      ]
+    }
+  ],
+  "$defs": {
+    "repository": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "description": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "path": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "remotePath": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "repo": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "repository": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "sshUrl": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "ssh": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "httpsUrl": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "https": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "url": {
+              "type": "string",
+              "pattern": "\\S"
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "name"
+              ]
+            },
+            {
+              "required": [
+                "path"
+              ]
+            },
+            {
+              "required": [
+                "remotePath"
+              ]
+            },
+            {
+              "required": [
+                "repo"
+              ]
+            },
+            {
+              "required": [
+                "repository"
+              ]
+            },
+            {
+              "required": [
+                "sshUrl"
+              ]
+            },
+            {
+              "required": [
+                "ssh"
+              ]
+            },
+            {
+              "required": [
+                "httpsUrl"
+              ]
+            },
+            {
+              "required": [
+                "https"
+              ]
+            },
+            {
+              "required": [
+                "url"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "repositories": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/repository"
+      }
+    },
+    "group": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "repositories"
+      ],
+      "properties": {
+        "host": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "root": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "repositories": {
+          "$ref": "#/$defs/repositories"
+        }
+      }
+    }
+  }
+}

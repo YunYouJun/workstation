@@ -8,6 +8,16 @@ printf '%s\n' '{"version":1,"operation":"inspect"}' | workstation configuration
 
 Replies are `{ "ok": true, "result": { "version": 1, ... } }` or `{ "ok": false, "error": "display-safe message" }`. Never embed raw configuration in command arguments. Exit status is nonzero on rejected requests. An accepted `apply` can return `state: "failed"`; callers must display it and recovery history rather than treating receipt as success.
 
+## Skills audit and provenance
+
+`inspect` now adds optional `client`, `scope`, `manager` and `provenance: { label, path? }` metadata to configuration items, plus a display-safe `skillsAudit` report. The report includes `state`, `checkedAt`, summary counts and bounded `{ code, severity, message, paths }` findings from the existing Skills audit. Global inspection excludes the CLI working directory; project Skills are inspected only when the host supplies its registered `projectPath`.
+
+APM, Skills CLI and Workstation ownership comes from their existing records. Native plugin assets and external links stay read-only; unknown ownership is not assigned by a matching name. Observations describe files and client destinations, not successful loading by a running Agent. A failed audit returns its own error state while configuration inventory and recovery remain available.
+
+User-maintained private Skill trees retain the existing review workflow. Their plans freeze ownership controls as well as file revisions. Application and recovery reject a later installer takeover, including when the installer only creates a lock and leaves file content unchanged. Older recovery plans also check current Skill ownership before restoring. Installer locks are never rewritten by configuration inspection or synchronization.
+
+These additions keep protocol version 1. Callers using an older v1 CLI should treat missing audit fields as unsupported, not as an empty successful audit.
+
 ## Operations
 
 - `inspect`: read-only item inventory. Optional `projectPath` is read-only; a host must derive it from its trusted registry. Each item includes stable ID, source/target paths, origin, owner, status, opaque revision, redacted comparison and changed fields.

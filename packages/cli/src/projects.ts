@@ -1,3 +1,5 @@
+import type { ProjectManifestValidationReport } from './projects-manifest'
+import { Buffer } from 'node:buffer'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
@@ -6,8 +8,9 @@ import path from 'node:path'
 import process from 'node:process'
 import * as p from '@clack/prompts'
 import { colors } from 'consola/utils'
-import { parse as parseYaml } from 'yaml'
+import { parseDocument as parseYaml } from 'yaml'
 import { getHomeDir, getRepoRoot } from './config'
+import { projectRepositoryFields } from './projects-manifest'
 
 const DEFAULT_OWNER = 'YunYouJun'
 const DEFAULT_LIMIT = 50
@@ -199,7 +202,7 @@ class ManifestEntryError extends Error {
 }
 
 class ProjectManifestValidationError extends Error {
-  constructor(label: string, issues: ManifestValidationIssue[]) {
+  constructor(label: string, readonly issues: ManifestValidationIssue[]) {
     super(formatManifestValidationIssues(label, issues))
   }
 }
@@ -1690,6 +1693,15 @@ function readManifestEntryString(record: UnknownRecord, key: string): string | u
   throw new ManifestEntryError(`${key} must be a string.`)
 }
 
+function readManifestEntryAliases(record: UnknownRecord, keys: readonly string[]): string | undefined {
+  for (const key of keys) {
+    const value = readManifestEntryString(record, key)
+    if (value)
+      return value
+  }
+  return undefined
+}
+
 function inferProjectNameFromUrl(value: string): string | undefined {
   const trimmed = value.trim()
 
@@ -1802,15 +1814,12 @@ function parseManifestRepository(entry: unknown, groupName: string, protocol: Cl
   if (!isRecord(entry))
     throw new ManifestEntryError('Expected a string or an object.')
 
-  const rawName = readManifestEntryString(entry, 'name')
-  const description = readManifestEntryString(entry, 'description')
-  const repositoryPath = readManifestEntryString(entry, 'path')
-    || readManifestEntryString(entry, 'remotePath')
-    || readManifestEntryString(entry, 'repo')
-    || readManifestEntryString(entry, 'repository')
-  const sshUrl = readManifestEntryString(entry, 'sshUrl') || readManifestEntryString(entry, 'ssh')
-  const httpsUrl = readManifestEntryString(entry, 'httpsUrl') || readManifestEntryString(entry, 'https')
-  const url = readManifestEntryString(entry, 'url')
+  const rawName = readManifestEntryAliases(entry, projectRepositoryFields.name)
+  const description = readManifestEntryAliases(entry, projectRepositoryFields.description)
+  const repositoryPath = readManifestEntryAliases(entry, projectRepositoryFields.path)
+  const sshUrl = readManifestEntryAliases(entry, projectRepositoryFields.sshUrl)
+  const httpsUrl = readManifestEntryAliases(entry, projectRepositoryFields.httpsUrl)
+  const url = readManifestEntryAliases(entry, projectRepositoryFields.url)
   const inferredUrlName = [sshUrl, httpsUrl, url]
     .map(value => value ? inferProjectNameFromUrl(value) : undefined)
     .find(Boolean)
@@ -1849,7 +1858,7 @@ function parseManifestRepository(entry: unknown, groupName: string, protocol: Cl
   }
 }
 
-function getManifestGroups(manifest: unknown, issues: ManifestValidationIssue[]): ManifestGroup[] {
+function getManifestGroups(manifest: unknown, issues: ManifestValidationIssue[], safePaths = false): ManifestGroup[] {
   if (!isRecord(manifest)) {
     pushManifestIssue(
       issues,
@@ -1873,8 +1882,8 @@ function getManifestGroups(manifest: unknown, issues: ManifestValidationIssue[])
       pushManifestIssue(issues, 'groups', 'Expected an object.')
     }
     else {
-      for (const [groupName, group] of Object.entries(manifest.groups)) {
-        const groupPath = `groups.${groupName}`
+      for (const [index, [groupName, group]] of Object.entries(manifest.groups).entries()) {
+        const groupPath = safePaths ? `groups[${index}]` : `groups.${groupName}`
 
         if (!groupName.trim()) {
           pushManifestIssue(issues, 'groups', 'Group names must be non-empty strings.')
@@ -1903,11 +1912,11 @@ function getManifestGroups(manifest: unknown, issues: ManifestValidationIssue[])
   return groups
 }
 
-function collectManifestRepositories(manifest: unknown, options: ResolvedCloneManifestProjectsOptions, label: string): ProjectRepository[] {
+function collectManifestRepositories(manifest: unknown, options: ResolvedCloneManifestProjectsOptions, label: string, validation?: { safePaths: boolean, targetPath: (root: string, name: string) => string }): ProjectRepository[] {
   const issues: ManifestValidationIssue[] = []
   const manifestRoot = isRecord(manifest) ? readManifestString(manifest, 'root', 'root', issues) : undefined
   const manifestHost = isRecord(manifest) ? readManifestString(manifest, 'host', 'host', issues) : undefined
-  const groups = getManifestGroups(manifest, issues)
+  const groups = getManifestGroups(manifest, issues, validation?.safePaths)
   const requestedGroups = new Set(options.groups)
   const availableGroups = new Set(groups.map(group => group.name))
 
@@ -1956,7 +1965,7 @@ function collectManifestRepositories(manifest: unknown, options: ResolvedCloneMa
           root,
           sourcePath,
         }
-        const targetPath = projectTargetPath(root, repository.name)
+        const targetPath = validation ? validation.targetPath(root, repository.name) : projectTargetPath(root, repository.name)
         const previousSourcePath = seenTargets.get(targetPath)
         if (previousSourcePath) {
           pushManifestIssue(
@@ -1989,9 +1998,84 @@ function collectManifestRepositories(manifest: unknown, options: ResolvedCloneMa
   return repositories
 }
 
+function parseProjectManifestContent(content: string): unknown {
+  if (Buffer.byteLength(content, 'utf8') > 256 * 1024)
+    throw new Error('Project manifest exceeds content limit')
+  const document = parseYaml(content, { prettyErrors: false, logLevel: 'silent' })
+  if (document.errors.length || document.warnings.length)
+    throw new Error('Project manifest YAML is invalid')
+  let manifest: unknown
+  try {
+    manifest = document.toJS({ maxAliasCount: 20 })
+  }
+  catch { throw new Error('Project manifest YAML is invalid') }
+  const active = new Set<object>()
+  let nodes = 0
+  const visit = (value: unknown, depth: number) => {
+    if (++nodes > 10000 || depth > 32)
+      throw new Error('Project manifest exceeds structure limit')
+    if (!value || typeof value !== 'object')
+      return
+    if (active.has(value))
+      throw new Error('Project manifest YAML is invalid')
+    active.add(value)
+    for (const item of Array.isArray(value) ? value : Object.values(value))
+      visit(item, depth + 1)
+    active.delete(value)
+  }
+  visit(manifest, 0)
+  return manifest
+}
+
+function safeManifestIssue(issue: ManifestValidationIssue): ProjectManifestValidationReport['issues'][number] {
+  const path = /^(?:\$|(?:root|host|repositories|groups)(?:\[\d+\]|\.(?:root|host|repositories))*)$/.test(issue.path) && issue.path.length <= 512 ? issue.path : '$'
+  if (issue.message.startsWith('Duplicate target path:'))
+    return { code: 'duplicate-target', path, message: 'Repository entries resolve to the same target path.' }
+  if (issue.message === 'Short project paths require a manifest or group host.')
+    return { code: 'missing-host', path, message: 'A shorthand repository path requires a manifest or group host.' }
+  if (issue.message === 'Expected repositories or groups.')
+    return { code: 'missing-repositories', path, message: 'Declare repositories or groups in the project manifest.' }
+  if (issue.message === 'Missing clone URL or repository path.')
+    return { code: 'missing-repository', path, message: 'A repository entry requires a URL or repository path.' }
+  if (issue.message.startsWith('Expected ') || /^\w+ must be a (?:non-empty )?string\.$/.test(issue.message))
+    return { code: 'invalid-type', path, message: 'A project manifest field has an invalid or empty value.' }
+  if (issue.message === 'Group names must be non-empty strings.')
+    return { code: 'invalid-group', path, message: 'Group names must be non-empty strings.' }
+  return { code: 'invalid-repository', path, message: 'A repository entry cannot resolve a valid target path.' }
+}
+
+/** Validate only supplied YAML text, without reading configuration, resolving HOME, probing dependencies or executing commands. */
+export function validateProjectManifest(content: string): ProjectManifestValidationReport {
+  let manifest: unknown
+  try {
+    manifest = parseProjectManifestContent(content)
+  }
+  catch (error) {
+    const limited = error instanceof Error && ['Project manifest exceeds content limit', 'Project manifest exceeds structure limit'].includes(error.message)
+    return { version: 1, valid: false, issues: [{ code: limited ? 'manifest-limit' : 'invalid-yaml', path: '$', message: limited ? 'Project manifest exceeds the validation limits.' : 'Project manifest YAML is invalid.' }] }
+  }
+  try {
+    const repositories = collectManifestRepositories(manifest, {
+      groups: [],
+      repositories: [],
+      root: '__default_root__',
+      protocol: 'ssh',
+      validate: true,
+      update: false,
+      dryRun: true,
+      yes: false,
+      interactive: false,
+    }, 'supplied content', { safePaths: true, targetPath: (root, name) => path.posix.join(root.replace(/\\/g, '/'), ...normalizeProjectName(name).split('/')) })
+    return { version: 1, valid: true, issues: [], summary: { repositories: repositories.length, groups: getManifestGroups(manifest, []).length } }
+  }
+  catch (error) {
+    const issues = error instanceof ProjectManifestValidationError ? error.issues.map(safeManifestIssue) : [{ code: 'invalid-manifest', path: '$', message: 'Project manifest could not be validated.' }]
+    return { version: 1, valid: false, issues: issues.length <= 100 ? issues : [...issues.slice(0, 99), { code: 'issue-limit', path: '$', message: 'Additional issues exceeded the report limit.' }] }
+  }
+}
+
 function loadManifest(filePath: string): unknown {
-  const content = fs.readFileSync(filePath, 'utf-8')
-  return parseYaml(content)
+  return parseProjectManifestContent(fs.readFileSync(filePath, 'utf-8'))
 }
 
 function hasYamlPathname(url: URL): boolean {

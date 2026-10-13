@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./schemas/projects.schema.json
 # Copy to projects.local.yaml for private or machine-specific repositories.
 groups:
   common:

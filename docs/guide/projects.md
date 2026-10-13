@@ -381,6 +381,12 @@ groups:
 
 `--validate` 只校验清单并退出，不输出 clone 预览。CLI 会检查清单结构、字段类型、指定 group 是否存在、短路径是否配置了 `host`、clone URL/目标路径能否推断，以及多个条目是否会 clone 到同一个目标目录。普通 dry-run 和 `--yes` 写入前也会走同一套校验。
 
+### 编辑器提示与只读校验
+
+`projects.example.yaml` 使用 `# yaml-language-server: $schema=./schemas/projects.schema.json`。下游仓库可改用 `https://raw.githubusercontent.com/YunYouJun/workstation/main/schemas/projects.schema.json`。此 Schema 保留现有无 version 格式，不需要迁移私有清单。
+
+终端继续使用 `workstation projects manifest --file projects.yaml --validate`；GUI 可通过 [Host API](./host-api.md#项目清单内容校验) 发送纯内容 `validate-projects` 请求。两者共用语义解析器，GUI 校验不会下载清单或读写本机配置。Schema 从代码导出生成，运行 `pnpm projects:schema:check` 验证产物。
+
 ## SSH 基线
 
 SSH key、`~/.ssh/config` 和远程机器地址都属于本机配置，不放进公开仓库。仓库只记录可复用模式。

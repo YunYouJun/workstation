@@ -40,6 +40,8 @@ jobs:
 
       - run: pnpm run lint
 
+      - run: pnpm run projects:schema:check
+
       - run: pnpm run typecheck
 
       - run: pnpm test

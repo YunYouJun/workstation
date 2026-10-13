@@ -1,6 +1,17 @@
 import type { ConfigurationDecision } from './model'
 import { ConfigurationEngine } from './engine'
 
+/** Preserve known operation guidance while withholding unexpected parser/filesystem diagnostics. */
+export function configurationErrorMessage(error: unknown): string {
+  const recoveryErrors = [
+    'Skill ownership changed after application. Review the original installer before recovery.',
+    'Skill ownership is unavailable. Check installer locks before recovery.',
+  ]
+  const safe = error instanceof Error && (recoveryErrors.includes(error.message)
+    || /^(?:Git operation failed|Repository has|Git fetch failed|Secret scan|Only declared|Unknown repository|Provide a bounded|Existing staged|Branches diverged|Remote is ahead|Configure a single|Sync requires|Repository changed|Unsupported configuration|Select configuration|Configuration changed|Configuration is not|Invalid decision|Duplicate decision|Choose a side|Replace literal credentials|Plan |File changed|Baseline changed|Later configuration)/.test(error.message))
+  return safe ? (error as Error).message : 'Configuration operation failed. Check local permissions, source syntax and recovery history.'
+}
+
 /** One-request JSON interface shared by CLI and trusted local Host Plugins. */
 export function configurationRequest(input: unknown, engine = new ConfigurationEngine()): unknown {
   const request = input as { version?: number, projectPath?: string, operation?: string, decisions?: ConfigurationDecision[], planId?: string, repository?: string, revision?: string, action?: string, paths?: string[], message?: string }
