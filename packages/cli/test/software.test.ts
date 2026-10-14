@@ -6,7 +6,7 @@ import path from 'node:path'
 import process from 'node:process'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { softwareItems } from '../../../software.config'
-import { softwareRequest } from '../src/software'
+import { softwareOperationRequest, softwareRequest } from '../src/software'
 import { cliPath, packageRoot } from './utils'
 
 let root: string
@@ -95,6 +95,39 @@ describe('software catalog v1', () => {
     fs.rmSync(path.join(applications, item.app!), { recursive: true })
     fs.mkdirSync(path.join(home, 'Applications', item.app!), { recursive: true })
     expect(catalog().items[0].status).toBe('detected')
+  })
+
+  it.each(['system', 'user'])('detects and opens Godot from the %s Applications folder without installing it', async (location) => {
+    const godot = softwareItems.find(item => item.id === 'godot')!
+    const openApplication = vi.fn(async () => {})
+    const host = { items: [godot], platform: 'darwin' as const, homeDirectory: home, systemApplicationsDirectory: applications, executableDirectories: [], openApplication }
+    expect(godot.defaultInstall).toBe(false)
+    expect(softwareRequest({ version: 1, operation: 'catalog' }, host).items[0]).toMatchObject({
+      id: 'godot',
+      group: { id: 'game-development' },
+      installation: { kind: 'brew-cask', packageId: 'godot' },
+      status: 'not-detected',
+      canInstall: true,
+      canOpen: false,
+    })
+    await expect(softwareOperationRequest({ version: 1, operation: 'open', softwareId: 'godot' }, host)).rejects.toThrow('not detected')
+    expect(openApplication).not.toHaveBeenCalled()
+
+    const applicationPath = path.join(location === 'system' ? applications : path.join(home, 'Applications'), 'Godot.app')
+    fs.mkdirSync(applicationPath, { recursive: true })
+    expect(softwareRequest({ version: 1, operation: 'catalog' }, host).items[0]).toMatchObject({ status: 'detected', canInstall: false, canOpen: true })
+    expect(await softwareOperationRequest({ version: 1, operation: 'open', softwareId: 'godot' }, host)).toEqual({ version: 1, softwareId: 'godot', destination: 'application' })
+    expect(openApplication).toHaveBeenCalledExactlyOnceWith(applicationPath)
+  })
+
+  it('detects a standalone Godot binary without executing it', () => {
+    const godot = softwareItems.find(item => item.id === 'godot')!
+    const bin = path.join(root, 'bin')
+    fs.mkdirSync(bin)
+    fs.writeFileSync(path.join(bin, 'godot'), 'never execute this file')
+    fs.chmodSync(path.join(bin, 'godot'), 0o700)
+    expect(softwareRequest({ version: 1, operation: 'catalog' }, { items: [godot], platform: 'darwin', homeDirectory: home, systemApplicationsDirectory: applications, executableDirectories: [bin] }).items[0])
+      .toMatchObject({ id: 'godot', status: 'detected', canInstall: false, canOpen: false })
   })
 
   it('does not treat a regular file as an installed application', () => {

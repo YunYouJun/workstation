@@ -432,6 +432,31 @@ export const softwareGroups: SoftwareGroup[] = [
     ],
   },
   {
+    id: 'game-development',
+    label: {
+      en: 'Game development',
+      zh: '游戏开发',
+    },
+    items: [
+      {
+        id: 'godot',
+        name: {
+          en: 'Godot Engine',
+          zh: 'Godot 游戏引擎',
+        },
+        url: 'https://godotengine.org/',
+        downloadUrl: 'https://godotengine.org/download/macos/',
+        repositoryUrl: 'https://github.com/godotengine/godot',
+        iconUrl: 'https://godotengine.org/assets/press/icon_color.svg',
+        cask: 'godot',
+        app: 'Godot.app',
+        bin: 'godot',
+        defaultInstall: false,
+        note: 'Free and open-source engine for 2D and 3D games. Install with Homebrew or the official macOS download.',
+      },
+    ],
+  },
+  {
     id: 'system-utilities',
     label: {
       en: 'System tools',
