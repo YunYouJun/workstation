@@ -13,6 +13,8 @@ export interface LocalizedText {
 export interface SoftwareItem {
   id: string
   name: LocalizedText
+  /** Verified native desktop platform support; omit when unknown. */
+  platforms?: ('macos' | 'windows' | 'linux')[]
   /**
    * Official product or project site. Use downloadUrl when the install page is separate.
    */
@@ -65,6 +67,7 @@ export const softwareGroups: SoftwareGroup[] = [
     items: [
       {
         id: 'homebrew',
+        platforms: ['macos', 'linux'],
         iconUrl: 'https://brew.sh/assets/img/homebrew.svg',
         name: {
           en: 'Homebrew',
@@ -86,6 +89,7 @@ export const softwareGroups: SoftwareGroup[] = [
     items: [
       {
         id: 'iterm2',
+        platforms: ['macos'],
         name: {
           en: 'iTerm2',
         },
@@ -97,7 +101,24 @@ export const softwareGroups: SoftwareGroup[] = [
         iconify: 'i-simple-icons-iterm2',
       },
       {
+        id: 'ghostty',
+        platforms: ['macos', 'linux'],
+        macosIconUrl: 'https://raw.githubusercontent.com/ghostty-org/ghostty/v1.3.1/macos/Assets.xcassets/AppIconImage.imageset/macOS-AppIcon-512px.png',
+        iconUrl: 'https://ghostty.org/_next/static/media/ghostty-logo.6bcc6c33.svg',
+        name: {
+          en: 'Ghostty',
+        },
+        url: 'https://ghostty.org/',
+        downloadUrl: 'https://ghostty.org/download',
+        repositoryUrl: 'https://github.com/ghostty-org/ghostty',
+        cask: 'ghostty',
+        app: 'Ghostty.app',
+        defaultInstall: false,
+        note: 'Fast terminal emulator with native UI and GPU acceleration. Install with Homebrew or the official macOS download.',
+      },
+      {
         id: 'vscode',
+        platforms: ['macos', 'windows', 'linux'],
         iconUrl: 'https://code.visualstudio.com/assets/apple-touch-icon.png',
         name: {
           en: 'Visual Studio Code',
@@ -112,6 +133,7 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'codex-cli',
+        platforms: ['macos', 'windows', 'linux'],
         name: {
           en: 'Codex CLI',
         },
@@ -133,6 +155,7 @@ export const softwareGroups: SoftwareGroup[] = [
     items: [
       {
         id: 'magpie',
+        platforms: ['macos', 'windows', 'linux'],
         iconScale: 1.25,
         iconUrl: 'https://usemagpie.ai/img/icon-256.png',
         name: {
@@ -148,6 +171,7 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'orca',
+        platforms: ['macos', 'windows', 'linux'],
         iconScale: 1.24,
         macosIconUrl: 'https://raw.githubusercontent.com/stablyai/orca/1b9a408b8c0f7de5125f4bad8d89eb8419a29a88/resources/icon.png',
         iconStyle: 'rounded',
@@ -165,6 +189,7 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'codebuddy-cn',
+        platforms: ['macos', 'windows', 'linux'],
         iconUrl: 'https://download.codebuddy.cn/web/website/41d9f07cb6de7881ba06d46982d3876c0cbc1a98/assets/logo.svg',
         name: {
           en: 'CodeBuddy CN',
@@ -190,6 +215,7 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'codex',
+        platforms: ['macos', 'windows', 'linux'],
         name: {
           en: 'Codex App',
         },
@@ -211,6 +237,7 @@ export const softwareGroups: SoftwareGroup[] = [
     items: [
       {
         id: 'raycast',
+        platforms: ['macos', 'windows'],
         iconUrl: 'https://www.raycast.com/favicon-production.png',
         name: {
           en: 'Raycast',
@@ -224,6 +251,7 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'chrome',
+        platforms: ['macos', 'windows', 'linux'],
         iconUrl: 'https://www.google.com/chrome/static/images/favicons/android-icon-192x192.png',
         name: {
           en: 'Google Chrome',
@@ -259,6 +287,7 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'qq',
+        platforms: ['macos', 'windows', 'linux'],
         name: {
           en: 'QQ',
         },
@@ -284,6 +313,7 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'feishu',
+        platforms: ['macos', 'windows', 'linux'],
         name: {
           en: 'Feishu',
           zh: '飞书',
@@ -328,6 +358,7 @@ export const softwareGroups: SoftwareGroup[] = [
     items: [
       {
         id: 'orbstack',
+        platforms: ['macos'],
         iconUrl: 'https://orbstack.dev/img/icon128.png',
         name: {
           en: 'OrbStack',
@@ -340,6 +371,7 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'docker',
+        platforms: ['macos', 'windows', 'linux'],
         name: {
           en: 'Docker Desktop',
         },
@@ -360,6 +392,7 @@ export const softwareGroups: SoftwareGroup[] = [
     items: [
       {
         id: 'termius',
+        platforms: ['macos', 'windows', 'linux'],
         iconUrl: 'https://framerusercontent.com/images/RaVfXKUnfCfHvsZac7elxD7jVtc.png',
         name: {
           en: 'Termius',
@@ -373,6 +406,7 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'cyberduck',
+        platforms: ['macos', 'windows'],
         iconScale: 1.14,
         iconUrl: 'https://cdn.cyberduck.io/img/cyberduck-icon-rect-32.png',
         name: {
@@ -388,6 +422,7 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'proxyman',
+        platforms: ['macos', 'windows', 'linux'],
         iconStyle: 'rounded',
         iconUrl: 'https://proxyman.com/favicon/apple-touch-icon.png?v=4',
         name: {
@@ -403,6 +438,7 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'hiddenbar',
+        platforms: ['macos'],
         iconScale: 1.02,
         iconUrl: 'https://raw.githubusercontent.com/dwarvesf/hidden/develop/img/icon_512%402x.png',
         name: {
@@ -416,7 +452,23 @@ export const softwareGroups: SoftwareGroup[] = [
         note: 'Menu bar item hider. Optional because it changes personal desktop layout.',
       },
       {
+        id: 'thaw',
+        platforms: ['macos'],
+        macosIconUrl: 'https://www.getthaw.app/_next/static/immutable/media/thaw-icon.3ovi8zv9rpqo9.png',
+        name: {
+          en: 'Thaw',
+        },
+        url: 'https://www.getthaw.app/',
+        downloadUrl: 'https://github.com/thaw-app/Thaw/releases',
+        repositoryUrl: 'https://github.com/thaw-app/Thaw',
+        cask: 'thaw',
+        app: 'Thaw.app',
+        defaultInstall: false,
+        note: 'Free and open-source macOS menu bar manager. Hide and organize items, and show hidden items below the menu bar with Thaw Bar on Macs with a notch. Check the official download for macOS compatibility.',
+      },
+      {
         id: 'xbar',
+        platforms: ['macos'],
         iconScale: 1.15,
         iconUrl: 'https://xbarapp.com/public/img/xbar-2048.png',
         name: {
@@ -440,6 +492,7 @@ export const softwareGroups: SoftwareGroup[] = [
     items: [
       {
         id: 'godot',
+        platforms: ['macos', 'windows', 'linux'],
         name: {
           en: 'Godot Engine',
           zh: 'Godot 游戏引擎',
@@ -465,6 +518,7 @@ export const softwareGroups: SoftwareGroup[] = [
     items: [
       {
         id: 'stats',
+        platforms: ['macos'],
         iconScale: 1.25,
         macosIconUrl: 'https://raw.githubusercontent.com/exelban/stats/88d5359ad3466efaa16985646a0bb15c6599109f/Stats/Supporting%20Files/Assets.xcassets/AppIcon.appiconset/icon_128x128.png',
         iconUrl: 'https://mac-stats.com/apple-touch-icon.png',
@@ -482,6 +536,7 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'tencent-lemon',
+        platforms: ['macos'],
         iconScale: 1.22,
         iconUrl: 'https://lemon.qq.com/images/lemon/logo.png',
         name: {
@@ -509,6 +564,7 @@ export const softwareGroups: SoftwareGroup[] = [
     items: [
       {
         id: 'microsoft-todo',
+        platforms: ['macos', 'windows'],
         name: {
           en: 'Microsoft To Do',
           zh: '微软待办',
@@ -523,6 +579,7 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: '1password',
+        platforms: ['macos', 'windows', 'linux'],
         name: {
           en: '1Password',
         },
@@ -535,6 +592,7 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'obsidian',
+        platforms: ['macos', 'windows', 'linux'],
         iconStyle: 'rounded',
         iconUrl: 'https://obsidian.md/apple-touch-icon.png',
         name: {
@@ -549,6 +607,7 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'notion',
+        platforms: ['macos', 'windows'],
         iconStyle: 'rounded',
         iconUrl: 'https://www.notion.com/front-static/logo-ios.png',
         name: {
@@ -563,6 +622,7 @@ export const softwareGroups: SoftwareGroup[] = [
       },
       {
         id: 'ima',
+        platforms: ['macos', 'windows'],
         iconUrl: 'https://fe-static.ima.myqcloud.com/ima/assets/chat/favicon.svg',
         name: {
           en: 'ima.copilot',
