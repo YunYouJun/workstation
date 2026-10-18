@@ -183,7 +183,10 @@ describe('init CLI', () => {
     fs.chmodSync(guardPath, 0o755)
 
     const args = ['init', 'git.large-push-guard', '--yes']
-    const env = { PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}` }
+    const inspectorPath = path.join(binDir, 'yunbox')
+    writeFile(inspectorPath, '#!/usr/bin/env node\nconsole.log("yunbox inspect --push --json")\n')
+    fs.chmodSync(inspectorPath, 0o755)
+    const env = { PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}`, WORKSTATION_YUNBOX_BIN: inspectorPath }
     const first = runCli(args, fixture.repoRoot, fixture.homeRoot, env)
     const second = runCli(args, fixture.repoRoot, fixture.homeRoot, env)
 
@@ -195,6 +198,22 @@ describe('init CLI', () => {
     assert.equal(countOccurrences(globalConfig, '[hook "workstation-large-push-guard"]'), 1)
     assert.match(globalConfig, /command = ~\/\.local\/libexec\/git-confirm-large-push/)
     assert.match(globalConfig, /event = pre-push/)
+  })
+
+  it('blocks guard setup when the YunBox inspector is missing', () => {
+    const fixture = createInitFixture()
+    const binDir = path.join(tempDir!, 'bin')
+    writeFakeGit(binDir)
+    const guardPath = gitLargePushGuardPath(fixture.homeRoot)
+    writeFile(guardPath, '#!/bin/sh\nexit 0\n')
+    fs.chmodSync(guardPath, 0o755)
+    const result = runCli(['init', 'git.large-push-guard', '--yes'], fixture.repoRoot, fixture.homeRoot, {
+      PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}`,
+      WORKSTATION_YUNBOX_BIN: path.join(binDir, 'missing-yunbox'),
+    })
+    assert.equal(result.status, 1)
+    assert.match(`${result.stdout}\n${result.stderr}`, /YunBox CLI.*required/)
+    assert.equal(fs.existsSync(gitConfigPath(fixture.homeRoot)), false)
   })
 
   it('requires Git 2.55 for the configured large-push hook', () => {

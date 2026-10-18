@@ -105,25 +105,14 @@ other machine-local data.
 
 ### GitHub Large-Push Confirmation
 
-Git 2.55 and newer can register global named configured hooks while preserving
-each repository's own `.git/hooks`. Workstation's `pre-push` guard only checks
-`github.com` remotes. It builds a local thin-pack estimate from the old and new
-object IDs supplied to the hook, then asks through a macOS dialog before the
-bulk pack upload when the estimate exceeds the default `900 KiB`. Packs below
-the `10 MiB` estimation cap show a concrete size; estimation stops
-at the cap and reports "over 10 MiB" for larger packs. Cancelling, or having
-neither a dialog nor an interactive terminal, blocks the push.
+Workstation's `pre-push` guard calls `yunbox inspect --push --stdin` for `github.com` remotes. YunBox owns Git thin-pack estimation, LFS candidates, historical file details and budgets. Workstation displays exceeded-budget reports in a macOS dialog and stderr. Cancellation, unavailable interaction, missing CLI or failed analysis blocks the push.
 
-When the old remote tip is not in the local object database, the guard excludes
-only remote objects it can verify locally and conservatively estimates the
-remainder. It does not pass a missing OID to `pack-objects`, so `bad object`
-does not turn the size into an "unknown" estimate merely because the remote tip
-has not been fetched yet. Fetching first usually makes the estimate more precise
-by filling in the shared history.
+Default budgets are **900 KiB** for Git pack, **100 MiB** for LFS candidates and **10 MiB** for individual files. Separate Git and LFS rankings show the ten largest objects and mark oversized files. Committed historical versions, including subsequently deleted files, are counted; uncommitted build output is excluded. Identical content is deduplicated, while distinct versions count separately. Raw file sizes differ from compressed upload sizes. LFS candidates are not actual upload bytes: remote existence has not been checked, so existing objects may be skipped. JSON includes all entries and exact byte counts.
 
-Sync the executable first, then preview and enable the optional init task:
+Install a YunBox CLI supporting `inspect` using the [YunBox installation instructions](https://github.com/YunLeFun/yunbox#安装命令行), and add it to PATH (or set `WORKSTATION_YUNBOX_BIN` to its absolute executable path). Then sync the adapter and enable the optional global hook, which requires Git 2.55+:
 
 ```bash
+yunbox inspect --help
 mkdir -p ~/.local/libexec
 workstation dotfiles chezmoi apply ~/.local/libexec/git-confirm-large-push
 wst init git.large-push-guard
@@ -131,29 +120,26 @@ wst init git.large-push-guard --yes
 git hook list --show-scope pre-push
 ```
 
-The threshold intentionally stays below the common external `1 MiB` alert line
-to leave room for Git protocol, SSH/HTTPS, and pack-estimation overhead. Adjust
-it with bytes or Git's `k`/`m` suffixes:
+**Repositories using Git LFS also need a composed hook.** A failed independent hook does not guarantee that Git stops subsequent upload hooks. After `git lfs install --local`, run inside the repository:
 
 ```bash
-git config --global workstation.largePushGuardBytes 900k
+yunbox hook install --guard ~/.local/libexec/git-confirm-large-push
 ```
 
-Disable the guard only for a repository that needs an exception, and remove the
-local override to restore it:
+This preserves the original hook and only runs it after approval, replaying its exact arguments and stdin. The global guard detects this wrapper to avoid duplicate dialogs. `yunbox hook uninstall` restores the original hook. Custom `core.hooksPath` managers need their own serial chain; the wrapper does not control other independent configured hooks. Without the wrapper, the global guard can block the bulk Git pack but cannot guarantee that cancellation stops subsequent LFS uploads.
+
+Configure budgets or inspect independently:
 
 ```bash
-git config --local hook.workstation-large-push-guard.enabled false
-git config --local --unset hook.workstation-large-push-guard.enabled
+git config --global yunbox.inspectGitBytes 900k
+git config --global yunbox.inspectLfsBytes 100m
+git config --global yunbox.inspectFileBytes 10m
+yunbox inspect --push --json
 ```
 
-The connection handshake and remote-ref discovery still send a small amount of
-traffic before `pre-push`; the guard stops the bulk Git pack rather than
-providing a zero-byte network policy. `git push --no-verify` deliberately
-bypasses it. Git LFS uses a separate upload flow and is not currently counted
-in the pack threshold. See [Git hooks](https://git-scm.com/docs/githooks#_pre_push),
-[configured hooks](https://git-scm.com/docs/git-hook), and
-[pack-objects](https://git-scm.com/docs/git-pack-objects).
+An explicitly configured legacy `workstation.largePushGuardBytes` still takes precedence for the Git pack budget. To disable the global hook in one repository, set `git config --local hook.workstation-large-push-guard.enabled false`; remove this setting to restore it. If a wrapper is installed, also run `yunbox hook uninstall`. `git push --no-verify` bypasses both.
+
+Connection handshakes and remote-ref discovery still use the network before upload. Pack estimation stops above `max(10 MiB, Git budget)` and reports a lower bound. Missing local remote objects lead to a conservative estimate. See [YunBox push inspection](https://github.com/YunLeFun/yunbox/blob/main/docs/inspect.md) for counting rules and the JSON contract.
 
 ### Directory Jumping
 

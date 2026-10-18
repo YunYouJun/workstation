@@ -1,303 +1,107 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { randomBytes } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, it } from 'vitest'
 import { createTempDir, removePath, writeFile } from './utils'
 
 const guardPath = fileURLToPath(new URL('../../../home/dot_local/libexec/executable_git-confirm-large-push', import.meta.url))
-const defaultRemoteUrl = 'git@github.com:example/repo.git'
 const tempDirs: string[] = []
+const remoteUrl = 'git@github.com:example/repo.git'
+const report = 'Git pack: 2 MiB; LFS candidates: 120 MiB\n[超限] assets/hero.psd 120 MiB\n'
 
-interface GuardFixture {
-  repoRoot: string
-  env: NodeJS.ProcessEnv
-  hookInput: string
-  binDir: string
-  emptyRemoteUrl: string
+function fixture(code = 1, confirm = 1, output = report) {
+  const root = createTempDir('yunbox-guard-adapter-')
+  tempDirs.push(root)
+  const bin = path.join(root, 'bin')
+  const home = path.join(root, 'home')
+  fs.mkdirSync(bin)
+  fs.mkdirSync(home)
+  const env = { ...process.env, HOME: home, XDG_CONFIG_HOME: home, GIT_CONFIG_GLOBAL: path.join(home, '.gitconfig'), GIT_CONFIG_NOSYSTEM: '1', PATH: `${bin}${path.delimiter}${process.env.PATH || ''}`, WORKSTATION_YUNBOX_BIN: path.join(bin, 'yunbox') }
+  execFileSync('git', ['init', '-q'], { cwd: root, env })
+  writeFile(path.join(bin, 'yunbox'), `#!/usr/bin/env node
+const fs = require('node:fs')
+fs.writeFileSync('cli-input', fs.readFileSync(0))
+fs.writeFileSync('cli-args', JSON.stringify(process.argv.slice(2)))
+process.stdout.write(${JSON.stringify(output)})
+process.exit(${code})
+`)
+  writeFile(path.join(bin, 'osascript'), `#!/usr/bin/env node
+require('node:fs').writeFileSync('dialog-args', JSON.stringify(process.argv.slice(2)))
+process.exit(${confirm})
+`)
+  fs.chmodSync(path.join(bin, 'yunbox'), 0o755)
+  fs.chmodSync(path.join(bin, 'osascript'), 0o755)
+  return { root, env }
 }
 
-interface FakeOsascriptOptions {
-  markerPath?: string
-  estimatePath?: string
-  reasonPath?: string
-  repositoryPath?: string
-  remotePath?: string
-}
-
-function createGuardFixture(blobBytes: number, thresholdBytes?: number): GuardFixture {
-  const tempDir = createTempDir('git-large-push-guard-')
-  const repoRoot = path.join(tempDir, 'repo')
-  const homeRoot = path.join(tempDir, 'home')
-  const binDir = path.join(tempDir, 'bin')
-  tempDirs.push(tempDir)
-  fs.mkdirSync(repoRoot)
-  fs.mkdirSync(homeRoot)
-  fs.mkdirSync(binDir)
-
-  const env = {
-    ...process.env,
-    HOME: homeRoot,
-    XDG_CONFIG_HOME: path.join(homeRoot, '.config'),
-    PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}`,
-  }
-
-  runGit(repoRoot, env, ['init', '-q', '-b', 'main'])
-  runGit(repoRoot, env, ['config', 'user.name', 'Guard Test'])
-  runGit(repoRoot, env, ['config', 'user.email', 'guard@example.com'])
-  if (thresholdBytes !== undefined)
-    runGit(repoRoot, env, ['config', 'workstation.largePushGuardBytes', String(thresholdBytes)])
-  const emptyRemoteRoot = path.join(tempDir, 'empty-remote.git')
-  runGit(repoRoot, env, ['init', '--bare', '-q', emptyRemoteRoot])
-  const emptyRemoteUrl = pathToFileURL(emptyRemoteRoot).href
-  runGit(repoRoot, env, ['config', `url.${emptyRemoteUrl}.insteadOf`, defaultRemoteUrl])
-  fs.writeFileSync(path.join(repoRoot, 'payload.bin'), randomBytes(blobBytes))
-  runGit(repoRoot, env, ['add', 'payload.bin'])
-  runGit(repoRoot, env, ['commit', '-q', '-m', 'test payload'])
-
-  const oid = runGit(repoRoot, env, ['rev-parse', 'HEAD']).trim()
-  const zeroOid = '0'.repeat(oid.length)
-
-  return {
-    repoRoot,
-    env,
-    hookInput: `refs/heads/main ${oid} refs/heads/main ${zeroOid}\n`,
-    binDir,
-    emptyRemoteUrl,
-  }
-}
-
-function runGit(repoRoot: string, env: NodeJS.ProcessEnv, args: string[]) {
-  return execFileSync('git', args, {
-    cwd: repoRoot,
-    encoding: 'utf-8',
-    env,
-  })
-}
-
-function createRemoteOnlyCommit(fixture: GuardFixture) {
-  const remoteSourceRoot = path.join(path.dirname(fixture.repoRoot), 'remote-source')
-  fs.mkdirSync(remoteSourceRoot)
-  runGit(remoteSourceRoot, fixture.env, ['init', '-q', '-b', 'main'])
-  runGit(remoteSourceRoot, fixture.env, ['config', 'user.name', 'Guard Test'])
-  runGit(remoteSourceRoot, fixture.env, ['config', 'user.email', 'guard@example.com'])
-  fs.writeFileSync(path.join(remoteSourceRoot, 'remote-only.txt'), 'remote only\n')
-  runGit(remoteSourceRoot, fixture.env, ['add', 'remote-only.txt'])
-  runGit(remoteSourceRoot, fixture.env, ['commit', '-q', '-m', 'remote only'])
-  runGit(remoteSourceRoot, fixture.env, ['push', '-q', fixture.emptyRemoteUrl, 'HEAD:refs/heads/main'])
-  return runGit(remoteSourceRoot, fixture.env, ['rev-parse', 'HEAD']).trim()
-}
-
-function writeFakeOsascript(binDir: string, exitCode: number, options: FakeOsascriptOptions = {}) {
-  const lines = [
-    '#!/bin/sh',
-    options.markerPath ? `: > "${options.markerPath}"` : ':',
-    options.estimatePath ? `printf '%s\n' "$4" > "${options.estimatePath}"` : ':',
-    options.reasonPath ? `printf '%s\n' "$5" > "${options.reasonPath}"` : ':',
-    options.repositoryPath ? `printf '%s\n' "$2" > "${options.repositoryPath}"` : ':',
-    options.remotePath ? `printf '%s\n' "$3" > "${options.remotePath}"` : ':',
-    `exit ${exitCode}`,
-    '',
-  ]
-  const scriptPath = path.join(binDir, 'osascript')
-  writeFile(scriptPath, lines.join('\n'))
-  fs.chmodSync(scriptPath, 0o755)
-}
-
-function runGuard(fixture: GuardFixture, remoteUrl = defaultRemoteUrl, remoteName = 'origin') {
-  return spawnSync(guardPath, [remoteName, remoteUrl], {
-    cwd: fixture.repoRoot,
-    encoding: 'utf-8',
-    env: fixture.env,
-    input: fixture.hookInput,
-  })
+function run(f: ReturnType<typeof fixture>, url = remoteUrl, name = 'origin', input = 'ref local ref remote\n') {
+  return spawnSync(guardPath, [name, url], { cwd: f.root, env: f.env, input, encoding: 'utf8' })
 }
 
 afterEach(() => {
-  while (tempDirs.length > 0)
+  while (tempDirs.length)
     removePath(tempDirs.pop())
 })
 
-describe('github large-push guard', () => {
-  it('skips non-GitHub remotes', () => {
-    const fixture = createGuardFixture(32 * 1024, 1024)
-    writeFakeOsascript(fixture.binDir, 1)
-
-    const result = runGuard(fixture, 'git@git.example.com:example/repo.git')
-
-    assert.equal(result.status, 0, result.stderr)
-  })
-
-  it('does not prompt when the estimated pack stays below the threshold', () => {
-    const fixture = createGuardFixture(128, 800 * 1024)
-    const markerPath = path.join(path.dirname(fixture.repoRoot), 'prompted')
-    writeFakeOsascript(fixture.binDir, 1, { markerPath })
-
-    const result = runGuard(fixture)
-
-    assert.equal(result.status, 0, result.stderr)
-    assert.equal(fs.existsSync(markerPath), false)
-  })
-
-  it('does not classify an approximately 800 KiB pack as large by default', () => {
-    const fixture = createGuardFixture(800 * 1024)
-    const markerPath = path.join(path.dirname(fixture.repoRoot), 'prompted')
-    writeFakeOsascript(fixture.binDir, 1, { markerPath })
-
-    const result = runGuard(fixture)
-
-    assert.equal(result.status, 0, result.stderr)
-    assert.equal(fs.existsSync(markerPath), false)
-  })
-
-  it('classifies an approximately 1 MiB pack as large by default', () => {
-    const fixture = createGuardFixture(1024 * 1024)
-    const markerPath = path.join(path.dirname(fixture.repoRoot), 'prompted')
-    writeFakeOsascript(fixture.binDir, 1, { markerPath })
-
-    const result = runGuard(fixture)
-
-    assert.equal(result.status, 1, result.stderr)
-    assert.equal(fs.existsSync(markerPath), true)
-  })
-
-  it('uses a conservative estimate when the remote tip is missing locally', () => {
-    const fixture = createGuardFixture(128, 800 * 1024)
-    const remoteOid = createRemoteOnlyCommit(fixture)
-    const localOid = runGit(fixture.repoRoot, fixture.env, ['rev-parse', 'HEAD']).trim()
-    assert.notEqual(
-      spawnSync('git', ['cat-file', '-e', `${remoteOid}^{object}`], {
-        cwd: fixture.repoRoot,
-        env: fixture.env,
-      }).status,
-      0,
-    )
-    fixture.hookInput = `refs/heads/main ${localOid} refs/heads/main ${remoteOid}\n`
-    const markerPath = path.join(path.dirname(fixture.repoRoot), 'prompted')
-    const estimatePath = path.join(path.dirname(fixture.repoRoot), 'estimate')
-    const reasonPath = path.join(path.dirname(fixture.repoRoot), 'reason')
-    writeFakeOsascript(fixture.binDir, 1, { markerPath, estimatePath, reasonPath })
-
-    const result = runGuard(fixture)
-    const estimate = fs.existsSync(estimatePath) ? fs.readFileSync(estimatePath, 'utf-8').trim() : 'none'
-    const reason = fs.existsSync(reasonPath) ? fs.readFileSync(reasonPath, 'utf-8').trim() : 'none'
-
-    assert.equal(result.status, 0, `${result.stderr}\nestimate: ${estimate}\nreason: ${reason}`)
-    assert.equal(fs.existsSync(markerPath), false)
-  })
-
-  it('prompts when only a stale remote-tracking ref contains the history', () => {
-    const fixture = createGuardFixture(32 * 1024, 1024)
-    const githubUrl = 'https://github.com/example/repo.git'
-    const missingRemoteUrl = pathToFileURL(path.join(path.dirname(fixture.repoRoot), 'missing.git')).href
-    runGit(fixture.repoRoot, fixture.env, ['config', `url.${missingRemoteUrl}.insteadOf`, githubUrl])
-    const baseOid = runGit(fixture.repoRoot, fixture.env, ['rev-parse', 'HEAD']).trim()
-    runGit(fixture.repoRoot, fixture.env, ['update-ref', 'refs/remotes/origin/main', baseOid])
-    fs.writeFileSync(path.join(fixture.repoRoot, 'small-change.txt'), 'small change\n')
-    runGit(fixture.repoRoot, fixture.env, ['add', 'small-change.txt'])
-    runGit(fixture.repoRoot, fixture.env, ['commit', '-q', '-m', 'small change'])
-    const newBranchOid = runGit(fixture.repoRoot, fixture.env, ['rev-parse', 'HEAD']).trim()
-    fixture.hookInput = `refs/heads/feature ${newBranchOid} refs/heads/feature ${'0'.repeat(newBranchOid.length)}\n`
-    const markerPath = path.join(path.dirname(fixture.repoRoot), 'prompted')
-    writeFakeOsascript(fixture.binDir, 1, { markerPath })
-
-    const result = runGuard(fixture, githubUrl)
-
+describe('yunBox push-guard adapter', () => {
+  it('forwards hook input and an explicit legacy threshold without implementing size rules', () => {
+    const f = fixture()
+    execFileSync('git', ['config', 'workstation.largePushGuardBytes', '900k'], { cwd: f.root, env: f.env })
+    const result = run(f)
     assert.equal(result.status, 1)
-    assert.equal(fs.existsSync(markerPath), true)
+    assert.equal(fs.readFileSync(path.join(f.root, 'cli-input'), 'utf8'), 'ref local ref remote\n')
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(f.root, 'cli-args'), 'utf8')), ['inspect', '--push', '--stdin', '--remote', remoteUrl, '--git-limit', '921600'])
+    const dialog = JSON.parse(fs.readFileSync(path.join(f.root, 'dialog-args'), 'utf8'))
+    assert.deepEqual(dialog, ['-', 'github.com/example/repo', 'origin', report.trimEnd()])
+    assert.ok(result.stderr.includes(report.trimEnd()))
   })
 
-  it('does not count history advertised by another remote branch', () => {
-    const fixture = createGuardFixture(32 * 1024, 1024)
-    const remoteRoot = path.join(path.dirname(fixture.repoRoot), 'remote.git')
-    const remoteUrl = pathToFileURL(remoteRoot).href
-    const githubUrl = 'https://github.com/example/repo.git'
-    runGit(fixture.repoRoot, fixture.env, ['init', '--bare', '-q', remoteRoot])
-    runGit(fixture.repoRoot, fixture.env, ['remote', 'add', 'fixture', remoteUrl])
-    runGit(fixture.repoRoot, fixture.env, ['push', '-q', 'fixture', 'HEAD:refs/heads/main'])
-    runGit(fixture.repoRoot, fixture.env, ['config', `url.${remoteUrl}.insteadOf`, githubUrl])
-    fs.writeFileSync(path.join(fixture.repoRoot, 'small-change.txt'), 'small change\n')
-    runGit(fixture.repoRoot, fixture.env, ['add', 'small-change.txt'])
-    runGit(fixture.repoRoot, fixture.env, ['commit', '-q', '-m', 'small change'])
-    const newBranchOid = runGit(fixture.repoRoot, fixture.env, ['rev-parse', 'HEAD']).trim()
-    fixture.hookInput = `refs/heads/feature ${newBranchOid} refs/heads/feature ${'0'.repeat(newBranchOid.length)}\n`
-    const markerPath = path.join(path.dirname(fixture.repoRoot), 'prompted')
-    writeFakeOsascript(fixture.binDir, 1, { markerPath })
-
-    const result = runGuard(fixture, githubUrl)
-
-    assert.equal(result.status, 0, result.stderr)
-    assert.equal(fs.existsSync(markerPath), false)
+  it('silently accepts a below-budget report and skips other hosts', () => {
+    const f = fixture(0)
+    const result = run(f)
+    assert.equal(result.status, 0)
+    assert.equal(result.stderr, '')
+    assert.equal(fs.existsSync(path.join(f.root, 'dialog-args')), false)
+    fs.unlinkSync(path.join(f.root, 'cli-input'))
+    assert.equal(run(f, 'git@git.example.com:example/repo.git').status, 0)
+    assert.equal(fs.existsSync(path.join(f.root, 'cli-input')), false)
   })
 
-  it('blocks a large push when confirmation is cancelled', () => {
-    const fixture = createGuardFixture(32 * 1024, 1024)
-    writeFakeOsascript(fixture.binDir, 1)
-
-    const result = runGuard(fixture)
-
-    assert.equal(result.status, 1)
-    assert.match(result.stderr, /已取消 GitHub 大流量推送/)
+  it('respects cancellation and approval of the same YunBox report', () => {
+    assert.equal(run(fixture(1, 1)).status, 1)
+    assert.equal(run(fixture(1, 0)).status, 0)
   })
 
-  it('shows the exact estimated pack size when estimation completes', () => {
-    const fixture = createGuardFixture(32 * 1024, 1024)
-    const estimatePath = path.join(path.dirname(fixture.repoRoot), 'estimate')
-    writeFakeOsascript(fixture.binDir, 1, { estimatePath })
-
-    const result = runGuard(fixture)
-
-    assert.equal(result.status, 1)
-    const estimate = fs.readFileSync(estimatePath, 'utf-8').trim()
-    assert.match(estimate, /^\d+ KiB$/)
-    assert.doesNotMatch(estimate, /超过/)
+  it('blocks missing, failed and incompatible inspectors without a confirmation bypass', () => {
+    const missing = fixture()
+    fs.unlinkSync(missing.env.WORKSTATION_YUNBOX_BIN)
+    assert.match(run(missing).stderr, /找不到 YunBox CLI/)
+    for (const f of [fixture(2), fixture(127), fixture(1, 0, '')]) {
+      assert.equal(run(f).status, 1)
+      assert.equal(fs.existsSync(path.join(f.root, 'dialog-args')), false)
+    }
   })
 
-  it('shows the GitHub owner and repository in the prompt', () => {
-    const fixture = createGuardFixture(32 * 1024, 1024)
-    const repositoryPath = path.join(path.dirname(fixture.repoRoot), 'repository')
-    writeFakeOsascript(fixture.binDir, 1, { repositoryPath })
-
-    const result = runGuard(fixture)
-
-    assert.equal(result.status, 1)
-    assert.equal(fs.readFileSync(repositoryPath, 'utf-8').trim(), 'github.com/example/repo')
+  it('defers the named hook to a composed repository hook, but checks inside that chain', () => {
+    const f = fixture()
+    writeFile(path.join(f.root, '.git', 'hooks', 'pre-push'), '#!/bin/sh\n# yunbox-pre-push-v1\n')
+    fs.chmodSync(path.join(f.root, '.git', 'hooks', 'pre-push'), 0o755)
+    assert.equal(run(f).status, 0)
+    assert.equal(fs.existsSync(path.join(f.root, 'cli-input')), false)
+    const chained = { ...f, env: { ...f.env, WORKSTATION_YUNBOX_CHAIN: '1' } }
+    assert.equal(run(chained).status, 1)
+    assert.equal(fs.existsSync(path.join(f.root, 'cli-input')), true)
   })
 
-  it('omits direct-URL credentials from every prompt field', () => {
-    const fixture = createGuardFixture(32 * 1024, 1024)
-    const repositoryPath = path.join(path.dirname(fixture.repoRoot), 'repository')
-    const remotePath = path.join(path.dirname(fixture.repoRoot), 'remote')
-    writeFakeOsascript(fixture.binDir, 1, { repositoryPath, remotePath })
-    const remoteUrl = 'https://oauth2:secret@github.com/example/repo.git?access_token=secret#fragment'
-    runGit(fixture.repoRoot, fixture.env, ['config', `url.${fixture.emptyRemoteUrl}.insteadOf`, remoteUrl])
-
-    const result = runGuard(fixture, remoteUrl, remoteUrl)
-
-    assert.equal(result.status, 1)
-    assert.equal(fs.readFileSync(repositoryPath, 'utf-8').trim(), 'github.com/example/repo')
-    assert.equal(fs.readFileSync(remotePath, 'utf-8').trim(), '直接地址')
-  })
-
-  it('bounds estimation at 10 MiB', () => {
-    const fixture = createGuardFixture(11 * 1024 * 1024, 1024)
-    const estimatePath = path.join(path.dirname(fixture.repoRoot), 'estimate')
-    writeFakeOsascript(fixture.binDir, 1, { estimatePath })
-
-    const result = runGuard(fixture)
-
-    assert.equal(result.status, 1)
-    assert.equal(fs.readFileSync(estimatePath, 'utf-8').trim(), '超过 10.0 MiB')
-  })
-
-  it('allows a large push after confirmation', () => {
-    const fixture = createGuardFixture(32 * 1024, 1024)
-    writeFakeOsascript(fixture.binDir, 0)
-
-    const result = runGuard(fixture)
-
-    assert.equal(result.status, 0, result.stderr)
+  it('does not expose credentials from a direct remote URL in the dialog', () => {
+    const f = fixture()
+    const url = 'https://oauth2:secret@github.com/example/repo.git?token=secret#fragment'
+    run(f, url, url)
+    const dialog = fs.readFileSync(path.join(f.root, 'dialog-args'), 'utf8')
+    assert.doesNotMatch(dialog, /secret/)
+    assert.match(dialog, /github.com\/example\/repo/)
+    assert.match(dialog, /直接地址/)
   })
 })

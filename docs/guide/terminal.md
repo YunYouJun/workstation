@@ -68,13 +68,14 @@ Codex Desktop 的内置终端有时会把交互式 shell 的 `TERM` 暴露为 `d
 
 ### GitHub 大 Push 确认
 
-Git 2.55 及以上版本可以通过 named configured hook 注册全局 hook，同时保留仓库自己的 `.git/hooks`。workstation 提供的 `pre-push` 守卫只检查 `github.com` remote；它根据 hook 收到的新旧 object ID 在本地生成 thin pack，超过默认 `900 KiB` 时，在主体 pack 上传前通过 macOS 对话框确认。不超过 `10 MiB` 的 pack 会显示具体估算值；达到估算上限后会提前停止并显示“超过 10 MiB”。取消或无法显示对话框且没有交互终端时，push 会被阻止。
+Workstation 的 `pre-push` 守卫调用 `yunbox inspect --push --stdin`，只检查 `github.com` remote。YunBox 统一负责 Git thin-pack 估算、LFS 候选量、历史文件明细和限额；Workstation 在超限时将报告显示在 macOS 对话框及终端中。取消、无可用交互界面、缺少 CLI 或检查失败都会阻止推送。
 
-如果远端旧 tip 尚未存在于本地对象库，守卫只排除本地可验证的远端对象，并对剩余内容作偏保守估算；它不会把该缺失 OID 传给 `pack-objects`，因此不会仅因远端 tip 尚未 fetch 而将大小误报为“未知”。执行 `git fetch` 后，共享历史更完整，估算通常也会更精确。
+默认预算为 Git pack **900 KiB**、LFS 候选总量 **100 MiB**、单文件原始大小 **10 MiB**。Git 与 LFS 分开排行，各显示最大的 10 个对象和超限标记，覆盖待推送提交的历史版本，包括后来删除的大文件；未提交的构建产物不计入。同一内容去重，不同版本分别统计。原始文件大小不等于压缩后的上传量，LFS 候选量也不等于实际上传量：尚未查询 LFS 远端，已有对象可能跳过。JSON 提供完整明细及精确字节数。
 
-先同步 executable，再预览和启用可选初始化任务：
+先按 [YunBox 安装说明](https://github.com/YunLeFun/yunbox#安装命令行) 安装支持 `inspect` 的 CLI 并加入 PATH（也可设置 `WORKSTATION_YUNBOX_BIN` 为可执行文件绝对路径），再同步适配器、启用可选全局钩子（需要 Git 2.55+）：
 
 ```bash
+yunbox inspect --help
 mkdir -p ~/.local/libexec
 workstation dotfiles chezmoi apply ~/.local/libexec/git-confirm-large-push
 wst init git.large-push-guard
@@ -82,20 +83,26 @@ wst init git.large-push-guard --yes
 git hook list --show-scope pre-push
 ```
 
-阈值故意低于外部工具常见的 `1 MiB` 告警线，为 Git 协议、SSH/HTTPS 和 pack 估算误差留出余量。可按字节或 Git 的 `k`/`m` 后缀调整：
+**使用 Git LFS 的仓库还需要串行包装层。** 多个独立钩子即使前一个失败，Git 仍可能执行后面的上传钩子。先完成 `git lfs install --local`，再在仓库里运行：
 
 ```bash
-git config --global workstation.largePushGuardBytes 900k
+yunbox hook install --guard ~/.local/libexec/git-confirm-large-push
 ```
 
-某个仓库确实不需要守卫时，可以只在该仓库禁用；恢复时删除本地覆盖：
+它保存原钩子，确认通过才执行原钩子，并原样传递参数与 stdin；全局守卫识别包装层后不再重复弹窗。`yunbox hook uninstall` 恢复原钩子。自定义 `core.hooksPath` 需在原管理器中自行串联；包装层不控制其他独立 configured hooks。没有包装层时，全局守卫可阻止主体 Git pack，但不能保证取消后其他 LFS 钩子不会上传。
+
+预算及独立报告：
 
 ```bash
-git config --local hook.workstation-large-push-guard.enabled false
-git config --local --unset hook.workstation-large-push-guard.enabled
+git config --global yunbox.inspectGitBytes 900k
+git config --global yunbox.inspectLfsBytes 100m
+git config --global yunbox.inspectFileBytes 10m
+yunbox inspect --push --json
 ```
 
-`pre-push` 发生前仍会有少量连接握手和 remote refs 查询；守卫阻止的是主体 Git pack，而不是零字节网络策略。`git push --no-verify` 可以主动绕过。Git LFS 使用独立上传流程，目前不计入 pack 阈值。参考 [Git hooks](https://git-scm.com/docs/githooks#_pre_push)、[configured hooks](https://git-scm.com/docs/git-hook) 和 [pack-objects](https://git-scm.com/docs/git-pack-objects)。
+显式设置过的旧配置 `workstation.largePushGuardBytes` 仍优先作为 Git pack 预算。全局钩子可通过 `git config --local hook.workstation-large-push-guard.enabled false` 在当前仓库禁用，恢复时删除该配置；若已安装包装层，还需 `yunbox hook uninstall`。`git push --no-verify` 绕过两者。
+
+连接握手和远端 refs 查询发生在上传前，检查不承诺零网络流量。Git pack 超过 `max(10 MiB, Git 预算)` 后停止估算并报告下界；远端旧对象不在本地时保守估算。完整统计口径和 JSON 接口见 [YunBox 推送检查](https://github.com/YunLeFun/yunbox/blob/main/docs/inspect.md)。
 
 ### 目录跳转
 

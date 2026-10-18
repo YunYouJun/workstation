@@ -359,6 +359,10 @@ function createGitLargePushGuardPlan(): InitTaskPlan {
     messages.push('Run "mkdir -p ~/.local/libexec && workstation dotfiles chezmoi apply ~/.local/libexec/git-confirm-large-push" before enabling the hook.')
   }
 
+  if (!supportsYunboxInspection()) {
+    messages.push('YunBox CLI with "inspect --push --json" support is required; install YunBox and add it to PATH, or set WORKSTATION_YUNBOX_BIN to its executable path.')
+  }
+
   if (messages.length > 0) {
     return {
       taskId: GIT_LARGE_PUSH_GUARD_TASK_ID,
@@ -385,7 +389,8 @@ function createGitLargePushGuardPlan(): InitTaskPlan {
     status: 'ready',
     messages: [
       `Git ${gitVersion} supports named configured hooks, so repository hooks remain intact.`,
-      'The guard checks github.com remotes and asks before the bulk Git pack is uploaded.',
+      'YunBox checks Git pack, LFS candidates and individual files for github.com pushes.',
+      'For repositories using git-lfs, run: yunbox hook install --guard ~/.local/libexec/git-confirm-large-push. This chains approval before the original upload hook.',
     ],
     changes: [
       makeFileChange(
@@ -472,7 +477,21 @@ function verifyGitLargePushGuardPlan(plan: InitTaskPlan): InitTaskVerification {
     verification.messages.push(`verification failed for executable ${displayPath(guardPath)}`)
   }
 
+  if (!supportsYunboxInspection()) {
+    verification.ok = false
+    verification.messages.push('verification failed: compatible YunBox CLI is unavailable')
+  }
+
   return verification
+}
+
+function supportsYunboxInspection() {
+  const result = spawnSync(process.env.WORKSTATION_YUNBOX_BIN || 'yunbox', ['inspect', '--help'], {
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+    timeout: 5000,
+  })
+  return !result.error && result.status === 0 && result.stdout.includes('--push') && result.stdout.includes('--json')
 }
 
 function readGitVersion() {
