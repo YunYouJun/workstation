@@ -30,7 +30,11 @@ function displayDiff(diff: string): string {
 
 /** Read local Git state without contacting a remote. Remote counts reflect the last fetch. */
 export function configurationGitStatus(root: string, id: string) {
-  const head = git(root, ['rev-parse', 'HEAD']).trim()
+  let head = ''
+  try {
+    head = git(root, ['rev-parse', '--verify', 'HEAD']).trim()
+  }
+  catch { /* A new checkout can receive its first reviewed commit. */ }
   const branch = git(root, ['symbolic-ref', '--short', 'HEAD']).trim()
   const status = git(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all'])
   let ahead: number | null = null
@@ -44,7 +48,7 @@ export function configurationGitStatus(root: string, id: string) {
   const outgoing = ahead && ahead > 0 ? git(root, ['log', '--format=%h', '@{upstream}..HEAD']).trim().split('\n') : []
   const outgoingDiff = ahead && ahead > 0 ? displayDiff(git(root, ['diff', '--no-ext-diff', '--no-textconv', '@{upstream}...HEAD', '--'])) : ''
   const outgoingChanges = ahead && ahead > 0 ? git(root, ['diff', '--no-ext-diff', '--no-textconv', '--numstat', '@{upstream}...HEAD', '--']).trim().split('\n').filter(Boolean) : []
-  const diff = git(root, ['diff', '--no-ext-diff', '--no-textconv', 'HEAD', '--'])
+  const diff = git(root, ['diff', '--no-ext-diff', '--no-textconv', ...(head ? ['HEAD'] : []), '--'])
   const paths: { path: string, status: string }[] = []
   const entries = status.split('\0')
   for (let index = 0; index < entries.length; index++) {
@@ -61,7 +65,7 @@ export function configurationGitStatus(root: string, id: string) {
     const stat = fs.lstatSync(target)
     return [entry.path, stat.isFile() && stat.size < 2 * 1024 * 1024 ? contentHash(fs.readFileSync(target, 'utf8')) : 'unsupported']
   })
-  return { id, root, branch, ahead, behind, outgoing, outgoingChanges, outgoingDiff, workingDiff: displayDiff(diff), dirty: paths.length > 0, diverged: (ahead ?? 0) > 0 && (behind ?? 0) > 0, revision: contentHash(JSON.stringify([head, branch, status, diff, untracked])), paths }
+  return { id, root, branch, ahead, behind, outgoing, outgoingChanges, outgoingDiff, workingDiff: displayDiff(diff), dirty: paths.length > 0, diverged: (ahead ?? 0) > 0 && (behind ?? 0) > 0, revision: contentHash(JSON.stringify([head, branch, status, diff, untracked, ahead, behind, outgoing])), paths }
 }
 
 /**

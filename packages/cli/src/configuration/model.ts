@@ -1,13 +1,17 @@
 /** Version 1 display contract. Raw configuration values never cross this boundary. */
 export interface ConfigurationItem {
   id: string
+  sourceId?: string
+  audience?: 'public' | 'personal' | 'work' | 'unclassified'
+  resource?: string
+  competingSources?: string[]
   title: string
   kind: 'mcp' | 'skill' | 'instructions' | 'terminal'
   owner: 'user' | 'project' | 'installer'
   origin: 'public' | 'private' | 'local'
   localPath: string
   sourcePath?: string
-  status: 'synced' | 'local-modified' | 'source-modified' | 'conflict' | 'first-adoption' | 'unmanaged' | 'read-only' | 'error'
+  status: 'synced' | 'local-modified' | 'source-modified' | 'conflict' | 'first-adoption' | 'unmanaged' | 'read-only' | 'error' | 'ownership-conflict'
   revision: string
   local: string
   source: string
@@ -39,5 +43,5 @@ export interface ConfigurationDecision {
 export interface ConfigurationPreview {
   version: 1
   planId: string
-  changes: { path: string, direction: 'to-local' | 'to-source', before: string, after: string, deletion: boolean }[]
+  changes: { path: string, direction: 'to-local' | 'to-source' | 'to-backup', before: string, after: string, deletion: boolean }[]
 }

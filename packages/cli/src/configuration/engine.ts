@@ -1,5 +1,6 @@
 import type { SkillsAuditReport } from '../skills'
 import type { ConfigurationDecision, ConfigurationItem, ConfigurationPreview, ConfigurationSkillsAudit } from './model'
+import type { ConfigurationSource, ConfigurationTarget } from './repositories'
 import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
@@ -14,20 +15,24 @@ import { atomicWrite, contentHash, withFileLock } from '../private/safe-file'
 import { parseTomlDocument } from '../private/toml'
 import { isSafeSkillName, workstationSkillLockPath } from '../skill-provenance'
 import { auditSkills, skillsRegistryLockPath } from '../skills'
+import { decryptConfiguration, encryptConfiguration } from './backup'
 import { commitConfiguration, configurationGitStatus, transportConfiguration } from './git'
+import { ConfigurationRepositoryRegistry, repositoryFile } from './repositories'
 
 type Value = Record<string, unknown>
 interface Snapshot { path: string, content: string | null, revision: string, mode?: number, identity?: string }
 interface Entry {
   item: ConfigurationItem
+  sourceRoot?: string
+  manifestPath?: string
   local: Snapshot
   source?: Snapshot
   server?: string
   localValue: unknown
   sourceValue: unknown
 }
-interface Change { before: Snapshot, after: string | null, appliedRevision?: string, direction: 'to-local' | 'to-source' }
-interface Plan { version: 1, id: string, createdAt?: string, reads: Snapshot[], skillOwnershipPaths?: string[], changes: Change[], baselines: Record<string, string>, previousBaselines: Record<string, string>, state: 'preview' | 'applying' | 'applied' | 'failed' | 'restored', error?: string }
+interface Change { before: Snapshot, after: string | null, appliedRevision?: string, restoredRevision?: string, direction: 'to-local' | 'to-source' | 'to-backup' }
+interface Plan { sourceBindings?: Record<string, string>, backupBinding?: string, registryRevision?: string, backupTarget?: string, claims?: Record<string, string>, version: 1, id: string, createdAt?: string, reads: Snapshot[], skillOwnershipPaths?: string[], changes: Change[], baselines: Record<string, string>, previousBaselines: Record<string, string>, state: 'preview' | 'applying' | 'applied' | 'failed' | 'restoring' | 'restored', error?: string }
 
 function localPath(value: string): string {
   const absolute = path.resolve(value)
@@ -263,12 +268,17 @@ export class ConfigurationEngine {
   readonly repo: string
   readonly manifest: string
   readonly state: string
+  readonly registry: ConfigurationRepositoryRegistry
   constructor(options: { home?: string, repo?: string, manifest?: string, state?: string } = {}) {
     this.home = localPath(options.home ?? getHomeDir())
     this.codex = options.home ? path.join(this.home, '.codex') : localPath(process.env.CODEX_HOME ?? path.join(this.home, '.codex'))
     this.repo = localPath(options.repo ?? getRepoRoot())
     this.manifest = localPath(options.manifest ?? defaultManifestPath())
     this.state = options.state ?? path.join(this.home, '.local/state/workstation/configuration-v1')
+    this.registry = new ConfigurationRepositoryRegistry(this.state, [
+      { id: 'public', name: 'Public configuration', kind: 'dotfiles', audience: 'public', root: this.repo, enabled: true },
+      ...(fs.existsSync(this.manifest) ? [{ id: 'private', name: 'Private configuration', kind: 'overlay' as const, audience: 'unclassified' as const, root: repoRootFromManifest(this.manifest), manifest: path.relative(repoRootFromManifest(this.manifest), this.manifest), enabled: true }] : []),
+    ])
   }
 
   private baselinePath(): string { return path.join(this.state, 'baselines.json') }
@@ -321,12 +331,15 @@ export class ConfigurationEngine {
     }
   }
 
-  private entries(audit: SkillsAuditReport | null = this.skillsAudit().report ?? null): Entry[] {
+  private sourceEntries(sourceConfig: ConfigurationSource, audit: SkillsAuditReport | null): Entry[] {
+    const manifestPath = sourceConfig.kind === 'overlay' ? repositoryFile(sourceConfig.root, sourceConfig.manifest ?? 'config/sync-manifest.json') : this.manifest
+    const sourceKey = (id: string) => ['public', 'private'].includes(sourceConfig.id) ? id : `${sourceConfig.id}::${id}`
     const entries: Entry[] = []
     const baselines = this.baselines()
     const add = (id: string, title: string, kind: ConfigurationItem['kind'], local: Snapshot, source?: Snapshot, server?: string, owner: ConfigurationItem['owner'] = 'user', origin: ConfigurationItem['origin'] = 'public') => {
-      const localValue = server ? portable(managedMcp(record(parseTomlDocument(local.content ?? '').mcp_servers)[server]), repoRootFromManifest(this.manifest)) : local.content
-      const sourceValue = server ? portable(managedMcp(record(parseTomlDocument(source?.content ?? '').mcp_servers)[server]), repoRootFromManifest(this.manifest)) : source?.content
+      id = sourceKey(id)
+      const localValue = server ? portable(managedMcp(record(parseTomlDocument(local.content ?? '').mcp_servers)[server]), sourceConfig.root) : local.content
+      const sourceValue = server ? portable(managedMcp(record(parseTomlDocument(source?.content ?? '').mcp_servers)[server]), sourceConfig.root) : source?.content
       const status = owner !== 'user' || !writable(local.path) || (source && !writable(source.path))
         ? 'read-only'
         : !source || (server && sourceValue === undefined && !baselines[id])
@@ -338,8 +351,11 @@ export class ConfigurationEngine {
                   : digest(localValue) === baselines[id]
                     ? 'source-modified'
                     : digest(sourceValue) === baselines[id] ? 'local-modified' : 'conflict'
-      entries.push({ local, source, server, localValue, sourceValue, item: {
+      entries.push({ local, source, server, localValue, sourceValue, sourceRoot: sourceConfig.root, manifestPath: sourceConfig.kind === 'overlay' ? manifestPath : undefined, item: {
         id,
+        sourceId: source ? sourceConfig.id : undefined,
+        audience: source ? sourceConfig.audience : undefined,
+        resource: `${local.path}${server ? `#mcp:${server}` : ''}`,
         title,
         kind,
         owner,
@@ -347,24 +363,24 @@ export class ConfigurationEngine {
         localPath: local.path,
         sourcePath: source?.path,
         status,
-        revision: digest([local.revision, source?.revision, baselines[id]]),
+        revision: digest([sourceConfig, local.revision, source?.revision, baselines[id]]),
         local: displayDifference(localValue, sourceValue),
         source: displayDifference(sourceValue, localValue),
         fields: server ? changedFields(localValue, sourceValue) : textFields(localValue, sourceValue),
         scope: 'global',
         ...(kind !== 'terminal' ? { client: kind === 'skill' && within(path.join(this.home, '.agents/skills'), local.path) ? 'shared' : 'codex' } : {}),
         manager: owner === 'installer' ? 'unknown' : source ? 'workstation' : 'unknown',
-        provenance: { label: source ? origin === 'private' ? 'Workstation private manifest' : 'Workstation configuration source' : 'Local configuration; manager unknown', path: source ? origin === 'private' ? this.manifest : source.path : local.path },
+        provenance: { label: source ? origin === 'private' ? 'Workstation private manifest' : 'Workstation configuration source' : 'Local configuration; manager unknown', path: source ? origin === 'private' ? manifestPath : source.path : local.path },
         ...(owner !== 'user' ? { management: owner === 'installer' ? 'Use the original skill/plugin installer' : 'Manage through the project configuration' } : {}),
       } })
     }
     const errorRow = (id: string, title: string, kind: ConfigurationItem['kind'], file: string) => {
-      entries.push({ local: { path: file, content: null, revision: '' }, localValue: null, sourceValue: null, item: { id, title, kind, owner: 'user', origin: 'local', localPath: file, status: 'error', revision: '', local: '(unavailable)', source: '(unavailable)', fields: [], scope: 'global', client: kind === 'terminal' ? undefined : kind === 'skill' && within(path.join(this.home, '.agents/skills'), file) ? 'shared' : 'codex', manager: 'unknown', provenance: { label: 'Configuration scan unavailable', path: file }, management: 'Scan failed. Check permissions, links and syntax; no writes are available.' } })
+      entries.push({ local: { path: file, content: null, revision: '' }, localValue: null, sourceValue: null, item: { id: sourceKey(id), sourceId: sourceConfig.id, audience: sourceConfig.audience, title, kind, owner: 'user', origin: 'local', localPath: file, status: 'error', revision: '', local: '(unavailable)', source: '(unavailable)', fields: [], scope: 'global', client: kind === 'terminal' ? undefined : kind === 'skill' && within(path.join(this.home, '.agents/skills'), file) ? 'shared' : 'codex', manager: 'unknown', provenance: { label: 'Configuration scan unavailable', path: file }, management: 'Scan failed. Check permissions, links and syntax; no writes are available.' } })
     }
     const codex = this.codex
-    for (const entry of dotfiles.filter(entry => ['.zshrc', '.config/starship.toml', '.config/ghostty/config', '.codex/AGENTS.md'].includes(entry.target))) {
+    for (const entry of (sourceConfig.kind === 'dotfiles' ? dotfiles : []).filter(entry => ['.zshrc', '.config/starship.toml', '.config/ghostty/config', '.codex/AGENTS.md'].includes(entry.target))) {
       try {
-        add(`file:${entry.target}`, entry.description ?? entry.target, entry.target.endsWith('AGENTS.md') ? 'instructions' : 'terminal', snapshot(path.join(this.home, entry.target)), snapshot(path.join(this.repo, entry.source)))
+        add(`file:${entry.target}`, entry.description ?? entry.target, entry.target.endsWith('AGENTS.md') ? 'instructions' : 'terminal', snapshot(path.join(this.home, entry.target)), snapshot(path.join(sourceConfig.root, entry.source)))
       }
       catch {
         errorRow(`file:${entry.target}`, entry.description ?? entry.target, 'terminal', path.join(this.home, entry.target))
@@ -372,56 +388,60 @@ export class ConfigurationEngine {
     }
     let manifest: ReturnType<typeof readPrivateManifest> | undefined
     try {
-      if (fs.existsSync(this.manifest)) {
-        assertPath(this.manifest)
-        manifest = readPrivateManifest(this.manifest)
+      if (sourceConfig.kind === 'overlay' && fs.existsSync(this.registry.file) && !fs.existsSync(manifestPath))
+        throw new Error('Missing registered manifest')
+      if (sourceConfig.kind === 'overlay' && fs.existsSync(manifestPath)) {
+        assertPath(manifestPath)
+        manifest = readPrivateManifest(manifestPath)
         if (validatePrivateManifest(manifest).length)
           throw new Error('Invalid private manifest')
       }
     }
     catch {
       manifest = undefined
-      errorRow('manifest', 'Private configuration source', 'mcp', this.manifest)
+      errorRow('manifest', 'Private configuration source', 'mcp', manifestPath)
     }
-    try {
-      const local = snapshot(path.join(codex, 'config.toml'))
-      const localDoc = parseTomlDocument(local.content ?? '')
-      const sources = new Map<string, Snapshot>()
-      const protectedSources = new Set<string>()
-      let fallbackSource: Snapshot | undefined
-      if (manifest) {
-        for (const fragment of privateMcpFragments(manifest).filter(fragment => fragment.format === 'toml-codex')) {
-          assertAllowedRead(fragment.path, manifest.workstationOverlay ?? {})
-          const source = snapshot(resolveRepoPath(repoRootFromManifest(this.manifest), fragment.path))
-          if (source.content === null)
-            throw new Error('Missing declared fragment')
-          if (fragment.syncMode && fragment.syncMode !== 'install')
-            protectedSources.add(source.path)
-          else fallbackSource ??= source
-          for (const server of Object.keys(record(parseTomlDocument(source.content).mcp_servers))) {
-            if (sources.has(server))
-              throw new Error('Duplicate source server')
-            sources.set(server, source)
+    if (sourceConfig.kind === 'overlay') {
+      try {
+        const local = snapshot(path.join(codex, 'config.toml'))
+        const localDoc = parseTomlDocument(local.content ?? '')
+        const sources = new Map<string, Snapshot>()
+        const protectedSources = new Set<string>()
+        let fallbackSource: Snapshot | undefined
+        if (manifest) {
+          for (const fragment of privateMcpFragments(manifest).filter(fragment => fragment.format === 'toml-codex')) {
+            assertAllowedRead(fragment.path, manifest.workstationOverlay ?? {})
+            const source = snapshot(resolveRepoPath(sourceConfig.root, fragment.path))
+            if (source.content === null)
+              throw new Error('Missing declared fragment')
+            if (fragment.syncMode && fragment.syncMode !== 'install')
+              protectedSources.add(source.path)
+            else fallbackSource ??= source
+            for (const server of Object.keys(record(parseTomlDocument(source.content).mcp_servers))) {
+              if (sources.has(server))
+                throw new Error('Duplicate source server')
+              sources.set(server, source)
+            }
+          }
+        }
+        for (const server of new Set([...Object.keys(record(localDoc.mcp_servers)), ...sources.keys(), ...Object.keys(baselines).filter(id => id.startsWith(sourceKey('mcp:'))).map(id => id.slice(sourceKey('mcp:').length))]))
+          add(`mcp:${server}`, server, 'mcp', local, sources.get(server) ?? (baselines[sourceKey(`mcp:${server}`)] || !fs.existsSync(this.registry.file) ? fallbackSource : undefined), server, 'user', 'private')
+        for (const entry of entries) {
+          if (entry.source && protectedSources.has(entry.source.path)) {
+            entry.item.status = 'read-only'
+            entry.item.management = 'This source is declared inventory-only in the private manifest'
+          }
+        }
+        for (const plugin of Object.keys(record(localDoc.plugins))) {
+          if (record(record(localDoc.plugins)[plugin]).mcp_servers) {
+            add(`plugin:${plugin}`, plugin, 'mcp', local, undefined, undefined, 'installer')
+            Object.assign(entries.at(-1)!.item, { manager: 'native-plugin', provenance: { label: 'Codex native plugin configuration', path: local.path } })
           }
         }
       }
-      for (const server of new Set([...Object.keys(record(localDoc.mcp_servers)), ...sources.keys(), ...Object.keys(baselines).filter(id => id.startsWith('mcp:')).map(id => id.slice(4))]))
-        add(`mcp:${server}`, server, 'mcp', local, sources.get(server) ?? fallbackSource, server, 'user', 'private')
-      for (const entry of entries) {
-        if (entry.source && protectedSources.has(entry.source.path)) {
-          entry.item.status = 'read-only'
-          entry.item.management = 'This source is declared inventory-only in the private manifest'
-        }
+      catch {
+        errorRow('mcp-scan', 'Codex MCP scan', 'mcp', path.join(codex, 'config.toml'))
       }
-      for (const plugin of Object.keys(record(localDoc.plugins))) {
-        if (record(record(localDoc.plugins)[plugin]).mcp_servers) {
-          add(`plugin:${plugin}`, plugin, 'mcp', local, undefined, undefined, 'installer')
-          Object.assign(entries.at(-1)!.item, { manager: 'native-plugin', provenance: { label: 'Codex native plugin configuration', path: local.path } })
-        }
-      }
-    }
-    catch {
-      errorRow('mcp-scan', 'Codex MCP scan', 'mcp', path.join(codex, 'config.toml'))
     }
     const protectedSkill = (target: string) => audit?.managedRoots.find(root => within(root.path, target))
       ?? audit?.skills.find(skill => within(path.dirname(skill.path), target) && ['apm', 'skills-cli', 'native-plugin', 'external'].includes(skill.manager))
@@ -444,7 +464,7 @@ export class ConfigurationEngine {
             continue
           }
           assertAllowedRead(skill.source.path, manifest.workstationOverlay ?? {})
-          const sourceRoot = resolveRepoPath(repoRootFromManifest(this.manifest), skill.source.path)
+          const sourceRoot = resolveRepoPath(sourceConfig.root, skill.source.path)
           const files = new Set([...treeFiles(sourceRoot), ...treeFiles(targetRoot)])
           for (const file of files) {
             add(`skill:${path.relative(this.home, path.join(targetRoot, file))}`, `${name}/${file}`, 'skill', snapshot(path.join(targetRoot, file)), snapshot(path.join(sourceRoot, file)), undefined, 'user', 'private')
@@ -501,11 +521,11 @@ export class ConfigurationEngine {
       // Private manifest ownership remains authoritative for reviewed user trees.
       if (entry.source) {
         entry.item.manager = 'workstation'
-        entry.item.provenance = { label: 'Workstation private manifest', path: this.manifest }
+        entry.item.provenance = { label: 'Workstation private manifest', path: manifestPath }
       }
       else if (entry.item.id.startsWith('installed-skill:') && !owner && (!instance || instance.manager === 'unknown') && !linked(entry.item.localPath)) {
         entry.item.manager = 'workstation'
-        entry.item.provenance = { label: 'Workstation private manifest', path: this.manifest }
+        entry.item.provenance = { label: 'Workstation private manifest', path: manifestPath }
       }
       else if (entry.item.owner === 'installer' && !owner && !instance) {
         if (within(path.join(codex, 'skills/.system'), entry.item.localPath)) {
@@ -521,13 +541,60 @@ export class ConfigurationEngine {
     return entries
   }
 
+  private entries(audit: SkillsAuditReport | null = this.skillsAudit().report ?? null): Entry[] {
+    const registry = this.registry.read()
+    const entries = registry.sources.filter(source => source.enabled).flatMap(source => this.sourceEntries(source, audit))
+    const managed = entries.filter(entry => entry.source)
+    const resources = new Map<string, Entry[]>()
+    for (const entry of managed) {
+      const key = entry.item.resource!
+      resources.set(key, [...(resources.get(key) ?? []), entry])
+    }
+    for (const [resource, candidates] of resources) {
+      const claimed = registry.ownership[resource]
+      if (candidates.length > 1 || (claimed && claimed !== candidates[0].item.sourceId)) {
+        for (const entry of candidates) {
+          entry.item.competingSources = candidates.map(candidate => candidate.item.sourceId!)
+          if (claimed !== entry.item.sourceId) {
+            entry.item.status = 'ownership-conflict'
+            entry.item.management = 'Select the owning source before writing. Configuration never moves between audiences automatically.'
+          }
+        }
+      }
+    }
+    // Each local-only observation appears once; managed sources carry their own stable IDs.
+    const seen = new Set<string>()
+    return entries.filter((entry) => {
+      if (entry.source)
+        return true
+      const key = `${entry.item.localPath}#${entry.server ?? entry.item.id.split('::').at(-1)}`
+      if (managed.some(other => other.local.path === entry.local.path && other.server === entry.server) || seen.has(key))
+        return false
+      seen.add(key)
+      return true
+    })
+  }
+
+  /** Register existing checkouts and reserved backup targets without applying configuration. */
+  repositoryRegistry() { return this.registry.read() }
+
+  configureRepositories(input: Parameters<ConfigurationRepositoryRegistry['update']>[0]) {
+    if (input.action === 'claim') {
+      const entries = this.entries().filter(entry => entry.item.resource === input.resource && entry.source)
+      const selected = entries.find(entry => entry.item.sourceId === input.sourceId)
+      if (!selected || entries.some(entry => entry.item.audience !== selected.item.audience))
+        throw new Error('Repository ownership cannot transfer between public, personal and work scopes')
+    }
+    return this.registry.update(input)
+  }
+
   private skillOwnershipPaths(): string[] {
     return [path.join(this.home, '.apm/apm.lock.yaml'), skillsRegistryLockPath(this.home), workstationSkillLockPath(this.home)]
   }
 
   private skillPlanRoots(plan: Plan): string[] {
     const roots = new Set<string>()
-    for (const id of Object.keys(plan.baselines).filter(id => id.startsWith('skill:'))) {
+    for (const id of Object.keys(plan.baselines).map(id => id.split('::').at(-1)!).filter(id => id.startsWith('skill:'))) {
       const file = path.resolve(this.home, id.slice('skill:'.length))
       for (const root of [path.join(this.home, '.agents/skills'), path.join(this.codex, 'skills')]) {
         if (within(root, file)) {
@@ -559,8 +626,100 @@ export class ConfigurationEngine {
     }
   }
 
+  private backupPath(target: ConfigurationTarget): string {
+    if (!target.root)
+      throw new Error('Backup target is reserved; connect an existing checkout first')
+    return repositoryFile(target.root, `${target.directory}/configuration.backup.json`)
+  }
+
+  private backupBaselinesPath(): string { return path.join(this.state, 'backup-baselines.json') }
+
+  private declaredBackupPath(source: ConfigurationSource, file: string): { destination: string, manifest?: string } {
+    const destination = repositoryFile(source.root, file)
+    if (source.kind === 'dotfiles') {
+      if (!dotfiles.some(entry => ['.zshrc', '.config/starship.toml', '.config/ghostty/config', '.codex/AGENTS.md'].includes(entry.target) && entry.source === file))
+        throw new Error('Backup file is not declared by its original source')
+      return { destination }
+    }
+    const manifestPath = repositoryFile(source.root, source.manifest ?? 'config/sync-manifest.json')
+    const manifest = readPrivateManifest(manifestPath)
+    if (validatePrivateManifest(manifest).length)
+      throw new Error('Backup source manifest is invalid')
+    assertAllowedRead(file, manifest.workstationOverlay ?? {})
+    const fragment = privateMcpFragments(manifest).some(fragment => fragment.format === 'toml-codex' && (!fragment.syncMode || fragment.syncMode === 'install') && fragment.path === file)
+    const skill = privateSkillInstalls(manifest).some(skill => skill.source.type === 'local' && skill.source.path && file.startsWith(`${skill.source.path}/`)
+      && !file.slice(skill.source.path.length + 1).split('/').some(part => part.startsWith('.') || ['node_modules', '__pycache__', 'cache', 'logs', 'auth.json', 'credentials.json', 'sessions', 'history.jsonl'].includes(part)))
+    if (!fragment && !skill)
+      throw new Error('Backup file is not declared by its original source')
+    return { destination, manifest: manifestPath }
+  }
+
+  /** Encrypt allowlisted source files, or restore a verified archive back to its original sources. */
+  backupPreview(input: { targetId?: string, action?: string, resolution?: string, revision?: string }): ConfigurationPreview {
+    const registry = this.registry.read()
+    if (registry.revision !== input.revision)
+      throw new Error('Repository registry changed. Refresh before backing up.')
+    const target = registry.targets.find(target => target.id === input.targetId)
+    if (!target || target.driver !== 'workstation' || !['save', 'restore'].includes(input.action ?? ''))
+      throw new Error('Backup target or action is unavailable')
+    const passphrase = process.env[target.keyEnvironment ?? '']
+    if (!passphrase)
+      throw new Error('Backup passphrase environment variable is unavailable on this host')
+    const backup = snapshot(this.backupPath(target))
+    const selectedEntries = this.entries().filter(entry => target.sourceIds.includes(entry.item.sourceId!))
+    const entries = selectedEntries.filter(entry => entry.source)
+    if (!target.sourceIds.length || target.sourceIds.some(id => !registry.sources.some(source => source.id === id && source.enabled && (source.audience === 'public' || source.audience === target.audience))))
+      throw new Error('Backup requires enabled configuration sources')
+    if (input.action === 'save' && selectedEntries.some(entry => ['error', 'ownership-conflict', 'read-only'].includes(entry.item.status)))
+      throw new Error('Backup source ownership must be resolved before backing up or restoring')
+    const files = new Map<string, Entry>()
+    for (const entry of entries) files.set(entry.source!.path, entry)
+    if (input.action === 'save' && !files.size)
+      throw new Error('Backup contains no declared configuration files')
+    const baseline = snapshot(this.backupBaselinesPath())
+    const remembered = JSON.parse(baseline.content ?? '{}') as Record<string, string>
+    const plan: Plan = { version: 1, id: randomUUID(), createdAt: new Date().toISOString(), state: 'preview', registryRevision: registry.revision, backupTarget: target.id, backupBinding: this.targetBinding(target), sourceBindings: Object.fromEntries(registry.sources.filter(source => target.sourceIds.includes(source.id)).map(source => [source.id, this.sourceBinding(source)])), reads: [snapshot(this.registry.file), backup, baseline], changes: [], baselines: {}, previousBaselines: this.baselines() }
+    for (const entry of files.values()) {
+      plan.reads.push(entry.source!)
+      if (entry.manifestPath)
+        plan.reads.push(snapshot(entry.manifestPath))
+    }
+    if (input.action === 'save') {
+      if (backup.content !== null && remembered[target.id] !== contentHash(backup.content) && input.resolution !== 'replace')
+        throw new Error('Backup changed in the repository. Restore it or explicitly review replacing it; both versions are preserved in recovery history.')
+      const archive = { version: 1 as const, audience: target.audience, files: [...files.values()].map(entry => ({ sourceId: entry.item.sourceId!, sourceAudience: entry.item.audience as 'public' | 'personal' | 'work', path: path.relative(entry.sourceRoot!, entry.source!.path), content: entry.source!.content })) }
+      plan.changes.push({ before: backup, after: encryptConfiguration(archive, passphrase), direction: 'to-backup' })
+    }
+    else {
+      if (!backup.content)
+        throw new Error('Backup archive is missing')
+      const archive = decryptConfiguration(backup.content, passphrase)
+      if (archive.audience !== target.audience)
+        throw new Error('Backup audience does not match this target')
+      const seen = new Set<string>()
+      for (const file of archive.files) {
+        const source = registry.sources.find(source => source.id === file.sourceId && target.sourceIds.includes(source.id))
+        if (!source || file.sourceAudience !== source.audience || (source.audience !== 'public' && source.audience !== target.audience))
+          throw new Error('Backup source does not belong to this target')
+        const { destination, manifest } = this.declaredBackupPath(source, file.path)
+        const before = snapshot(destination)
+        if (manifest)
+          plan.reads.push(snapshot(manifest))
+        plan.reads.push(before)
+        if (seen.has(destination))
+          throw new Error('Backup file is not declared by its original source')
+        seen.add(destination)
+        if (before.content !== file.content)
+          plan.changes.push({ before, after: file.content, direction: 'to-source' })
+      }
+    }
+    this.save(this.planPath(plan.id), plan)
+    return this.present(plan)
+  }
+
   private repositories(): { id: string, root: string }[] {
-    return [{ id: 'public', root: this.repo }, ...(fs.existsSync(this.manifest) ? [{ id: 'private', root: repoRootFromManifest(this.manifest) }] : [])]
+    const registry = this.registry.read()
+    return [...registry.sources.map(source => ({ id: source.id, root: source.root })), ...registry.targets.filter(target => target.root && target.driver === 'workstation').map(target => ({ id: `target:${target.id}`, root: target.root! }))]
   }
 
   /** Unified display-safe repository states, including errors and unknown upstreams. */
@@ -578,20 +737,29 @@ export class ConfigurationEngine {
 
   /** Explicit commit or transport, separate from saving configuration. */
   gitAction(input: { repository?: string, revision?: string, action?: string, paths?: string[], message?: string }) {
+    return withFileLock(this.registry.file, false, () => this.performGitAction(input))
+  }
+
+  private performGitAction(input: { repository?: string, revision?: string, action?: string, paths?: string[], message?: string }) {
     const repo = this.repositories().find(repo => repo.id === input.repository)
     if (!repo || typeof input.revision !== 'string')
       throw new Error('Unknown repository or missing review revision')
     if (input.action === 'commit') {
-      const allowed = this.entries().filter(entry => entry.item.owner === 'user' && entry.item.status !== 'error').flatMap(entry => entry.source ? [entry.source.path] : [])
+      const target = this.registry.read().targets.find(target => `target:${target.id}` === repo.id)
+      if (target?.driver === 'external')
+        throw new Error('Repository external backups are managed by their original application')
+      const allowed = target ? [this.backupPath(target)] : this.entries().filter(entry => entry.item.owner === 'user' && entry.item.status !== 'error').flatMap(entry => entry.source ? [entry.source.path] : [])
       return { version: 1, repository: commitConfiguration(repo.root, repo.id, input.revision, input.paths ?? [], allowed, input.message ?? '') }
     }
+    if (this.registry.read().targets.some(target => `target:${target.id}` === repo.id && target.driver === 'external'))
+      throw new Error('Repository external backups are managed by their original application')
     if (input.action !== 'fetch' && input.action !== 'publish')
       throw new Error('Invalid Git operation')
     return { version: 1, repository: transportConfiguration(repo.root, repo.id, input.action, input.revision) }
   }
 
   /** Read-only inventory. A failed scan never becomes an empty synchronized result. */
-  inspect(projectPath?: string): { version: 1, items: ConfigurationItem[], skillsAudit: ConfigurationSkillsAudit } {
+  inspect(projectPath?: string): { version: 1, items: ConfigurationItem[], skillsAudit: ConfigurationSkillsAudit, registry: ReturnType<ConfigurationRepositoryRegistry['read']> } {
     const audit = this.skillsAudit(projectPath)
     const items = this.entries(audit.report ?? null).map(entry => entry.item)
     if (projectPath) {
@@ -608,15 +776,40 @@ export class ConfigurationEngine {
         continue
       items.push({ id: `audit-skill:${skill.path}`, title: skill.name, kind: 'skill', owner: skill.scope === 'project' ? 'project' : 'installer', origin: 'local', localPath: skill.path, status: 'read-only', revision: '', local: '(read-only audit inventory)', source: '(managed through the original tool)', fields: [], client: skill.client, scope: skill.scope, manager: skill.manager, provenance: skill.provenance, management: skill.scope === 'project' ? 'Manage this Skill in the project repository.' : 'Use the original Skill manager; audit inventory does not authorize writes.' })
     }
-    return { version: 1, items, skillsAudit: audit.display }
+    return { version: 1, items, skillsAudit: audit.display, registry: this.registry.read() }
+  }
+
+  private sourceBinding(source: ConfigurationSource): string {
+    return digest([source.id, source.root, source.kind, source.manifest, source.audience])
+  }
+
+  private targetBinding(target: ConfigurationTarget): string {
+    return digest([target.id, target.root, target.directory, target.driver, target.audience])
+  }
+
+  private assertRecoveryBindings(plan: Plan): void {
+    const registry = this.registry.read()
+    for (const [id, expected] of Object.entries(plan.sourceBindings ?? {})) {
+      const source = registry.sources.find(source => source.id === id)
+      if (!source || this.sourceBinding(source) !== expected)
+        throw new Error('Repository ownership changed. Review the recovery destination.')
+    }
+    if (Object.entries(plan.claims ?? {}).some(([resource, sourceId]) => registry.ownership[resource] && registry.ownership[resource] !== sourceId))
+      throw new Error('Repository ownership changed. Review the recovery destination.')
+    if (plan.backupBinding && plan.changes.some(change => change.direction === 'to-backup')) {
+      const target = registry.targets.find(target => target.id === plan.backupTarget)
+      if (!target || this.targetBinding(target) !== plan.backupBinding)
+        throw new Error('Repository backup target changed. Review the recovery destination.')
+    }
   }
 
   /** Freeze source/target revisions and keep raw contents in protected local state. */
   preview(decisions: ConfigurationDecision[]): ConfigurationPreview {
     if (!Array.isArray(decisions) || !decisions.length || decisions.length > 1000)
       throw new Error('Select configuration items')
+    const registry = this.registry.read()
     const entries = this.entries()
-    const plan: Plan = { version: 1, id: randomUUID(), createdAt: new Date().toISOString(), state: 'preview', reads: [snapshot(this.manifest)], changes: [], baselines: {}, previousBaselines: this.baselines() }
+    const plan: Plan = { version: 1, id: randomUUID(), createdAt: new Date().toISOString(), state: 'preview', registryRevision: registry.revision, sourceBindings: {}, claims: {}, reads: [snapshot(this.registry.file)], changes: [], baselines: {}, previousBaselines: this.baselines() }
     const next = new Map<string, Change>()
     const seen = new Set<string>()
     for (const decision of decisions) {
@@ -628,7 +821,7 @@ export class ConfigurationEngine {
       const entry = entries.find(entry => entry.item.id === decision.id)
       if (!entry || entry.item.revision !== decision.revision)
         throw new Error('Configuration changed. Refresh and review again.')
-      if (!entry.source || ['error', 'read-only'].includes(entry.item.status))
+      if (!entry.source || ['error', 'read-only', 'ownership-conflict'].includes(entry.item.status))
         throw new Error('Configuration is not writable or managed')
       if (!['local', 'source', 'merge'].includes(decision.choice))
         throw new Error('Invalid decision')
@@ -638,6 +831,12 @@ export class ConfigurationEngine {
           if (!plan.reads.some(read => read.path === file))
             plan.reads.push(snapshot(file))
         }
+      }
+      if (entry.manifestPath)
+        plan.reads.push(snapshot(entry.manifestPath))
+      if (entry.item.resource && entry.item.sourceId) {
+        plan.claims![entry.item.resource] = entry.item.sourceId
+        plan.sourceBindings![entry.item.sourceId] = this.sourceBinding(registry.sources.find(source => source.id === entry.item.sourceId)!)
       }
       plan.reads.push(entry.local, entry.source)
       let value = decision.choice === 'local' ? entry.localValue : entry.sourceValue
@@ -683,7 +882,7 @@ export class ConfigurationEngine {
           }
           after = `${base.trimEnd()}${base.trim() && block ? '\n\n' : ''}${block}`
           if (direction === 'to-local')
-            after = after.replaceAll('{{WORKSTATION_PRIVATE_REPO_ROOT}}', JSON.stringify(repoRootFromManifest(this.manifest)).slice(1, -1))
+            after = after.replaceAll('{{WORKSTATION_PRIVATE_REPO_ROOT}}', JSON.stringify(entry.sourceRoot!).slice(1, -1))
           parseTomlDocument(after)
         }
         if (after !== null && /starship\.toml$/.test(target.path))
@@ -704,7 +903,7 @@ export class ConfigurationEngine {
   }
 
   private present(plan: Plan): ConfigurationPreview {
-    return { version: 1, planId: plan.id, changes: plan.changes.map(change => ({ path: change.before.path, direction: change.direction, before: displayDifference(change.before.content, change.after), after: displayDifference(change.after, change.before.content), deletion: change.after === null })) }
+    return { version: 1, planId: plan.id, changes: plan.changes.map(change => ({ path: change.before.path, direction: change.direction, before: change.direction === 'to-backup' ? '(encrypted backup)' : displayDifference(change.before.content, change.after), after: change.direction === 'to-backup' ? '(encrypted backup)' : displayDifference(change.after, change.before.content), deletion: change.after === null })) }
   }
 
   private locked<T>(paths: string[], callback: () => T): T {
@@ -747,14 +946,16 @@ export class ConfigurationEngine {
   /** Apply a reviewed plan with a recovery journal that survives partial failure. */
   apply(id: string): { version: 1, planId: string, state: Plan['state'], error?: string } {
     const initial = this.load(id)
-    return this.locked([this.baselinePath(), this.planPath(id), ...initial.reads.map(read => read.path)], () => {
+    return this.locked([this.registry.file, this.baselinePath(), this.planPath(id), ...initial.reads.map(read => read.path)], () => {
       const plan = this.load(id)
       if (plan.state === 'applied')
         return { version: 1, planId: id, state: plan.state }
       if (plan.state !== 'preview')
         throw new Error('Plan is not applicable; inspect recovery first')
-      if (!equal(this.baselines(), plan.previousBaselines))
+      if (Object.keys(plan.baselines).some(key => this.baselines()[key] !== plan.previousBaselines[key]))
         throw new Error('Baseline changed. Refresh and preview again.')
+      if (plan.registryRevision && this.registry.read().revision !== plan.registryRevision)
+        throw new Error('Repository registry changed. Refresh and preview again.')
       for (const read of plan.reads) {
         if (snapshot(read.path).revision !== read.revision)
           throw new Error('Configuration changed. Refresh and preview again.')
@@ -768,8 +969,18 @@ export class ConfigurationEngine {
         for (const change of plan.changes) {
           this.write(change)
           change.appliedRevision = snapshot(change.before.path).revision
+          this.save(this.planPath(id), plan)
         }
-        this.save(this.baselinePath(), { ...plan.previousBaselines, ...plan.baselines })
+        if (plan.claims && Object.keys(plan.claims).length) {
+          const registry = this.registry.read()
+          this.save(this.registry.file, { version: 1, sources: registry.sources, targets: registry.targets, ownership: { ...registry.ownership, ...plan.claims } })
+        }
+        this.save(this.baselinePath(), { ...this.baselines(), ...plan.baselines })
+        if (plan.backupTarget) {
+          const remembered = JSON.parse(snapshot(this.backupBaselinesPath()).content ?? '{}')
+          const target = this.registry.read().targets.find(target => target.id === plan.backupTarget)!
+          this.save(this.backupBaselinesPath(), { ...remembered, [target.id]: contentHash(snapshot(this.backupPath(target)).content ?? '') })
+        }
         plan.state = 'applied'
       }
       catch {
@@ -785,32 +996,44 @@ export class ConfigurationEngine {
   restore(id: string): { version: 1, planId: string, state: 'restored' } {
     const initial = this.load(id)
     const skillRoots = this.skillPlanRoots(initial)
-    return this.locked([this.baselinePath(), this.planPath(id), ...initial.reads.map(read => read.path), ...(skillRoots.length ? this.skillOwnershipPaths() : [])], () => {
+    return this.locked([this.registry.file, this.baselinePath(), this.planPath(id), ...initial.reads.map(read => read.path), ...(skillRoots.length ? this.skillOwnershipPaths() : [])], () => {
       const plan = this.load(id)
       if (plan.state === 'preview')
         throw new Error('Plan has not been applied')
       if (plan.state === 'restored')
         return { version: 1, planId: id, state: 'restored' }
+      this.assertRecoveryBindings(plan)
       const currentBaseline = this.baselines()
       const afterBaseline = { ...plan.previousBaselines, ...plan.baselines }
-      if (!equal(currentBaseline, plan.previousBaselines) && !equal(currentBaseline, afterBaseline))
+      if (Object.keys(plan.baselines).some(key => currentBaseline[key] !== plan.previousBaselines[key] && currentBaseline[key] !== afterBaseline[key]))
         throw new Error('Later configuration activity prevents recovery of this plan')
       this.assertSkillRecoveryOwnership(plan, skillRoots)
       const changes = plan.changes.map((change) => {
         const current = snapshot(change.before.path)
-        if (change.appliedRevision && current.revision !== change.appliedRevision)
+        if (change.restoredRevision && current.revision !== change.restoredRevision)
+          throw new Error('File changed after recovery. Preserve the newer edits before retrying.')
+        if (!change.restoredRevision && change.appliedRevision && current.revision !== change.appliedRevision && !(plan.state === 'restoring' && current.content === change.before.content))
           throw new Error('File changed after application. Preserve the newer edits before recovery.')
         if (current.content !== change.after && current.content !== change.before.content)
           throw new Error('File changed after application. Preserve the newer edits before recovery.')
-        return { before: current, after: change.before.content, direction: change.direction, restoreMode: change.before.mode }
+        return { before: current, after: change.before.content, direction: change.direction, restoreMode: change.before.mode, original: change }
       })
+      plan.state = 'restoring'
+      this.save(this.planPath(id), plan)
       for (const change of changes.reverse()) {
         if (change.before.content !== change.after)
           this.write(change)
         if (change.after !== null && change.restoreMode !== undefined)
           fs.chmodSync(change.before.path, change.restoreMode)
+        change.original.restoredRevision = snapshot(change.before.path).revision
+        this.save(this.planPath(id), plan)
       }
-      this.save(this.baselinePath(), plan.previousBaselines)
+      for (const key of Object.keys(plan.baselines)) {
+        if (plan.previousBaselines[key] === undefined)
+          delete currentBaseline[key]
+        else currentBaseline[key] = plan.previousBaselines[key]
+      }
+      this.save(this.baselinePath(), currentBaseline)
       plan.state = 'restored'
       this.save(this.planPath(id), plan)
       return { version: 1, planId: id, state: 'restored' }

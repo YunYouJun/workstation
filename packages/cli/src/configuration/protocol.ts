@@ -8,13 +8,13 @@ export function configurationErrorMessage(error: unknown): string {
     'Skill ownership is unavailable. Check installer locks before recovery.',
   ]
   const safe = error instanceof Error && (recoveryErrors.includes(error.message)
-    || /^(?:Git operation failed|Repository has|Git fetch failed|Secret scan|Only declared|Unknown repository|Provide a bounded|Existing staged|Branches diverged|Remote is ahead|Configure a single|Sync requires|Repository changed|Unsupported configuration|Select configuration|Configuration changed|Configuration is not|Invalid decision|Duplicate decision|Choose a side|Replace literal credentials|Plan |File changed|Baseline changed|Later configuration)/.test(error.message))
+    || /^(?:Repository |Backup |Git operation failed|Git fetch failed|Secret scan|Only declared|Unknown repository|Provide a bounded|Existing staged|Branches diverged|Remote is ahead|Configure a single|Sync requires|Unsupported configuration|Select configuration|Configuration changed|Configuration is not|Invalid decision|Duplicate decision|Choose a side|Replace literal credentials|Plan |File changed|Baseline changed|Later configuration)/.test(error.message))
   return safe ? (error as Error).message : 'Configuration operation failed. Check local permissions, source syntax and recovery history.'
 }
 
 /** One-request JSON interface shared by CLI and trusted local Host Plugins. */
 export function configurationRequest(input: unknown, engine = new ConfigurationEngine()): unknown {
-  const request = input as { version?: number, projectPath?: string, operation?: string, decisions?: ConfigurationDecision[], planId?: string, repository?: string, revision?: string, action?: string, paths?: string[], message?: string }
+  const request = input as { version?: number, projectPath?: string, operation?: string, decisions?: ConfigurationDecision[], planId?: string, repository?: string, revision?: string, action?: string, paths?: string[], message?: string, registry?: Parameters<ConfigurationEngine['configureRepositories']>[0], targetId?: string, resolution?: string }
   if (!request || request.version !== 1)
     throw new Error('Unsupported configuration protocol version')
   switch (request.operation) {
@@ -24,6 +24,9 @@ export function configurationRequest(input: unknown, engine = new ConfigurationE
     case 'restore': return engine.restore(request.planId ?? '')
     case 'git-status': return engine.gitStatus()
     case 'git-action': return engine.gitAction(request)
+    case 'repositories': return engine.repositoryRegistry()
+    case 'repositories-update': return engine.configureRepositories(request.registry ?? {})
+    case 'backup-preview': return engine.backupPreview(request)
     case 'history': return engine.history()
     default: throw new Error('Unsupported configuration operation')
   }

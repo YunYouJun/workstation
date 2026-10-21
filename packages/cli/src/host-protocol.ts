@@ -17,7 +17,7 @@ export interface HostCapabilities {
   platform: NodeJS.Platform
   protocols: { host: 1, configuration: 1, software: 1, repositoryValidation: 1 }
   operations: {
-    configuration: Record<'inspect' | 'preview' | 'apply' | 'restore' | 'history' | 'git-status' | 'git-fetch' | 'git-commit' | 'git-publish', HostOperationCapability>
+    configuration: Record<'inspect' | 'preview' | 'apply' | 'restore' | 'history' | 'git-status' | 'git-fetch' | 'git-commit' | 'git-publish' | 'repositories' | 'repositories-update' | 'backup-preview', HostOperationCapability>
     software: Record<'catalog' | 'preview' | 'install' | 'runs' | 'cancel' | 'open', HostOperationCapability>
     doctor: HostOperationCapability
     repositoryValidation: HostOperationCapability
@@ -50,6 +50,9 @@ export function hostCapabilities(platform: NodeJS.Platform = process.platform): 
         'git-fetch': support(configurationWrite),
         'git-commit': support(configurationWrite),
         'git-publish': support(configurationWrite),
+        'repositories': support(true),
+        'repositories-update': support(configurationWrite),
+        'backup-preview': support(configurationWrite),
       },
       software: {
         catalog: support(true),
