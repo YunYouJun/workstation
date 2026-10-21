@@ -202,18 +202,6 @@ export const softwareGroups: SoftwareGroup[] = [
         note: 'CodeBuddy desktop IDE for the China region. Download from the official page.',
       },
       {
-        id: 'codebuddy-vscode',
-        iconUrl: 'https://download.codebuddy.cn/web/website/41d9f07cb6de7881ba06d46982d3876c0cbc1a98/assets/logo.svg',
-        name: {
-          en: 'CodeBuddy for VS Code',
-          zh: 'CodeBuddy VS Code 插件',
-        },
-        url: 'https://www.codebuddy.cn/',
-        downloadUrl: 'https://www.codebuddy.cn/setup/',
-        defaultInstall: false,
-        note: 'Install the CodeBuddy extension separately in VS Code. Detecting VS Code does not verify that this extension is installed.',
-      },
-      {
         id: 'codex',
         platforms: ['macos', 'windows', 'linux'],
         name: {

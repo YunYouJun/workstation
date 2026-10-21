@@ -181,7 +181,7 @@ describe('software catalog v1', () => {
     expect(entries.find(entry => entry.id === 'vscode')?.repositoryUrl).toBe('https://github.com/microsoft/vscode')
     expect(entries.find(entry => entry.id === 'codebuddy-cn')?.downloadUrl).toBe('https://www.codebuddy.cn/downloads/')
     expect(entries.find(entry => entry.id === 'codebuddy-cn')).not.toHaveProperty('repositoryUrl')
-    expect(entries.find(entry => entry.id === 'codebuddy-vscode')?.status).toBe('unknown')
+    expect(entries.find(entry => entry.id === 'codebuddy-vscode')).toBeUndefined()
   })
 })
 
