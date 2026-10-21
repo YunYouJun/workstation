@@ -105,11 +105,11 @@ other machine-local data.
 
 ### GitHub Large-Push Confirmation
 
-Workstation's `pre-push` guard calls `yunbox inspect --push --stdin` for `github.com` remotes. YunBox owns Git thin-pack estimation, LFS candidates, historical file details and budgets. Workstation displays exceeded-budget reports in a macOS dialog and stderr. Cancellation, unavailable interaction, missing CLI or failed analysis blocks the push.
+Workstation's `pre-push` guard calls `yunbox inspect --push --stdin --confirm` for `github.com` remotes. YunBox owns Git thin-pack estimation, LFS candidates, historical file details, budgets and the over-budget confirmation: on macOS it opens YunBox's native dialog listing each file's size change, and it asks in the terminal over SSH or when the dialog is unavailable. Pushes within budget print nothing; over-budget reports are also written to stderr. Cancellation, unavailable interaction, missing CLI or failed analysis blocks the push.
 
 Default budgets are **900 KiB** for Git pack, **100 MiB** for LFS candidates and **10 MiB** for individual files. Separate Git and LFS rankings show the ten largest objects and mark oversized files. Committed historical versions, including subsequently deleted files, are counted; uncommitted build output is excluded. Identical content is deduplicated, while distinct versions count separately. Raw file sizes differ from compressed upload sizes. LFS candidates are not actual upload bytes: remote existence has not been checked, so existing objects may be skipped. JSON includes all entries and exact byte counts.
 
-Install a YunBox CLI supporting `inspect` using the [YunBox installation instructions](https://github.com/YunLeFun/yunbox#安装命令行), and add it to PATH (or set `WORKSTATION_YUNBOX_BIN` to its absolute executable path). Then sync the adapter and enable the optional global hook, which requires Git 2.55+:
+Install a YunBox CLI supporting `inspect --confirm` (0.1.3+) using the [YunBox installation instructions](https://github.com/YunLeFun/yunbox#安装命令行), and add it to PATH (or set `WORKSTATION_YUNBOX_BIN` to its absolute executable path). Then sync the adapter and enable the optional global hook, which requires Git 2.55+:
 
 ```bash
 yunbox inspect --help
