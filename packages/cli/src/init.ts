@@ -360,7 +360,7 @@ function createGitLargePushGuardPlan(): InitTaskPlan {
   }
 
   if (!supportsYunboxInspection()) {
-    messages.push('YunBox CLI with "inspect --push --json" support is required; install YunBox and add it to PATH, or set WORKSTATION_YUNBOX_BIN to its executable path.')
+    messages.push('YunBox CLI 0.1.3+ with "inspect --push --confirm" support is required; install YunBox and add it to PATH, or set WORKSTATION_YUNBOX_BIN to its executable path.')
   }
 
   if (messages.length > 0) {
@@ -389,7 +389,7 @@ function createGitLargePushGuardPlan(): InitTaskPlan {
     status: 'ready',
     messages: [
       `Git ${gitVersion} supports named configured hooks, so repository hooks remain intact.`,
-      'YunBox checks Git pack, LFS candidates and individual files for github.com pushes.',
+      'YunBox checks Git pack, LFS candidates and individual files for github.com pushes, and asks in its own dialog before an over-budget push.',
       'For repositories using git-lfs, run: yunbox hook install --guard ~/.local/libexec/git-confirm-large-push. This chains approval before the original upload hook.',
     ],
     changes: [
@@ -491,7 +491,7 @@ function supportsYunboxInspection() {
     stdio: ['ignore', 'pipe', 'ignore'],
     timeout: 5000,
   })
-  return !result.error && result.status === 0 && result.stdout.includes('--push') && result.stdout.includes('--json')
+  return !result.error && result.status === 0 && ['--push', '--json', '--confirm'].every(option => result.stdout.includes(option))
 }
 
 function readGitVersion() {

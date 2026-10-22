@@ -68,11 +68,11 @@ Codex Desktop 的内置终端有时会把交互式 shell 的 `TERM` 暴露为 `d
 
 ### GitHub 大 Push 确认
 
-Workstation 的 `pre-push` 守卫调用 `yunbox inspect --push --stdin`，只检查 `github.com` remote。YunBox 统一负责 Git thin-pack 估算、LFS 候选量、历史文件明细和限额；Workstation 在超限时将报告显示在 macOS 对话框及终端中。取消、无可用交互界面、缺少 CLI 或检查失败都会阻止推送。
+Workstation 的 `pre-push` 守卫调用 `yunbox inspect --push --stdin --confirm`，只检查 `github.com` remote。YunBox 统一负责 Git thin-pack 估算、LFS 候选量、历史文件明细、限额和超限确认：macOS 上弹出 YunBox 原生对话框，列出各文件的大小变化；SSH 会话或对话框不可用时改在终端询问。未超限时不输出。超限报告同时写入终端。取消、无可用交互界面、缺少 CLI 或检查失败都会阻止推送。
 
 默认预算为 Git pack **900 KiB**、LFS 候选总量 **100 MiB**、单文件原始大小 **10 MiB**。Git 与 LFS 分开排行，各显示最大的 10 个对象和超限标记，覆盖待推送提交的历史版本，包括后来删除的大文件；未提交的构建产物不计入。同一内容去重，不同版本分别统计。原始文件大小不等于压缩后的上传量，LFS 候选量也不等于实际上传量：尚未查询 LFS 远端，已有对象可能跳过。JSON 提供完整明细及精确字节数。
 
-先按 [YunBox 安装说明](https://github.com/YunLeFun/yunbox#安装命令行) 安装支持 `inspect` 的 CLI 并加入 PATH（也可设置 `WORKSTATION_YUNBOX_BIN` 为可执行文件绝对路径），再同步适配器、启用可选全局钩子（需要 Git 2.55+）：
+先按 [YunBox 安装说明](https://github.com/YunLeFun/yunbox#安装命令行) 安装支持 `inspect --confirm` 的 CLI（0.1.3+）并加入 PATH（也可设置 `WORKSTATION_YUNBOX_BIN` 为可执行文件绝对路径），再同步适配器、启用可选全局钩子（需要 Git 2.55+）：
 
 ```bash
 yunbox inspect --help

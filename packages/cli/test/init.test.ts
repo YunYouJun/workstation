@@ -184,7 +184,7 @@ describe('init CLI', () => {
 
     const args = ['init', 'git.large-push-guard', '--yes']
     const inspectorPath = path.join(binDir, 'yunbox')
-    writeFile(inspectorPath, '#!/usr/bin/env node\nconsole.log("yunbox inspect --push --json")\n')
+    writeFile(inspectorPath, '#!/usr/bin/env node\nconsole.log("yunbox inspect --push --json --confirm")\n')
     fs.chmodSync(inspectorPath, 0o755)
     const env = { PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}`, WORKSTATION_YUNBOX_BIN: inspectorPath }
     const first = runCli(args, fixture.repoRoot, fixture.homeRoot, env)
@@ -213,6 +213,25 @@ describe('init CLI', () => {
     })
     assert.equal(result.status, 1)
     assert.match(`${result.stdout}\n${result.stderr}`, /YunBox CLI.*required/)
+    assert.equal(fs.existsSync(gitConfigPath(fixture.homeRoot)), false)
+  })
+
+  it('blocks guard setup when the YunBox inspector cannot confirm', () => {
+    const fixture = createInitFixture()
+    const binDir = path.join(tempDir!, 'bin')
+    writeFakeGit(binDir)
+    const guardPath = gitLargePushGuardPath(fixture.homeRoot)
+    writeFile(guardPath, '#!/bin/sh\nexit 0\n')
+    fs.chmodSync(guardPath, 0o755)
+    const inspectorPath = path.join(binDir, 'yunbox')
+    writeFile(inspectorPath, '#!/usr/bin/env node\nconsole.log("yunbox inspect --push --json")\n')
+    fs.chmodSync(inspectorPath, 0o755)
+    const result = runCli(['init', 'git.large-push-guard', '--yes'], fixture.repoRoot, fixture.homeRoot, {
+      PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}`,
+      WORKSTATION_YUNBOX_BIN: inspectorPath,
+    })
+    assert.equal(result.status, 1)
+    assert.match(`${result.stdout}\n${result.stderr}`, /YunBox CLI 0\.1\.3\+ with "inspect --push --confirm" support is required/)
     assert.equal(fs.existsSync(gitConfigPath(fixture.homeRoot)), false)
   })
 
