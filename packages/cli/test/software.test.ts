@@ -97,6 +97,29 @@ describe('software catalog v1', () => {
     expect(catalog().items[0].status).toBe('detected')
   })
 
+  it.each(['system', 'user'])('detects and opens the catalog Ghostty app from the %s Applications folder', async (location) => {
+    const ghostty = softwareItems.find(item => item.id === 'ghostty')!
+    const openApplication = vi.fn(async () => {})
+    const host = { items: [ghostty], platform: 'darwin' as const, homeDirectory: home, systemApplicationsDirectory: applications, openApplication }
+    expect(ghostty.defaultInstall).toBe(false)
+    expect(softwareRequest({ version: 1, operation: 'catalog' }, host).items[0]).toMatchObject({
+      id: 'ghostty',
+      group: { id: 'terminal-editor' },
+      installation: { kind: 'brew-cask', packageId: 'ghostty' },
+      status: 'not-detected',
+      canInstall: true,
+      canOpen: false,
+    })
+    await expect(softwareOperationRequest({ version: 1, operation: 'open', softwareId: 'ghostty' }, host)).rejects.toThrow('not detected')
+    expect(openApplication).not.toHaveBeenCalled()
+
+    const applicationPath = path.join(location === 'system' ? applications : path.join(home, 'Applications'), 'Ghostty.app')
+    fs.mkdirSync(applicationPath, { recursive: true })
+    expect(softwareRequest({ version: 1, operation: 'catalog' }, host).items[0]).toMatchObject({ status: 'detected', canInstall: false, canOpen: true })
+    expect(await softwareOperationRequest({ version: 1, operation: 'open', softwareId: 'ghostty' }, host)).toEqual({ version: 1, softwareId: 'ghostty', destination: 'application' })
+    expect(openApplication).toHaveBeenCalledExactlyOnceWith(applicationPath)
+  })
+
   it.each(['system', 'user'])('detects and opens Godot from the %s Applications folder without installing it', async (location) => {
     const godot = softwareItems.find(item => item.id === 'godot')!
     const openApplication = vi.fn(async () => {})

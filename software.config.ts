@@ -154,6 +154,21 @@ export const softwareGroups: SoftwareGroup[] = [
     },
     items: [
       {
+        id: 'deepseek-harness',
+        platforms: ['macos', 'windows'],
+        iconUrl: 'https://www.deepseek.com/harness/favicon.svg',
+        name: {
+          en: 'DeepSeek Harness',
+        },
+        url: 'https://www.deepseek.com/en/harness/',
+        downloadUrl: 'https://www.deepseek.com/en/harness/',
+        repositoryUrl: 'https://github.com/deepseek-ai/deepseek-harness',
+        app: 'DeepSeek Harness.app',
+        aliases: ['deepseek', 'dsh', 'harness'],
+        defaultInstall: false,
+        note: 'Open-source agent harness with composable plugins. Download the desktop app from the official site.',
+      },
+      {
         id: 'magpie',
         platforms: ['macos', 'windows', 'linux'],
         iconScale: 1.25,
