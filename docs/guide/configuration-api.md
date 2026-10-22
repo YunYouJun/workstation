@@ -38,7 +38,7 @@ State and recovery journals live under `~/.local/state/workstation/configuration
 
 ## Deliberate limits
 
-- Display redaction is conservative: literal prose and unknown values are withheld. Known MCP commands, booleans, timeout values, secret references and credential-free URL hosts can be shown. `!` identifies differing aligned text lines; `=` identifies matching lines. Display output is never used as write input.
+- Text previews preserve prose, comments, formatting and line boundaries, with recognizable credential literals masked. Unknown secret formats may not be detected. Structured MCP fragments keep conservative value masking. Clients render line numbers and differences; the API does not prepend line markers or truncate after 200 lines. Display output is never used as write input.
 - Text merge is manual selection of aligned line positions, not a semantic merge or an inferred three-way merge. Review insertions/deletions carefully. TOML and Zsh syntax are checked before a plan is accepted; generic skill documents and Ghostty configuration do not have full semantic validation.
 - A missing declared MCP fragment is a scan error. Deletion of an individual server is supported and remains tracked by the baseline.
 - Source export and commit require `gitleaks`; unavailable or failing scans block writes/publication. Repository fetch requires a clean checkout and follows existing fast-forward policy. New upstream setup, rebase, divergence resolution and signing remain normal Git operations.

@@ -17,6 +17,7 @@ import { isSafeSkillName, workstationSkillLockPath } from '../skill-provenance'
 import { auditSkills, skillsRegistryLockPath } from '../skills'
 import { decryptConfiguration, encryptConfiguration } from './backup'
 import { commitConfiguration, configurationGitStatus, transportConfiguration } from './git'
+import { previewText } from './preview-text'
 import { ConfigurationRepositoryRegistry, repositoryFile } from './repositories'
 
 type Value = Record<string, unknown>
@@ -114,23 +115,13 @@ function writable(file: string): boolean {
   }
 }
 
-/** Conservative presentation: omit all literal values, comments and prose, including unknown secret formats. */
+/** Readable text previews and conservative masking for structured MCP values. */
 function display(value: unknown): string {
   if (value === undefined || value === null)
     return '(absent)'
   if (typeof value === 'string')
-    return value.split('\n').map((line, index) => `${index + 1}: ${line.trim() ? '[content withheld]' : ''}`).join('\n')
+    return previewText(value)
   return JSON.stringify(mask(value), null, 2)
-}
-function displayDifference(value: unknown, other: unknown): string {
-  if (typeof value !== 'string')
-    return display(value)
-  const lines = value.split('\n')
-  const comparison = typeof other === 'string' ? other.split('\n') : []
-  const rendered = lines.slice(0, 200).map((line, index) => `${index + 1}: ${line === comparison[index] ? '=' : '!'} ${line.trim() ? '[content withheld]' : ''}`)
-  if (lines.length > 200)
-    rendered.push(`[${lines.length - 200} additional lines withheld]`)
-  return rendered.join('\n')
 }
 function mask(value: unknown, field = ''): unknown {
   if (['enabled', 'startup_timeout_sec', 'tool_timeout_sec'].includes(field) && ['number', 'boolean', 'bigint'].includes(typeof value))
@@ -364,8 +355,8 @@ export class ConfigurationEngine {
         sourcePath: source?.path,
         status,
         revision: digest([sourceConfig, local.revision, source?.revision, baselines[id]]),
-        local: displayDifference(localValue, sourceValue),
-        source: displayDifference(sourceValue, localValue),
+        local: display(localValue),
+        source: display(sourceValue),
         fields: server ? changedFields(localValue, sourceValue) : textFields(localValue, sourceValue),
         scope: 'global',
         ...(kind !== 'terminal' ? { client: kind === 'skill' && within(path.join(this.home, '.agents/skills'), local.path) ? 'shared' : 'codex' } : {}),
@@ -903,7 +894,7 @@ export class ConfigurationEngine {
   }
 
   private present(plan: Plan): ConfigurationPreview {
-    return { version: 1, planId: plan.id, changes: plan.changes.map(change => ({ path: change.before.path, direction: change.direction, before: change.direction === 'to-backup' ? '(encrypted backup)' : displayDifference(change.before.content, change.after), after: change.direction === 'to-backup' ? '(encrypted backup)' : displayDifference(change.after, change.before.content), deletion: change.after === null })) }
+    return { version: 1, planId: plan.id, changes: plan.changes.map(change => ({ path: change.before.path, direction: change.direction, before: change.direction === 'to-backup' ? '(encrypted backup)' : display(change.before.content), after: change.direction === 'to-backup' ? '(encrypted backup)' : display(change.after), deletion: change.after === null })) }
   }
 
   private locked<T>(paths: string[], callback: () => T): T {

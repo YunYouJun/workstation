@@ -175,6 +175,21 @@ it('applies and recovers declared user skill trees, including deletion', () => {
   expect(fs.readFileSync(path.join(home, '.codex/skills/notes/obsolete.md'), 'utf8')).toBe('delete me\n')
 })
 
+it('returns readable text with original line positions for inspection and change previews', () => {
+  const localText = '# Local instructions\n\nUse conventional commits.\n'
+  const sourceText = '# Shared instructions\n\nReview configuration before applying.\n'
+  write(path.join(home, '.codex/AGENTS.md'), localText)
+  write(path.join(repo, 'home/dot_codex/AGENTS.md'), sourceText)
+  const row = engine.inspect().items.find(row => row.kind === 'instructions')!
+  expect(row.local).toBe(localText)
+  expect(row.source).toBe(sourceText)
+  expect(fs.existsSync(engine.state)).toBe(false)
+  const plan = engine.preview([{ id: row.id, revision: row.revision, choice: 'source' }])
+  expect(plan.changes[0].before).toBe(localText)
+  expect(plan.changes[0].after).toBe(sourceText)
+  expect(fs.readFileSync(path.join(home, '.codex/AGENTS.md'), 'utf8')).toBe(localText)
+})
+
 it('applies terminal configurations independently of MCP and restores them', () => {
   write(path.join(repo, 'home/dot_zshrc'), '# source\n')
   write(path.join(home, '.zshrc'), '# local\n')
