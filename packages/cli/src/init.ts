@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
@@ -70,11 +69,8 @@ interface GitIdentityProfile {
 }
 
 const GIT_INCLUDE_IF_TASK_ID = 'git.include-if'
-const GIT_LARGE_PUSH_GUARD_TASK_ID = 'git.large-push-guard'
 const CODEX_MICROSOFT_TODO_MCP_TASK_ID = 'codex.microsoft-todo-mcp'
 const DEFAULT_GIT_HOST = 'github.com'
-const GIT_LARGE_PUSH_GUARD_COMMAND = '~/.local/libexec/git-confirm-large-push'
-const GIT_LARGE_PUSH_GUARD_SECTION = '[hook "workstation-large-push-guard"]'
 const MICROSOFT_TODO_MCP_SECTION = '[mcp_servers.microsoft-todo]'
 const MICROSOFT_TODO_MCP_PACKAGE = '@softeria/ms-365-mcp-server@0.140.0'
 
@@ -87,15 +83,6 @@ const tasks: InitTaskDefinition[] = [
     createPlan: createGitIncludeIfPlan,
     apply: applyFileChangePlan,
     verify: verifyFileChangePlan,
-  },
-  {
-    id: GIT_LARGE_PUSH_GUARD_TASK_ID,
-    title: 'GitHub large-push confirmation guard',
-    description: 'Confirm GitHub pushes whose estimated Git pack exceeds 900 KiB.',
-    recommended: false,
-    createPlan: createGitLargePushGuardPlan,
-    apply: applyFileChangePlan,
-    verify: verifyGitLargePushGuardPlan,
   },
   {
     id: CODEX_MICROSOFT_TODO_MCP_TASK_ID,
@@ -342,67 +329,6 @@ function createGitIncludeIfPlan(options: ResolvedInitOptions): InitTaskPlan {
   }
 }
 
-function createGitLargePushGuardPlan(): InitTaskPlan {
-  const messages: string[] = []
-  const gitVersion = readGitVersion()
-  const guardPath = path.join(getHomeDir(), '.local', 'libexec', 'git-confirm-large-push')
-
-  if (!gitVersion) {
-    messages.push('Git is unavailable; install Git 2.55 or newer before enabling configured hooks.')
-  }
-  else if (!supportsConfiguredHooks(gitVersion)) {
-    messages.push(`Git ${gitVersion} is too old; configured hooks require Git 2.55 or newer.`)
-  }
-
-  if (!isExecutableFile(guardPath)) {
-    messages.push(`Guard script is missing or not executable at ${displayPath(guardPath)}.`)
-    messages.push('Run "mkdir -p ~/.local/libexec && workstation dotfiles chezmoi apply ~/.local/libexec/git-confirm-large-push" before enabling the hook.')
-  }
-
-  if (!supportsYunboxInspection()) {
-    messages.push('YunBox CLI with "inspect --push --json" support is required; install YunBox and add it to PATH, or set WORKSTATION_YUNBOX_BIN to its executable path.')
-  }
-
-  if (messages.length > 0) {
-    return {
-      taskId: GIT_LARGE_PUSH_GUARD_TASK_ID,
-      title: 'GitHub large-push confirmation guard',
-      status: 'blocked',
-      messages,
-      changes: [],
-    }
-  }
-
-  const globalGitConfigPath = path.join(getHomeDir(), '.gitconfig')
-  const globalOriginal = readTextFile(globalGitConfigPath)
-  let globalNext = setGitConfigValue(
-    globalOriginal,
-    GIT_LARGE_PUSH_GUARD_SECTION,
-    'command',
-    GIT_LARGE_PUSH_GUARD_COMMAND,
-  )
-  globalNext = setGitConfigValue(globalNext, GIT_LARGE_PUSH_GUARD_SECTION, 'event', 'pre-push')
-
-  return {
-    taskId: GIT_LARGE_PUSH_GUARD_TASK_ID,
-    title: 'GitHub large-push confirmation guard',
-    status: 'ready',
-    messages: [
-      `Git ${gitVersion} supports named configured hooks, so repository hooks remain intact.`,
-      'YunBox checks Git pack, LFS candidates and individual files for github.com pushes.',
-      'For repositories using git-lfs, run: yunbox hook install --guard ~/.local/libexec/git-confirm-large-push. This chains approval before the original upload hook.',
-    ],
-    changes: [
-      makeFileChange(
-        globalGitConfigPath,
-        globalOriginal,
-        globalNext,
-        'register workstation-large-push-guard for pre-push',
-      ),
-    ],
-  }
-}
-
 function createCodexMicrosoftTodoMcpPlan(): InitTaskPlan {
   const codexHome = process.env.CODEX_HOME
     ? path.resolve(process.env.CODEX_HOME)
@@ -466,58 +392,6 @@ function verifyFileChangePlan(plan: InitTaskPlan): InitTaskVerification {
     messages.push('verified planned file contents')
 
   return { ok, messages }
-}
-
-function verifyGitLargePushGuardPlan(plan: InitTaskPlan): InitTaskVerification {
-  const verification = verifyFileChangePlan(plan)
-  const guardPath = path.join(getHomeDir(), '.local', 'libexec', 'git-confirm-large-push')
-
-  if (!isExecutableFile(guardPath)) {
-    verification.ok = false
-    verification.messages.push(`verification failed for executable ${displayPath(guardPath)}`)
-  }
-
-  if (!supportsYunboxInspection()) {
-    verification.ok = false
-    verification.messages.push('verification failed: compatible YunBox CLI is unavailable')
-  }
-
-  return verification
-}
-
-function supportsYunboxInspection() {
-  const result = spawnSync(process.env.WORKSTATION_YUNBOX_BIN || 'yunbox', ['inspect', '--help'], {
-    encoding: 'utf-8',
-    stdio: ['ignore', 'pipe', 'ignore'],
-    timeout: 5000,
-  })
-  return !result.error && result.status === 0 && result.stdout.includes('--push') && result.stdout.includes('--json')
-}
-
-function readGitVersion() {
-  const result = spawnSync('git', ['--version'], {
-    encoding: 'utf-8',
-    stdio: ['ignore', 'pipe', 'ignore'],
-  })
-  if (result.error || result.status !== 0)
-    return undefined
-
-  return result.stdout.match(/\b(\d+\.\d+(?:\.\d+)?)/)?.[1]
-}
-
-function supportsConfiguredHooks(version: string) {
-  const [major = 0, minor = 0] = version.split('.').map(Number)
-  return major > 2 || (major === 2 && minor >= 55)
-}
-
-function isExecutableFile(filePath: string) {
-  try {
-    fs.accessSync(filePath, fs.constants.X_OK)
-    return fs.statSync(filePath).isFile()
-  }
-  catch {
-    return false
-  }
 }
 
 function resolveGitProfiles(profiles: GitIdentityProfile[]): GitIdentityProfile[] {

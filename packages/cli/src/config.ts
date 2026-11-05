@@ -60,13 +60,6 @@ export const dotfiles: DotfileEntry[] = [
     description: 'CodeBuddy CN Global Settings (macOS)',
     appendSyncMeta: false,
   },
-  {
-    source: path.join('home', 'dot_local', 'libexec', 'executable_git-confirm-large-push'),
-    target: path.join('.local', 'libexec', 'git-confirm-large-push'),
-    description: 'GitHub large-push confirmation guard',
-    appendSyncMeta: false,
-    executable: true,
-  },
 ]
 
 export function getRepoRoot(): string {

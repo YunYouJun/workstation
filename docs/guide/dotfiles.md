@@ -10,7 +10,6 @@ Dotfiles 放在 `home/` 下，并通过 `workstation dotfiles` 命令管理。�
 - `home/dot_zshrc` -> `~/.zshrc`
 - `home/Library/Application Support/Code/User/settings.json` -> `~/Library/Application Support/Code/User/settings.json`
 - `home/Library/Application Support/CodeBuddy CN/User/settings.json` -> `~/Library/Application Support/CodeBuddy CN/User/settings.json`
-- `home/dot_local/libexec/executable_git-confirm-large-push` -> `~/.local/libexec/git-confirm-large-push`
 
 ## 命令
 

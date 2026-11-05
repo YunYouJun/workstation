@@ -280,12 +280,10 @@ Preview Git `includeIf` identity routing setup:
 wst init git.include-if --git-profile 'id=github;host=github.com;name=Your Name;email=you@example.com'
 ```
 
-Sync the guard executable and preview GitHub large-push confirmation:
+Inspect a pending push with YunBox:
 
 ```bash
-mkdir -p ~/.local/libexec
-workstation dotfiles chezmoi apply ~/.local/libexec/git-confirm-large-push
-wst init git.large-push-guard
+yunbox inspect --push --json
 ```
 
 Preview a restore from the repository into `$HOME`:
@@ -437,8 +435,8 @@ wst init git.include-if --git-profile 'id=github;host=github.com;name=Your Name;
 Enable and inspect the GitHub large-push confirmation hook:
 
 ```bash
-wst init git.large-push-guard --yes
-git hook list --show-scope pre-push
+yunbox hook install --global
+yunbox hook status --json
 ```
 
 Clone the recently active `YunYouJun` repositories after reviewing the dry-run:

@@ -11,7 +11,6 @@ old `dotfiles` command remains as a compatibility entrypoint.
 - `home/dot_zshrc` -> `~/.zshrc`
 - `home/Library/Application Support/Code/User/settings.json` -> `~/Library/Application Support/Code/User/settings.json`
 - `home/Library/Application Support/CodeBuddy CN/User/settings.json` -> `~/Library/Application Support/CodeBuddy CN/User/settings.json`
-- `home/dot_local/libexec/executable_git-confirm-large-push` -> `~/.local/libexec/git-confirm-large-push`
 
 ## Commands
 

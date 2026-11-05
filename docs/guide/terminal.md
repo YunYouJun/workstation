@@ -68,30 +68,18 @@ Codex Desktop 的内置终端有时会把交互式 shell 的 `TERM` 暴露为 `d
 
 ### GitHub 大 Push 确认
 
-Workstation 的 `pre-push` 守卫调用 `yunbox inspect --push --stdin`，只检查 `github.com` remote。YunBox 统一负责 Git thin-pack 估算、LFS 候选量、历史文件明细和限额；Workstation 在超限时将报告显示在 macOS 对话框及终端中。取消、无可用交互界面、缺少 CLI 或检查失败都会阻止推送。
+推送检查和确认统一使用 [YunBox](https://github.com/YunLeFun/yunbox)。Workstation 不再提供守卫脚本或 `wst init git.large-push-guard` 任务。YunBox 自带 macOS 原生对话框和终端确认，无需启动桌面 App。
 
-默认预算为 Git pack **900 KiB**、LFS 候选总量 **100 MiB**、单文件原始大小 **10 MiB**。Git 与 LFS 分开排行，各显示最大的 10 个对象和超限标记，覆盖待推送提交的历史版本，包括后来删除的大文件；未提交的构建产物不计入。同一内容去重，不同版本分别统计。原始文件大小不等于压缩后的上传量，LFS 候选量也不等于实际上传量：尚未查询 LFS 远端，已有对象可能跳过。JSON 提供完整明细及精确字节数。
-
-先按 [YunBox 安装说明](https://github.com/YunLeFun/yunbox#安装命令行) 安装支持 `inspect` 的 CLI 并加入 PATH（也可设置 `WORKSTATION_YUNBOX_BIN` 为可执行文件绝对路径），再同步适配器、启用可选全局钩子（需要 Git 2.55+）：
+安装 YunBox CLI 并加入 PATH 后，启用全局保护：
 
 ```bash
-yunbox inspect --help
-mkdir -p ~/.local/libexec
-workstation dotfiles chezmoi apply ~/.local/libexec/git-confirm-large-push
-wst init git.large-push-guard
-wst init git.large-push-guard --yes
-git hook list --show-scope pre-push
+yunbox hook install --global
+yunbox hook status --json
 ```
 
-**使用 Git LFS 的仓库还需要串行包装层。** 多个独立钩子即使前一个失败，Git 仍可能执行后面的上传钩子。先完成 `git lfs install --local`，再在仓库里运行：
+YunBox 在检查通过或用户确认继续后，才串行执行仓库原有的上传钩子，包括 Git LFS。仓库自定义的 `core.hooksPath` 会覆盖全局设置；这类仓库使用 `yunbox hook install --compatible` 接入，并通过 `hook status` 核实实际生效状态。
 
-```bash
-yunbox hook install --guard ~/.local/libexec/git-confirm-large-push
-```
-
-它保存原钩子，确认通过才执行原钩子，并原样传递参数与 stdin；全局守卫识别包装层后不再重复弹窗。`yunbox hook uninstall` 恢复原钩子。自定义 `core.hooksPath` 需在原管理器中自行串联；包装层不控制其他独立 configured hooks。没有包装层时，全局守卫可阻止主体 Git pack，但不能保证取消后其他 LFS 钩子不会上传。
-
-预算及独立报告：
+预算和独立检查也由 YunBox 管理：
 
 ```bash
 git config --global yunbox.inspectGitBytes 900k
@@ -100,9 +88,17 @@ git config --global yunbox.inspectFileBytes 10m
 yunbox inspect --push --json
 ```
 
-显式设置过的旧配置 `workstation.largePushGuardBytes` 仍优先作为 Git pack 预算。全局钩子可通过 `git config --local hook.workstation-large-push-guard.enabled false` 在当前仓库禁用，恢复时删除该配置；若已安装包装层，还需 `yunbox hook uninstall`。`git push --no-verify` 绕过两者。
+旧机器迁移时，先检查并移除 `~/.gitconfig` 中的旧注册：
 
-连接握手和远端 refs 查询发生在上传前，检查不承诺零网络流量。Git pack 超过 `max(10 MiB, Git 预算)` 后停止估算并报告下界；远端旧对象不在本地时保守估算。完整统计口径和 JSON 接口见 [YunBox 推送检查](https://github.com/YunLeFun/yunbox/blob/main/docs/inspect.md)。
+```bash
+git config --global --get-regexp '^hook\.workstation-large-push-guard\.'
+# 仅在存在旧 section 时执行：
+git config --global --remove-section hook.workstation-large-push-guard
+```
+
+若原 YunBox 包装层使用了 `--guard ~/.local/libexec/git-confirm-large-push`，先按原作用域重新运行 `yunbox hook install` 或 `yunbox hook install --global`，改用内置检查，再删除旧的 `~/.local/libexec/git-confirm-large-push`。仅拉取仓库更新不会清理 `$HOME` 中的旧注册和脚本。自定义的 `workstation.largePushGuardBytes` 需迁移至 `yunbox.inspectGitBytes`，不再自动读取。
+
+取消、无法交互或检查失败时阻止推送；`git push --no-verify` 会绕过检查。预算含义、统计口径、确认方式和卸载步骤以 [YunBox 推送检查文档](https://github.com/YunLeFun/yunbox/blob/main/docs/inspect.md) 为准。
 
 ### 目录跳转
 

@@ -105,30 +105,18 @@ other machine-local data.
 
 ### GitHub Large-Push Confirmation
 
-Workstation's `pre-push` guard calls `yunbox inspect --push --stdin` for `github.com` remotes. YunBox owns Git thin-pack estimation, LFS candidates, historical file details and budgets. Workstation displays exceeded-budget reports in a macOS dialog and stderr. Cancellation, unavailable interaction, missing CLI or failed analysis blocks the push.
+Use [YunBox](https://github.com/YunLeFun/yunbox) for push inspection and confirmation. Workstation no longer provides a guard script or the `wst init git.large-push-guard` task. YunBox includes native macOS dialogs and terminal confirmation without requiring its desktop app.
 
-Default budgets are **900 KiB** for Git pack, **100 MiB** for LFS candidates and **10 MiB** for individual files. Separate Git and LFS rankings show the ten largest objects and mark oversized files. Committed historical versions, including subsequently deleted files, are counted; uncommitted build output is excluded. Identical content is deduplicated, while distinct versions count separately. Raw file sizes differ from compressed upload sizes. LFS candidates are not actual upload bytes: remote existence has not been checked, so existing objects may be skipped. JSON includes all entries and exact byte counts.
-
-Install a YunBox CLI supporting `inspect` using the [YunBox installation instructions](https://github.com/YunLeFun/yunbox#安装命令行), and add it to PATH (or set `WORKSTATION_YUNBOX_BIN` to its absolute executable path). Then sync the adapter and enable the optional global hook, which requires Git 2.55+:
+Install the YunBox CLI, add it to PATH, then enable global protection:
 
 ```bash
-yunbox inspect --help
-mkdir -p ~/.local/libexec
-workstation dotfiles chezmoi apply ~/.local/libexec/git-confirm-large-push
-wst init git.large-push-guard
-wst init git.large-push-guard --yes
-git hook list --show-scope pre-push
+yunbox hook install --global
+yunbox hook status --json
 ```
 
-**Repositories using Git LFS also need a composed hook.** A failed independent hook does not guarantee that Git stops subsequent upload hooks. After `git lfs install --local`, run inside the repository:
+YunBox runs the repository's original upload hooks, including Git LFS, only after inspection succeeds or the user approves. A repository's custom `core.hooksPath` overrides the global setting; use `yunbox hook install --compatible` for those repositories and verify the effective protection with `hook status`.
 
-```bash
-yunbox hook install --guard ~/.local/libexec/git-confirm-large-push
-```
-
-This preserves the original hook and only runs it after approval, replaying its exact arguments and stdin. The global guard detects this wrapper to avoid duplicate dialogs. `yunbox hook uninstall` restores the original hook. Custom `core.hooksPath` managers need their own serial chain; the wrapper does not control other independent configured hooks. Without the wrapper, the global guard can block the bulk Git pack but cannot guarantee that cancellation stops subsequent LFS uploads.
-
-Configure budgets or inspect independently:
+YunBox also owns budgets and standalone inspection:
 
 ```bash
 git config --global yunbox.inspectGitBytes 900k
@@ -137,9 +125,17 @@ git config --global yunbox.inspectFileBytes 10m
 yunbox inspect --push --json
 ```
 
-An explicitly configured legacy `workstation.largePushGuardBytes` still takes precedence for the Git pack budget. To disable the global hook in one repository, set `git config --local hook.workstation-large-push-guard.enabled false`; remove this setting to restore it. If a wrapper is installed, also run `yunbox hook uninstall`. `git push --no-verify` bypasses both.
+On existing machines, inspect and remove the legacy registration from `~/.gitconfig`:
 
-Connection handshakes and remote-ref discovery still use the network before upload. Pack estimation stops above `max(10 MiB, Git budget)` and reports a lower bound. Missing local remote objects lead to a conservative estimate. See [YunBox push inspection](https://github.com/YunLeFun/yunbox/blob/main/docs/inspect.md) for counting rules and the JSON contract.
+```bash
+git config --global --get-regexp '^hook\.workstation-large-push-guard\.'
+# Run only when the legacy section exists:
+git config --global --remove-section hook.workstation-large-push-guard
+```
+
+If an existing YunBox wrapper uses `--guard ~/.local/libexec/git-confirm-large-push`, reinstall it in its original scope with `yunbox hook install` or `yunbox hook install --global` to use built-in inspection before deleting `~/.local/libexec/git-confirm-large-push`. Pulling repository updates alone does not remove legacy registrations or scripts from `$HOME`. Move custom `workstation.largePushGuardBytes` budgets to `yunbox.inspectGitBytes`; the old key is no longer read.
+
+Cancellation, unavailable interaction or failed inspection blocks the push. `git push --no-verify` bypasses inspection. See the [YunBox push inspection documentation](https://github.com/YunLeFun/yunbox/blob/main/docs/inspect.md) for budgets, counting rules, confirmation settings and uninstall instructions.
 
 ### Directory Jumping
 
