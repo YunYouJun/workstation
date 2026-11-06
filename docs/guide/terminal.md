@@ -28,7 +28,7 @@ Homebrew 环境使用标准安装路径直接初始化，不在每个 shell 中�
 
 ### Starship Prompt
 
-`home/dot_config/starship.toml` 使用 Starship 内建模块渲染 prompt，不通过自定义 shell 命令重复解析 `git status`。这让配置保持跨 shell、可维护，并且受 `command_timeout` 保护。
+`home/dot_config/starship.toml` 使用 Starship 内建模块渲染 Git 等上下文，不通过自定义 shell 命令重复解析 `git status`。Node.js 版本段在当前 `node` 来自 fnm 时通过 `fnm current` 读取已选版本，避免每次绘制 prompt 都启动 Node，以及 Node 冷启动触发超时警告；其他 Node 安装仍使用 `node --version`。这个自定义段使用不加载启动配置的 `sh`，保留原有项目检测和版本显示，并且受 `command_timeout` 保护。
 
 默认 prompt 保持两行：第一行显示目录、Git、运行时、包版本、命令耗时和失败退出码，第二行只显示输入符号。Git 信息只在仓库中出现：
 

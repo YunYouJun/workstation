@@ -74,7 +74,9 @@ if [[ -o interactive ]]; then
 
   # Run the security audit and refresh discovery once per day. Warm shells use
   # the compiled dump directly instead of scanning hundreds of completion files.
-  if [[ ! -s "$completion_dump" || ! -e "$completion_audit" || -n "$completion_audit"(#qN.mh+24) ]]; then
+  # Expand outside [[ ]] so this also works without EXTENDED_GLOB enabled.
+  completion_audit_due=("$completion_audit"(N.mh+24))
+  if [[ ! -s "$completion_dump" || ! -e "$completion_audit" ]] || (( ${#completion_audit_due} )); then
     compinit -i -d "$completion_dump"
     : >| "$completion_audit"
   else
@@ -95,7 +97,7 @@ if [[ -o interactive ]]; then
       && source "$ZSH/plugins/$plugin/$plugin.plugin.zsh"
   done
 fi
-unset library plugin omz_plugins completion_dump completion_audit
+unset library plugin omz_plugins completion_dump completion_audit completion_audit_due
 
 # Preserve the `omz` maintenance command without paying its CLI load cost at
 # shell startup.
