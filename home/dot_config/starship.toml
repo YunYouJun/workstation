@@ -12,7 +12,7 @@ $git_state\
 $git_status\
 $git_metrics\
 [](fg:#394260 bg:#212736)\
-$nodejs\
+${custom.nodejs}\
 $bun\
 $deno\
 $rust\
@@ -102,9 +102,26 @@ only_nonzero_diffs = true
 added_style = "fg:#9ece6a bg:#394260"
 deleted_style = "fg:#f7768e bg:#394260"
 
-[nodejs]
-format = "[[ $symbol $version](fg:#769ff0 bg:#212736)]($style)"
-style = "bg:#212736"
+[custom.nodejs]
+# fnm records the selected version in its symlink; avoid starting Node just to
+# draw a prompt. Other Node installations still use the normal version query.
+command = '''
+[ ! -d esy.lock ] || exit 1
+node_path=$(command -v node) || exit 1
+if [ -n "${FNM_MULTISHELL_PATH:-}" ] && [ "$node_path" = "$FNM_MULTISHELL_PATH/bin/node" ]; then
+  version=$(fnm current 2>/dev/null)
+  case "$version" in
+    v[0-9]*.[0-9]*.[0-9]*) printf '%s\n' "$version"; exit 0 ;;
+  esac
+fi
+node --version
+'''
+shell = ["sh"]
+detect_extensions = ["js", "mjs", "cjs", "ts", "mts", "cts"]
+detect_files = ["package.json", ".node-version", ".nvmrc", "!bunfig.toml", "!bun.lock", "!bun.lockb", "!deno.json", "!deno.jsonc", "!deno.lock"]
+detect_folders = ["node_modules"]
+format = "([ $symbol $output]($style))"
+style = "fg:#769ff0 bg:#212736"
 symbol = ""
 
 [bun]
